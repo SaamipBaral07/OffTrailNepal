@@ -6,6 +6,9 @@
 # Never commit dependencies
 Increment1/03_Development/backend/node_modules/
 Increment1/03_Development/frontend/node_modules/
+Increment2/03_Development/backend/node_modules/
+Increment2/03_Development/frontend/node_modules/
 
 # Never commit environment secrets
 Increment1/03_Development/backend/.env
+Increment2/03_Development/backend/.env

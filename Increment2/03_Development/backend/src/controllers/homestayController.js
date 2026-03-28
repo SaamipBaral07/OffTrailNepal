@@ -7,6 +7,23 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const srcDir = path.resolve(__dirname, "..");
 
+const parseCoordinate = (rawValue, fieldName, min, max) => {
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return { value: null, error: null };
+  }
+
+  const parsed = Number.parseFloat(rawValue);
+  if (!Number.isFinite(parsed)) {
+    return { value: null, error: `${fieldName} must be a valid number` };
+  }
+
+  if (parsed < min || parsed > max) {
+    return { value: null, error: `${fieldName} must be between ${min} and ${max}` };
+  }
+
+  return { value: parsed, error: null };
+};
+
 /* =========================
    GET ALL TRAILS (for dropdown — public trail list)
 ========================= */
@@ -120,6 +137,23 @@ export const createHomestay = async (req, res) => {
       contact_phone,
     } = req.body;
 
+    const latitudeParsed = parseCoordinate(latitude, "latitude", -90, 90);
+    const longitudeParsed = parseCoordinate(longitude, "longitude", -180, 180);
+
+    if (latitudeParsed.error || longitudeParsed.error) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: latitudeParsed.error || longitudeParsed.error,
+      });
+    }
+
+    if ((latitudeParsed.value === null) !== (longitudeParsed.value === null)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: "latitude and longitude must both be provided together",
+      });
+    }
+
     // Validate required fields
     if (!trail_id || !name || !location || !price_per_night || !capacity) {
       await client.query("ROLLBACK");
@@ -152,8 +186,8 @@ export const createHomestay = async (req, res) => {
         parseFloat(price_per_night),
         parseInt(capacity),
         description || null,
-        latitude ? parseFloat(latitude) : null,
-        longitude ? parseFloat(longitude) : null,
+        latitudeParsed.value,
+        longitudeParsed.value,
         contact_phone || null,
       ]
     );
@@ -229,6 +263,7 @@ export const updateHomestay = async (req, res) => {
       await client.query("ROLLBACK");
       return res.status(404).json({ message: "Homestay not found or not owned by you" });
     }
+    const existingHomestay = ownership.rows[0];
 
     const {
       trail_id,
@@ -241,6 +276,41 @@ export const updateHomestay = async (req, res) => {
       longitude,
       contact_phone,
     } = req.body;
+
+    const hasLatitude = Object.prototype.hasOwnProperty.call(req.body, "latitude");
+    const hasLongitude = Object.prototype.hasOwnProperty.call(req.body, "longitude");
+
+    if (hasLatitude !== hasLongitude) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: "latitude and longitude must both be provided together",
+      });
+    }
+
+    let latitudeValue = existingHomestay.latitude;
+    let longitudeValue = existingHomestay.longitude;
+
+    if (hasLatitude && hasLongitude) {
+      const latitudeParsed = parseCoordinate(latitude, "latitude", -90, 90);
+      const longitudeParsed = parseCoordinate(longitude, "longitude", -180, 180);
+
+      if (latitudeParsed.error || longitudeParsed.error) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: latitudeParsed.error || longitudeParsed.error,
+        });
+      }
+
+      if ((latitudeParsed.value === null) !== (longitudeParsed.value === null)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "latitude and longitude must both be provided together",
+        });
+      }
+
+      latitudeValue = latitudeParsed.value;
+      longitudeValue = longitudeParsed.value;
+    }
 
     // Update homestay (reset verified_status to pending on edit)
     await client.query(
@@ -264,8 +334,8 @@ export const updateHomestay = async (req, res) => {
         price_per_night ? parseFloat(price_per_night) : null,
         capacity ? parseInt(capacity) : null,
         description || null,
-        latitude ? parseFloat(latitude) : null,
-        longitude ? parseFloat(longitude) : null,
+        latitudeValue,
+        longitudeValue,
         contact_phone || null,
         id,
         hostId,
