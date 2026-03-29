@@ -10,6 +10,10 @@ import ForgotPassword from "./pages/ForgotPassword";
 import TrailDetail from "./pages/TrailDetail";
 import HomestayDetail from "./pages/HomestayDetail";
 import MyBookings from "./pages/MyBookings";
+import TouristProfile from "./pages/TouristProfile";
+import TouristSettings from "./pages/TouristSettings";
+import HostProfile from "./pages/HostProfile";
+import GuideProfile from "./pages/GuideProfile";
 
 import HostDashboard from "./pages/HostDashboard";
 import GuideDashboard from "./pages/GuideDashboard";
@@ -55,6 +59,42 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["tourist"]}>
                 <MyBookings />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/my-profile"
+            element={
+              <ProtectedRoute allowedRoles={["tourist"]}>
+                <TouristProfile />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/my-settings"
+            element={
+              <ProtectedRoute allowedRoles={["tourist"]}>
+                <TouristSettings />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/host-profile"
+            element={
+              <ProtectedRoute allowedRoles={["host"]}>
+                <HostProfile />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/guide-profile"
+            element={
+              <ProtectedRoute allowedRoles={["guide"]}>
+                <GuideProfile />
               </ProtectedRoute>
             }
           />

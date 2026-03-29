@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../api";
 import {
   LogOut,
@@ -844,6 +844,12 @@ const HostDashboard = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
+
+  const profileImageUrl = user?.profile_image_path
+    ? (String(user.profile_image_path).startsWith("http")
+      ? user.profile_image_path
+      : `http://localhost:5000${user.profile_image_path}`)
+    : "";
   const [notification, setNotification] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
@@ -1042,19 +1048,46 @@ const HostDashboard = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <Home className="h-8 w-8 text-blue-600 mr-2" />
+              <div className="relative w-10 h-10 rounded-full overflow-hidden mr-2">
+                <div className="absolute inset-0 rounded-full bg-gradient-to-br from-gold/40 via-gold/20 to-gold/40 p-[2px]">
+                  <div className="h-full w-full rounded-full bg-white p-0.5">
+                    <img
+                      src="/offtrail-latest.png"
+                      alt="OffTrail Nepal"
+                      className="h-full w-full rounded-full object-cover"
+                    />
+                  </div>
+                </div>
+              </div>
               <span className="text-xl font-bold text-gray-900">OffTrailNepal</span>
               <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full">
                 Host
               </span>
             </div>
-            <button
-              onClick={setShowLogoutModal}
-              className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition-colors duration-300"
-            >
-              <LogOut className="h-5 w-5" />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
+            <div className="flex items-center gap-3">
+              <Link
+                to="/host-profile"
+                className="hidden sm:inline-flex items-center px-3 py-2 text-sm font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl border border-blue-100"
+              >
+                My Profile
+              </Link>
+              <div className="h-10 w-10 rounded-full overflow-hidden border border-blue-100 bg-blue-50">
+                {profileImageUrl ? (
+                  <img src={profileImageUrl} alt={user?.full_name || "Host"} className="h-full w-full object-cover" />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center text-blue-700 font-bold text-sm">
+                    {(user?.full_name || "H").charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={setShowLogoutModal}
+                className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition-colors duration-300"
+              >
+                <LogOut className="h-5 w-5" />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
+            </div>
           </div>
         </div>
       </nav>

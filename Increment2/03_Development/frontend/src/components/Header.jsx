@@ -26,6 +26,11 @@ export const Header = ({ user, onLogoutClick }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [activeSection, setActiveSection] = useState("home");
   const dropdownRef = useRef(null);
+  const profileImageUrl = user?.profile_image_path
+    ? (String(user.profile_image_path).startsWith("http")
+      ? user.profile_image_path
+      : `http://localhost:5000${user.profile_image_path}`)
+    : "";
 
   /* ── Scroll tracking ── */
   useEffect(() => {
@@ -202,15 +207,23 @@ export const Header = ({ user, onLogoutClick }) => {
                     onClick={() => setDropdownOpen(!dropdownOpen)}
                     className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-full hover:bg-white/10 transition-all duration-300 group"
                   >
-                    <div
-                      className="h-9 w-9 rounded-full flex items-center justify-center text-navy font-bold text-sm shadow-lg shadow-gold/25"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, #C8932A, #E0B04A)",
-                      }}
-                    >
-                      {user.full_name?.charAt(0).toUpperCase() || "U"}
-                    </div>
+                    {profileImageUrl ? (
+                      <img
+                        src={profileImageUrl}
+                        alt={user.full_name || "User"}
+                        className="h-9 w-9 rounded-full object-cover shadow-lg shadow-gold/25 ring-2 ring-gold/30"
+                      />
+                    ) : (
+                      <div
+                        className="h-9 w-9 rounded-full flex items-center justify-center text-navy font-bold text-sm shadow-lg shadow-gold/25"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, #C8932A, #E0B04A)",
+                        }}
+                      >
+                        {user.full_name?.charAt(0).toUpperCase() || "U"}
+                      </div>
+                    )}
                     <div className="hidden md:block text-left">
                       <p className="text-sm font-semibold text-white leading-tight">
                         {user.full_name || "User"}
@@ -253,10 +266,39 @@ export const Header = ({ user, onLogoutClick }) => {
                           </span>
                         </div>
                         <div className="py-1">
-                          <button className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors">
-                            <User className="h-4 w-4 text-gray-400" />
-                            My Profile
-                          </button>
+                          {user.user_type === "tourist" ? (
+                            <Link
+                              to="/my-profile"
+                              onClick={() => setDropdownOpen(false)}
+                              className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors"
+                            >
+                              <User className="h-4 w-4 text-gray-400" />
+                              My Profile
+                            </Link>
+                          ) : user.user_type === "host" ? (
+                            <Link
+                              to="/host-profile"
+                              onClick={() => setDropdownOpen(false)}
+                              className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors"
+                            >
+                              <User className="h-4 w-4 text-gray-400" />
+                              My Profile
+                            </Link>
+                          ) : user.user_type === "guide" ? (
+                            <Link
+                              to="/guide-profile"
+                              onClick={() => setDropdownOpen(false)}
+                              className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors"
+                            >
+                              <User className="h-4 w-4 text-gray-400" />
+                              My Profile
+                            </Link>
+                          ) : (
+                            <button className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors">
+                              <User className="h-4 w-4 text-gray-400" />
+                              My Profile
+                            </button>
+                          )}
                           {user.user_type === "tourist" && (
                             <Link
                               to="/my-bookings"
@@ -267,10 +309,21 @@ export const Header = ({ user, onLogoutClick }) => {
                               My Bookings
                             </Link>
                           )}
-                          <button className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors">
-                            <Settings className="h-4 w-4 text-gray-400" />
-                            Settings
-                          </button>
+                          {user.user_type === "tourist" ? (
+                            <Link
+                              to="/my-settings"
+                              onClick={() => setDropdownOpen(false)}
+                              className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors"
+                            >
+                              <Settings className="h-4 w-4 text-gray-400" />
+                              Settings
+                            </Link>
+                          ) : (
+                            <button className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors">
+                              <Settings className="h-4 w-4 text-gray-400" />
+                              Settings
+                            </button>
+                          )}
                         </div>
                         <div className="border-t border-gray-100 pt-1">
                           <button

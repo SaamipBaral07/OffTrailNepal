@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../api";
 import {
   LogOut,
@@ -87,6 +87,12 @@ const GuideDashboard = () => {
   const [fetchingData, setFetchingData] = useState(false);
   const [verification, setVerification] = useState(null);
   const [verificationSubmitting, setVerificationSubmitting] = useState(false);
+
+  const profileImageUrl = user?.profile_image_path
+    ? (String(user.profile_image_path).startsWith("http")
+      ? user.profile_image_path
+      : `http://localhost:5000${user.profile_image_path}`)
+    : "";
 
   // Forms State
   const [showTrailForm, setShowTrailForm] = useState(false);
@@ -278,8 +284,16 @@ const GuideDashboard = () => {
       {/* Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-gray-200 fixed inset-y-0 shadow-sm">
         <div className="px-6 py-5 border-b border-gray-100 flex items-center gap-3">
-          <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 shadow-md">
-            <Compass className="h-5 w-5 text-white" />
+          <div className="relative w-10 h-10 rounded-full overflow-hidden">
+            <div className="absolute inset-0 rounded-full bg-gradient-to-br from-gold/40 via-gold/20 to-gold/40 p-[2px]">
+              <div className="h-full w-full rounded-full bg-white p-0.5">
+                <img
+                  src="/offtrail-latest.png"
+                  alt="OffTrail Nepal"
+                  className="h-full w-full rounded-full object-cover"
+                />
+              </div>
+            </div>
           </div>
           <div>
             <p className="text-gray-900 font-bold text-sm leading-none">OffTrailNepal</p>
@@ -311,14 +325,24 @@ const GuideDashboard = () => {
 
         <div className="px-4 py-4 border-t border-gray-100">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm">
-              {user?.full_name?.charAt(0) || "G"}
+            <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm">
+              {profileImageUrl ? (
+                <img src={profileImageUrl} alt={user?.full_name || "Guide"} className="h-full w-full object-cover" />
+              ) : (
+                <span>{user?.full_name?.charAt(0) || "G"}</span>
+              )}
             </div>
             <div className="min-w-0">
               <p className="text-gray-900 text-sm font-semibold truncate">{user?.full_name}</p>
               <p className="text-gray-400 text-xs">Trekking Guide</p>
             </div>
           </div>
+          <Link
+            to="/guide-profile"
+            className="w-full mb-2 flex items-center justify-center gap-2 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 text-indigo-600 rounded-xl text-sm font-medium transition-colors"
+          >
+            My Profile
+          </Link>
           <button
             onClick={setShowLogoutModal}
             className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-100 text-red-600 rounded-xl text-sm font-medium transition-colors"

@@ -221,8 +221,16 @@ const AdminDashboard = () => {
         {/* Brand */}
         <div className="px-6 py-5 border-b border-gray-100">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 shadow-md">
-              <Mountain className="h-5 w-5 text-white" />
+            <div className="relative w-10 h-10 rounded-full overflow-hidden">
+              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-gold/40 via-gold/20 to-gold/40 p-[2px]">
+                <div className="h-full w-full rounded-full bg-white p-0.5">
+                  <img
+                    src="/offtrail-latest.png"
+                    alt="OffTrail Nepal"
+                    className="h-full w-full rounded-full object-cover"
+                  />
+                </div>
+              </div>
             </div>
             <div>
               <p className="text-gray-900 font-bold text-sm leading-none">OffTrailNepal</p>

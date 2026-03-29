@@ -17,7 +17,8 @@ import {
   Award,
   Globe,
   CreditCard,
-  FileText
+  FileText,
+  ImagePlus
 } from "lucide-react";
 
 const Register = () => {
@@ -43,6 +44,8 @@ const Register = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [passwordStrength, setPasswordStrength] = useState(0);
+  const [profilePhotoFile, setProfilePhotoFile] = useState(null);
+  const [profilePhotoPreview, setProfilePhotoPreview] = useState("");
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -73,6 +76,31 @@ const Register = () => {
       license_no: user_type === "guide" ? prev.license_no : "",
       experience_years: user_type === "guide" ? prev.experience_years : ""
     }));
+  };
+
+  const handleProfilePhotoChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setProfilePhotoFile(null);
+      setProfilePhotoPreview("");
+      return;
+    }
+
+    if (!/^image\/(jpeg|jpg|png|webp)$/.test(file.type)) {
+      setError("Profile photo must be a jpg, png, or webp image");
+      e.target.value = "";
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Profile photo must be smaller than 5 MB");
+      e.target.value = "";
+      return;
+    }
+
+    setError("");
+    setProfilePhotoFile(file);
+    setProfilePhotoPreview(URL.createObjectURL(file));
   };
 
   const getStrengthColor = (strength) => {
@@ -155,25 +183,27 @@ const Register = () => {
     setIsLoading(true);
 
     try {
-      // Prepare data based on user type
-      let dataToSend = {
-        full_name: formData.full_name,
-        email: formData.email,
-        password: formData.password,
-        phone: formData.phone,
-        user_type: formData.user_type
-      };
+      const dataToSend = new FormData();
+      dataToSend.append("full_name", formData.full_name);
+      dataToSend.append("email", formData.email);
+      dataToSend.append("password", formData.password);
+      dataToSend.append("phone", formData.phone);
+      dataToSend.append("user_type", formData.user_type);
 
       // Add additional fields based on user type
       if (formData.user_type === "tourist") {
-        dataToSend.nationality = formData.nationality;
+        dataToSend.append("nationality", formData.nationality);
       } else if (formData.user_type === "host") {
-        dataToSend.address = formData.address;
-        dataToSend.pan_number = formData.pan_number;
+        dataToSend.append("address", formData.address);
+        dataToSend.append("pan_number", formData.pan_number);
       } else if (formData.user_type === "guide") {
-        dataToSend.license_no = formData.license_no;
-        dataToSend.experience_years = parseInt(formData.experience_years);
-        dataToSend.address = formData.address;
+        dataToSend.append("license_no", formData.license_no);
+        dataToSend.append("experience_years", String(parseInt(formData.experience_years, 10)));
+        dataToSend.append("address", formData.address);
+      }
+
+      if (profilePhotoFile) {
+        dataToSend.append("profile_photo", profilePhotoFile);
       }
 
       await axios.post(
@@ -502,6 +532,31 @@ const Register = () => {
                   </ul>
                 </div>
               )}
+            </div>
+
+            {/* Optional Profile Photo */}
+            <div className="mb-6 rounded-xl border border-dashed border-gold/30 bg-gold/5 p-4">
+              <label className="block text-gray-700 text-sm font-medium mb-2">
+                Profile Photo (Optional)
+              </label>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                <div className="h-14 w-14 rounded-xl bg-white border border-gold/20 overflow-hidden flex items-center justify-center">
+                  {profilePhotoPreview ? (
+                    <img src={profilePhotoPreview} alt="Profile preview" className="h-full w-full object-cover" />
+                  ) : (
+                    <ImagePlus className="h-5 w-5 text-gold-dark" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                    onChange={handleProfilePhotoChange}
+                    className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-navy file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-navy-light"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">JPG, PNG, or WEBP up to 5MB.</p>
+                </div>
+              </div>
             </div>
 
             {/* User Type Selection */}
