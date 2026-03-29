@@ -8,6 +8,8 @@ import VerifyEmail from "./pages/VerifyEmail";
 import ResetPassword from "./pages/ResetPassword";
 import ForgotPassword from "./pages/ForgotPassword";
 import TrailDetail from "./pages/TrailDetail";
+import HomestayDetail from "./pages/HomestayDetail";
+import MyBookings from "./pages/MyBookings";
 
 import HostDashboard from "./pages/HostDashboard";
 import GuideDashboard from "./pages/GuideDashboard";
@@ -26,6 +28,7 @@ function App() {
 
           {/* Trail Detail - public */}
           <Route path="/trails/:id" element={<TrailDetail />} />
+          <Route path="/homestays/:id" element={<HomestayDetail />} />
 
           {/* Auth pages */}
           <Route path="/login" element={<Login />} />
@@ -42,6 +45,16 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["host"]}>
                 <HostDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Tourist Bookings */}
+          <Route
+            path="/my-bookings"
+            element={
+              <ProtectedRoute allowedRoles={["tourist"]}>
+                <MyBookings />
               </ProtectedRoute>
             }
           />

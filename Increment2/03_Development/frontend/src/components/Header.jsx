@@ -9,6 +9,7 @@ import {
   LogOut,
   Settings,
   Compass,
+  CalendarCheck,
 } from "lucide-react";
 
 const navLinks = [
@@ -256,6 +257,16 @@ export const Header = ({ user, onLogoutClick }) => {
                             <User className="h-4 w-4 text-gray-400" />
                             My Profile
                           </button>
+                          {user.user_type === "tourist" && (
+                            <Link
+                              to="/my-bookings"
+                              onClick={() => setDropdownOpen(false)}
+                              className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors"
+                            >
+                              <CalendarCheck className="h-4 w-4 text-gray-400" />
+                              My Bookings
+                            </Link>
+                          )}
                           <button className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors">
                             <Settings className="h-4 w-4 text-gray-400" />
                             Settings

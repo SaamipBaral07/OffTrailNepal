@@ -14,7 +14,7 @@ import {
   Mountain,
   X,
   Upload,
-  Image,
+ 
   Loader2,
   Eye,
   EyeOff,
@@ -23,6 +23,9 @@ import {
   XCircle,
   ChevronDown,
   ChevronUp,
+  CalendarDays,
+  BadgeCheck,
+  Star,
 } from "lucide-react";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
@@ -96,7 +99,7 @@ const StatCard = ({ icon: Icon, label, value, accent }) => {
 /* ─────────────────────────────────────────
    CREATE / EDIT FORM
 ───────────────────────────────────────── */
-const HomestayForm = ({ trails, onSubmit, onCancel, initialData, isSubmitting }) => {
+const HomestayForm = ({ trails, onSubmit, onCancel, initialData, isSubmitting, onImagesChanged }) => {
   const [form, setForm] = useState({
     trail_id: initialData?.trail_id || "",
     name: initialData?.name || "",
@@ -114,6 +117,14 @@ const HomestayForm = ({ trails, onSubmit, onCancel, initialData, isSubmitting })
   });
   const [images, setImages] = useState([]);
   const [imagePreviews, setImagePreviews] = useState([]);
+  const [existingImages, setExistingImages] = useState(initialData?.images || []);
+  const [replaceExistingImages, setReplaceExistingImages] = useState(false);
+  const [imageActionLoading, setImageActionLoading] = useState(false);
+
+  useEffect(() => {
+    setExistingImages(initialData?.images || []);
+    setReplaceExistingImages(false);
+  }, [initialData]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -134,8 +145,48 @@ const HomestayForm = ({ trails, onSubmit, onCancel, initialData, isSubmitting })
         formData.append(key, value);
       }
     });
+    if (initialData) {
+      formData.append("replace_existing_images", replaceExistingImages ? "true" : "false");
+    }
     images.forEach((img) => formData.append("images", img));
     onSubmit(formData);
+  };
+
+  const handleDeleteExistingImage = async (imageId) => {
+    if (!initialData?.homestay_id || imageActionLoading) return;
+    setImageActionLoading(true);
+    try {
+      await api.delete(`${API}/homestays/${initialData.homestay_id}/images/${imageId}`);
+      setExistingImages((prev) => prev.filter((img) => img.image_id !== imageId));
+      if (typeof onImagesChanged === "function") onImagesChanged();
+    } catch (err) {
+      console.error("Error deleting image:", err);
+      window.alert(err.response?.data?.message || "Failed to delete image");
+    } finally {
+      setImageActionLoading(false);
+    }
+  };
+
+  const handleSetPrimaryImage = async (imageId) => {
+    if (!initialData?.homestay_id || imageActionLoading) return;
+    setImageActionLoading(true);
+    try {
+      await api.patch(`${API}/homestays/${initialData.homestay_id}/images/${imageId}/primary`, {});
+      setExistingImages((prev) =>
+        prev.map((img) => ({ ...img, is_primary: img.image_id === imageId }))
+      );
+      if (typeof onImagesChanged === "function") onImagesChanged();
+    } catch (err) {
+      console.error("Error setting primary image:", err);
+      const message =
+        err.response?.data?.message ||
+        (typeof err.response?.data === "string" ? err.response.data : null) ||
+        err.message ||
+        "Failed to set primary image";
+      window.alert(message);
+    } finally {
+      setImageActionLoading(false);
+    }
   };
 
   return (
@@ -406,30 +457,65 @@ const HomestayForm = ({ trails, onSubmit, onCancel, initialData, isSubmitting })
                 ))}
               </div>
             )}
+            {initialData && (
+              <label className="mt-3 inline-flex items-center gap-2 text-sm text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={replaceExistingImages}
+                  onChange={(e) => setReplaceExistingImages(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                Replace all current photos with newly uploaded ones
+              </label>
+            )}
           </div>
 
           {/* Existing images (edit mode) */}
-          {initialData?.images && initialData.images.length > 0 && (
+          {initialData && existingImages.length > 0 && (
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                 Current Photos
               </label>
               <div className="flex gap-2 flex-wrap">
-                {initialData.images.map((img) => (
-                  <div key={img.image_id} className="relative">
+                {existingImages.map((img) => (
+                  <div key={img.image_id} className="relative space-y-1">
                     <img
                       src={`http://localhost:5000${img.image_path}`}
                       alt="Homestay"
                       className="h-20 w-20 object-cover rounded-lg border"
                     />
                     {img.is_primary && (
-                      <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                      <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded-full inline-flex items-center gap-1">
+                        <Star className="h-2.5 w-2.5" />
                         Primary
                       </span>
                     )}
+                    <div className="flex gap-1">
+                      {!img.is_primary && (
+                        <button
+                          type="button"
+                          onClick={() => handleSetPrimaryImage(img.image_id)}
+                          disabled={imageActionLoading}
+                          className="text-[10px] px-1.5 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 disabled:opacity-60"
+                        >
+                          Set Primary
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteExistingImage(img.image_id)}
+                        disabled={imageActionLoading}
+                        className="text-[10px] px-1.5 py-1 rounded bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 disabled:opacity-60"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
+              <p className="text-xs text-gray-400 mt-2">
+                Tip: Use "Set Primary" to choose cover photo, or remove old photos and upload new ones.
+              </p>
             </div>
           )}
 
@@ -759,6 +845,8 @@ const HostDashboard = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [expandedCard, setExpandedCard] = useState(null);
   const [notification, setNotification] = useState(null);
+  const [bookings, setBookings] = useState([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
 
   // Auth check
   useEffect(() => {
@@ -789,13 +877,27 @@ const HostDashboard = () => {
     }
   }, []);
 
+  const fetchHostBookings = useCallback(async () => {
+    setBookingsLoading(true);
+    try {
+      const res = await api.get(`/api/bookings/host`);
+      setBookings(res.data.bookings || []);
+    } catch (err) {
+      console.error("Error fetching host bookings:", err);
+      showNotification("Failed to load bookings", "error");
+    } finally {
+      setBookingsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (isLoading || !user) return;
     const interval = setInterval(() => {
       fetchHomestays();
+      fetchHostBookings();
     }, 15000);
     return () => clearInterval(interval);
-  }, [isLoading, user, fetchHomestays]);
+  }, [isLoading, user, fetchHomestays, fetchHostBookings]);
 
   // Fetch trails for dropdown
   const fetchTrails = useCallback(async () => {
@@ -810,9 +912,10 @@ const HostDashboard = () => {
   useEffect(() => {
     if (!isLoading && user) {
       fetchHomestays();
+      fetchHostBookings();
       fetchTrails();
     }
-  }, [isLoading, user, fetchHomestays, fetchTrails]);
+  }, [isLoading, user, fetchHomestays, fetchHostBookings, fetchTrails]);
 
   // Create homestay
   const handleCreate = async (formData) => {
@@ -905,6 +1008,7 @@ const HostDashboard = () => {
     pending: homestays.filter((h) => h.verified_status === "pending").length,
     approved: homestays.filter((h) => h.verified_status === "approved").length,
     rejected: homestays.filter((h) => h.verified_status === "rejected").length,
+    bookings: bookings.filter((b) => b.status === "confirmed").length,
   };
 
   if (isLoading) {
@@ -975,11 +1079,12 @@ const HostDashboard = () => {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
           <StatCard icon={Home} label="Total Listings" value={stats.total} accent="blue" />
           <StatCard icon={Clock} label="Pending Review" value={stats.pending} accent="amber" />
           <StatCard icon={CheckCircle} label="Approved" value={stats.approved} accent="emerald" />
           <StatCard icon={XCircle} label="Rejected" value={stats.rejected} accent="purple" />
+          <StatCard icon={CalendarDays} label="Active Bookings" value={stats.bookings} accent="blue" />
         </div>
 
         {/* Homestay Listings */}
@@ -1028,6 +1133,73 @@ const HostDashboard = () => {
             ))}
           </div>
         )}
+
+        <div className="mt-10 mb-4">
+          <h2 className="text-xl font-bold text-gray-900">Recent Booking Requests</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            New reservations from tourists are shown here in real time.
+          </p>
+        </div>
+
+        {bookingsLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-7 w-7 text-blue-600 animate-spin" />
+          </div>
+        ) : bookings.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-500">
+            No bookings yet. Once tourists book rooms, details will appear here.
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600 uppercase text-xs tracking-wider">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Booking</th>
+                    <th className="px-4 py-3 text-left">Tourist</th>
+                    <th className="px-4 py-3 text-left">Stay</th>
+                    <th className="px-4 py-3 text-left">Rooms/Guests</th>
+                    <th className="px-4 py-3 text-left">Amount</th>
+                    <th className="px-4 py-3 text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {bookings.map((booking) => {
+                    const isCancelled = booking.status === "cancelled";
+                    return (
+                      <tr key={booking.booking_id} className="hover:bg-gray-50/80">
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-gray-900">{booking.booking_code}</p>
+                          <p className="text-gray-500 text-xs">{booking.homestay_name}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-gray-800">{booking.tourist_name}</p>
+                          <p className="text-xs text-gray-500">{booking.tourist_email}</p>
+                        </td>
+                        <td className="px-4 py-3 text-gray-700">
+                          <p>{new Date(booking.check_in_date).toLocaleDateString()} - {new Date(booking.check_out_date).toLocaleDateString()}</p>
+                          <p className="text-xs text-gray-500">Booked on {new Date(booking.created_at).toLocaleDateString()}</p>
+                        </td>
+                        <td className="px-4 py-3 text-gray-700">
+                          {booking.rooms_booked} room{booking.rooms_booked > 1 ? "s" : ""} / {booking.guests_count} guests
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-gray-900">
+                          NPR {Number(booking.total_price || 0).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${isCancelled ? "bg-red-50 text-red-700 border border-red-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
+                            {isCancelled ? <XCircle className="h-3.5 w-3.5" /> : <BadgeCheck className="h-3.5 w-3.5" />}
+                            {isCancelled ? "Cancelled" : "Confirmed"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Create Form Modal */}
@@ -1037,6 +1209,7 @@ const HostDashboard = () => {
           onSubmit={handleCreate}
           onCancel={() => setShowCreateForm(false)}
           isSubmitting={isSubmitting}
+          onImagesChanged={fetchHomestays}
         />
       )}
 
@@ -1048,6 +1221,7 @@ const HostDashboard = () => {
           onCancel={() => setEditingHomestay(null)}
           initialData={editingHomestay}
           isSubmitting={isSubmitting}
+          onImagesChanged={fetchHomestays}
         />
       )}
 

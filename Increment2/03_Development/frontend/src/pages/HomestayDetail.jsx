@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import {
   ArrowLeft,
@@ -19,6 +19,9 @@ import {
   Snowflake,
   Star,
   ChevronRight,
+  CalendarDays,
+  MessageSquare,
+  Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { Header } from "../components/Header";
@@ -26,6 +29,7 @@ import { Footer } from "../components/Footer";
 import { useAuth } from "../context/AuthContext";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
+import api from "../api";
 
 const API = "http://localhost:5000";
 const MOTION_CURVE = [0.22, 1, 0.36, 1];
@@ -115,6 +119,7 @@ const extractGoogleMapSrc = (rawValue) => {
 
 const HomestayDetail = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const {
     handleLogout,
@@ -125,12 +130,31 @@ const HomestayDetail = () => {
   const [homestay, setHomestay] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [bookingForm, setBookingForm] = useState({
+    check_in_date: "",
+    check_out_date: "",
+    rooms_booked: 1,
+    guests_count: 1,
+    contact_phone: "",
+    special_requests: "",
+  });
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
+  const [bookingFeedback, setBookingFeedback] = useState(null);
+
+  const loadHomestay = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/api/homestays/public/${id}`);
+      setHomestay(res.data.homestay);
+    } catch (err) {
+      console.error(err);
+      setHomestay(null);
+    }
+  }, [id]);
 
   useEffect(() => {
     const fetchHomestay = async () => {
       try {
-        const res = await axios.get(`${API}/api/homestays/public/${id}`);
-        setHomestay(res.data.homestay);
+        await loadHomestay();
       } catch (err) {
         console.error(err);
         setHomestay(null);
@@ -140,7 +164,68 @@ const HomestayDetail = () => {
     };
 
     fetchHomestay();
-  }, [id]);
+  }, [loadHomestay]);
+
+  const handleBookingField = (field, value) => {
+    setBookingFeedback(null);
+    setBookingForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleBookHomestay = async (event) => {
+    event.preventDefault();
+    setBookingFeedback(null);
+
+    if (!user) {
+      navigate("/login", { replace: false });
+      return;
+    }
+
+    if (user.user_type !== "tourist") {
+      setBookingFeedback({
+        type: "error",
+        message: "Only tourist accounts can book homestay rooms.",
+      });
+      return;
+    }
+
+    const payload = {
+      homestay_id: homestay.homestay_id,
+      check_in_date: bookingForm.check_in_date,
+      check_out_date: bookingForm.check_out_date,
+      rooms_booked: Number(bookingForm.rooms_booked),
+      guests_count: Number(bookingForm.guests_count),
+      contact_phone: bookingForm.contact_phone.trim(),
+      special_requests: bookingForm.special_requests.trim(),
+    };
+
+    setBookingSubmitting(true);
+    try {
+      const res = await api.post("/api/bookings", payload);
+
+      setBookingFeedback({
+        type: "success",
+        message: `${res.data.message}. Booking code: ${res.data.booking.booking_code}`,
+      });
+
+      setBookingForm({
+        check_in_date: "",
+        check_out_date: "",
+        rooms_booked: 1,
+        guests_count: 1,
+        contact_phone: bookingForm.contact_phone,
+        special_requests: "",
+      });
+
+      await loadHomestay();
+    } catch (err) {
+      setBookingFeedback({
+        type: "error",
+        message: err.response?.data?.message || "Failed to create booking. Please try again.",
+      });
+    } finally {
+      setBookingSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     setActiveImageIndex(0);
@@ -188,6 +273,7 @@ const HomestayDetail = () => {
   const totalRooms = Number(homestay.total_rooms ?? 0);
   const googleMapSrc = extractGoogleMapSrc(homestay.google_map_iframe_link);
   const isSoldOut = availableRooms <= 0;
+  const todayIso = new Date().toISOString().slice(0, 10);
 
   const amenityCards = amenities.map((item) => ({ ...getAmenityMeta(item), raw: item }));
 
@@ -333,6 +419,119 @@ const HomestayDetail = () => {
                 )}
               </div>
             </motion.div>
+
+            <motion.form
+              variants={itemVariants}
+              whileHover={{ y: -2 }}
+              transition={{ duration: MOTION_DURATION, ease: MOTION_CURVE }}
+              className="rounded-3xl border border-gold/25 bg-gradient-to-br from-white via-[#fffdf8] to-gold-pale/40 p-6 shadow-[0_10px_24px_rgba(12,35,64,0.06)]"
+              onSubmit={handleBookHomestay}
+            >
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-navy/70">Book This Homestay</p>
+                  <p className="text-sm text-gray-500 mt-1">Reserve rooms instantly. Payment can be settled with the host.</p>
+                </div>
+                <CalendarDays className="h-5 w-5 text-gold" />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="text-xs font-semibold text-gray-600">
+                  Check-in Date
+                  <input
+                    type="date"
+                    min={todayIso}
+                    value={bookingForm.check_in_date}
+                    onChange={(e) => handleBookingField("check_in_date", e.target.value)}
+                    required
+                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                  />
+                </label>
+
+                <label className="text-xs font-semibold text-gray-600">
+                  Check-out Date
+                  <input
+                    type="date"
+                    min={bookingForm.check_in_date || todayIso}
+                    value={bookingForm.check_out_date}
+                    onChange={(e) => handleBookingField("check_out_date", e.target.value)}
+                    required
+                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                  />
+                </label>
+
+                <label className="text-xs font-semibold text-gray-600">
+                  Rooms Needed
+                  <input
+                    type="number"
+                    min="1"
+                    max={Math.max(1, availableRooms)}
+                    value={bookingForm.rooms_booked}
+                    onChange={(e) => handleBookingField("rooms_booked", e.target.value)}
+                    required
+                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                  />
+                </label>
+
+                <label className="text-xs font-semibold text-gray-600">
+                  Guests Count
+                  <input
+                    type="number"
+                    min="1"
+                    value={bookingForm.guests_count}
+                    onChange={(e) => handleBookingField("guests_count", e.target.value)}
+                    required
+                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                  />
+                </label>
+              </div>
+
+              <label className="mt-3 block text-xs font-semibold text-gray-600">
+                Contact Phone
+                <input
+                  type="text"
+                  value={bookingForm.contact_phone}
+                  onChange={(e) => handleBookingField("contact_phone", e.target.value)}
+                  placeholder="Optional phone for host confirmation"
+                  className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                />
+              </label>
+
+              <label className="mt-3 block text-xs font-semibold text-gray-600">
+                Special Request
+                <div className="relative mt-1">
+                  <MessageSquare className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-300" />
+                  <textarea
+                    value={bookingForm.special_requests}
+                    onChange={(e) => handleBookingField("special_requests", e.target.value)}
+                    rows={3}
+                    placeholder="Arrival notes, food preference, etc."
+                    className="w-full rounded-xl border border-gray-200 bg-white pl-9 pr-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                  />
+                </div>
+              </label>
+
+              {bookingFeedback && (
+                <p className={`mt-3 text-sm font-medium ${bookingFeedback.type === "success" ? "text-emerald-700" : "text-red-600"}`}>
+                  {bookingFeedback.message}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSoldOut || bookingSubmitting || user?.user_type === "host" || user?.user_type === "guide" || user?.user_type === "admin"}
+                className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${isSoldOut ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gradient-to-r from-gold to-[#D4A43A] text-navy shadow-md hover:shadow-lg hover:-translate-y-0.5"}`}
+              >
+                {bookingSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isSoldOut ? "Fully Booked" : bookingSubmitting ? "Booking..." : "Book Rooms Now"}
+              </button>
+
+              {!user && (
+                <p className="mt-2 text-xs text-gray-500">
+                  Please login as a tourist account to make a booking.
+                </p>
+              )}
+            </motion.form>
 
             {amenityCards.length > 0 && (
               <motion.div
