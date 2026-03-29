@@ -24,6 +24,57 @@ const parseCoordinate = (rawValue, fieldName, min, max) => {
   return { value: parsed, error: null };
 };
 
+const parsePositiveInt = (rawValue, fieldName) => {
+  if (rawValue === undefined || rawValue === null || rawValue === "") {
+    return { value: null, error: null };
+  }
+
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    return { value: null, error: `${fieldName} must be a non-negative integer` };
+  }
+
+  return { value: parsed, error: null };
+};
+
+const normalizeAmenities = (rawAmenities) => {
+  if (Array.isArray(rawAmenities)) {
+    return rawAmenities
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+  }
+
+  if (typeof rawAmenities === "string") {
+    return rawAmenities
+      .split(/,|\n/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+};
+
+const normalizeGoogleMapLink = (rawValue) => {
+  const value = String(rawValue || "").trim();
+  if (!value) return null;
+
+  let candidate = value;
+  const iframeSrcMatch = value.match(/src\s*=\s*['\"]([^'\"]+)['\"]/i);
+  if (iframeSrcMatch?.[1]) {
+    candidate = iframeSrcMatch[1];
+  }
+
+  try {
+    const parsedUrl = new URL(candidate);
+    const host = parsedUrl.hostname.toLowerCase();
+    const isGoogleMapsHost = host.includes("google.com") || host.includes("goo.gl") || host.includes("googleusercontent.com");
+    if (!isGoogleMapsHost) return null;
+    return parsedUrl.toString();
+  } catch {
+    return null;
+  }
+};
+
 /* =========================
    GET ALL TRAILS (for dropdown — public trail list)
 ========================= */
@@ -135,6 +186,10 @@ export const createHomestay = async (req, res) => {
       latitude,
       longitude,
       contact_phone,
+      amenities,
+      total_rooms,
+      available_rooms,
+      google_map_iframe_link,
     } = req.body;
 
     const latitudeParsed = parseCoordinate(latitude, "latitude", -90, 90);
@@ -162,6 +217,33 @@ export const createHomestay = async (req, res) => {
       });
     }
 
+    const totalRoomsParsed = parsePositiveInt(total_rooms, "total_rooms");
+    const availableRoomsParsed = parsePositiveInt(available_rooms, "available_rooms");
+    if (totalRoomsParsed.error || availableRoomsParsed.error) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: totalRoomsParsed.error || availableRoomsParsed.error,
+      });
+    }
+
+    const totalRoomsValue = totalRoomsParsed.value ?? 1;
+    const availableRoomsValue = availableRoomsParsed.value ?? totalRoomsValue;
+    if (availableRoomsValue > totalRoomsValue) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: "available_rooms cannot be greater than total_rooms",
+      });
+    }
+
+    const normalizedAmenities = normalizeAmenities(amenities);
+    const normalizedMapLink = normalizeGoogleMapLink(google_map_iframe_link);
+    if (google_map_iframe_link && !normalizedMapLink) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: "google_map_iframe_link must be a valid Google Maps URL or iframe embed",
+      });
+    }
+
     // Verify trail exists
     const trailCheck = await client.query(
       `SELECT trail_id FROM trekking_trails WHERE trail_id = $1`,
@@ -175,8 +257,8 @@ export const createHomestay = async (req, res) => {
     // Insert homestay (verified_status defaults to 'pending')
     const homestayResult = await client.query(
       `INSERT INTO homestays
-        (host_id, trail_id, name, location, price_per_night, capacity, description, latitude, longitude, contact_phone)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        (host_id, trail_id, name, location, price_per_night, capacity, description, latitude, longitude, contact_phone, amenities, total_rooms, available_rooms, google_map_iframe_link)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
       [
         hostId,
@@ -189,6 +271,10 @@ export const createHomestay = async (req, res) => {
         latitudeParsed.value,
         longitudeParsed.value,
         contact_phone || null,
+        normalizedAmenities,
+        totalRoomsValue,
+        availableRoomsValue,
+        normalizedMapLink,
       ]
     );
 
@@ -275,6 +361,10 @@ export const updateHomestay = async (req, res) => {
       latitude,
       longitude,
       contact_phone,
+      amenities,
+      total_rooms,
+      available_rooms,
+      google_map_iframe_link,
     } = req.body;
 
     const hasLatitude = Object.prototype.hasOwnProperty.call(req.body, "latitude");
@@ -289,6 +379,10 @@ export const updateHomestay = async (req, res) => {
 
     let latitudeValue = existingHomestay.latitude;
     let longitudeValue = existingHomestay.longitude;
+    let totalRoomsValue = existingHomestay.total_rooms ?? 1;
+    let availableRoomsValue = existingHomestay.available_rooms ?? existingHomestay.total_rooms ?? 1;
+    let amenitiesValue = existingHomestay.amenities ?? [];
+    let mapLinkValue = existingHomestay.google_map_iframe_link ?? null;
 
     if (hasLatitude && hasLongitude) {
       const latitudeParsed = parseCoordinate(latitude, "latitude", -90, 90);
@@ -312,6 +406,54 @@ export const updateHomestay = async (req, res) => {
       longitudeValue = longitudeParsed.value;
     }
 
+    if (Object.prototype.hasOwnProperty.call(req.body, "total_rooms")) {
+      const totalRoomsParsed = parsePositiveInt(total_rooms, "total_rooms");
+      if (totalRoomsParsed.error || totalRoomsParsed.value === null || totalRoomsParsed.value < 1) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: totalRoomsParsed.error || "total_rooms must be at least 1",
+        });
+      }
+      totalRoomsValue = totalRoomsParsed.value;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "available_rooms")) {
+      const availableRoomsParsed = parsePositiveInt(available_rooms, "available_rooms");
+      if (availableRoomsParsed.error || availableRoomsParsed.value === null) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: availableRoomsParsed.error || "available_rooms is invalid",
+        });
+      }
+      availableRoomsValue = availableRoomsParsed.value;
+    }
+
+    if (availableRoomsValue > totalRoomsValue) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: "available_rooms cannot be greater than total_rooms",
+      });
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "amenities")) {
+      amenitiesValue = normalizeAmenities(amenities);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "google_map_iframe_link")) {
+      if (!String(google_map_iframe_link || "").trim()) {
+        mapLinkValue = null;
+      } else {
+        const normalizedMapLink = normalizeGoogleMapLink(google_map_iframe_link);
+        if (!normalizedMapLink) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({
+            message: "google_map_iframe_link must be a valid Google Maps URL or iframe embed",
+          });
+        }
+        mapLinkValue = normalizedMapLink;
+      }
+    }
+
     // Update homestay (reset verified_status to pending on edit)
     await client.query(
       `UPDATE homestays SET
@@ -324,9 +466,13 @@ export const updateHomestay = async (req, res) => {
         latitude = $7,
         longitude = $8,
         contact_phone = $9,
+        amenities = $10,
+        total_rooms = $11,
+        available_rooms = $12,
+        google_map_iframe_link = $13,
         verified_status = 'pending',
         updated_at = CURRENT_TIMESTAMP
-       WHERE homestay_id = $10 AND host_id = $11`,
+       WHERE homestay_id = $14 AND host_id = $15`,
       [
         trail_id || null,
         name || null,
@@ -337,6 +483,10 @@ export const updateHomestay = async (req, res) => {
         latitudeValue,
         longitudeValue,
         contact_phone || null,
+        amenitiesValue,
+        totalRoomsValue,
+        availableRoomsValue,
+        mapLinkValue,
         id,
         hostId,
       ]
@@ -515,6 +665,108 @@ export const toggleHomestayActive = async (req, res) => {
 };
 
 /* =========================
+   UPDATE AVAILABLE ROOMS (owner only)
+========================= */
+export const updateHomestayAvailableRooms = async (req, res) => {
+  try {
+    const homestayId = Number.parseInt(req.params.id, 10);
+    const hostId = req.user.user_id;
+    const { available_rooms, total_rooms } = req.body;
+
+    if (!Number.isInteger(homestayId) || homestayId <= 0) {
+      return res.status(400).json({ message: "Invalid homestay id" });
+    }
+
+    const availableParsed = parsePositiveInt(available_rooms, "available_rooms");
+    const totalParsed = parsePositiveInt(total_rooms, "total_rooms");
+    if (availableParsed.error || availableParsed.value === null) {
+      return res.status(400).json({
+        message: availableParsed.error || "available_rooms is required",
+      });
+    }
+
+    if (total_rooms !== undefined && (totalParsed.error || totalParsed.value === null || totalParsed.value < 1)) {
+      return res.status(400).json({
+        message: totalParsed.error || "total_rooms must be at least 1",
+      });
+    }
+
+    const ownership = await pool.query(
+      `SELECT homestay_id, total_rooms FROM homestays WHERE homestay_id = $1 AND host_id = $2`,
+      [homestayId, hostId]
+    );
+
+    if (!ownership.rows.length) {
+      return res.status(404).json({ message: "Homestay not found or not owned by you" });
+    }
+
+    const totalRooms = totalParsed.value ?? ownership.rows[0].total_rooms ?? 0;
+    if (availableParsed.value > totalRooms) {
+      return res.status(400).json({ message: "available_rooms cannot be greater than total_rooms" });
+    }
+
+    const result = await pool.query(
+      `UPDATE homestays
+       SET available_rooms = $1,
+           total_rooms = $2,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE homestay_id = $3 AND host_id = $4
+       RETURNING *`,
+      [availableParsed.value, totalRooms, homestayId, hostId]
+    );
+
+    res.status(200).json({
+      message: "Available rooms updated successfully",
+      homestay: result.rows[0],
+    });
+  } catch (err) {
+    console.error("Error updating available rooms:", err);
+    res.status(500).json({ message: "Server error updating available rooms" });
+  }
+};
+
+/* =========================
+   PUBLIC: GET HOMESTAY DETAIL BY ID
+========================= */
+export const getPublicHomestayById = async (req, res) => {
+  try {
+    const homestayId = Number.parseInt(req.params.id, 10);
+    if (!Number.isInteger(homestayId) || homestayId <= 0) {
+      return res.status(400).json({ message: "Invalid homestay id" });
+    }
+
+    const result = await pool.query(
+      `SELECT h.*, t.trail_name, t.region, t.trail_id
+       FROM homestays h
+       JOIN trekking_trails t ON h.trail_id = t.trail_id
+       WHERE h.homestay_id = $1
+         AND h.verified_status = 'approved'
+         AND h.is_active = true`,
+      [homestayId]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ message: "Homestay not found" });
+    }
+
+    const homestay = result.rows[0];
+    const imagesResult = await pool.query(
+      `SELECT image_id, image_path, is_primary
+       FROM homestay_images
+       WHERE homestay_id = $1
+       ORDER BY is_primary DESC, uploaded_at ASC`,
+      [homestayId]
+    );
+    homestay.images = imagesResult.rows;
+
+    res.status(200).json({ homestay });
+  } catch (err) {
+    console.error("Error fetching public homestay detail:", err);
+    res.status(500).json({ message: "Server error fetching homestay detail" });
+  }
+};
+
+/* =========================
    PUBLIC: GET APPROVED HOMESTAYS BY TRAIL
 ========================= */
 export const getPublicHomestaysByTrail = async (req, res) => {
@@ -522,7 +774,8 @@ export const getPublicHomestaysByTrail = async (req, res) => {
     const { trailId } = req.params;
     const result = await pool.query(
       `SELECT homestay_id, name, location, price_per_night, capacity,
-              description, contact_phone, latitude, longitude, is_active
+              description, contact_phone, latitude, longitude, is_active,
+              amenities, total_rooms, available_rooms, google_map_iframe_link
        FROM homestays
        WHERE trail_id = $1
          AND verified_status = 'approved'

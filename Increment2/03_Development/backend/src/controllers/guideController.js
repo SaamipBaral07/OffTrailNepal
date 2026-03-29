@@ -1,5 +1,15 @@
 import pool from "../config/db.js";
 
+const getGuideVerificationStatus = async (guideId) => {
+  const result = await pool.query(
+    `SELECT verification_status
+     FROM guide_verifications
+     WHERE guide_id = $1`,
+    [guideId]
+  );
+  return result.rows[0]?.verification_status || null;
+};
+
 /* =========================
    GET ALL TRAILS (for dropdown)
 ========================= */
@@ -25,6 +35,13 @@ export const addGuideToTrail = async (req, res) => {
   try {
     const guideId = req.user.user_id;
     const { trail_id, price_per_day, experience_level } = req.body;
+
+    const verificationStatus = await getGuideVerificationStatus(guideId);
+    if (verificationStatus !== "approved") {
+      return res.status(403).json({
+        message: "Guide verification must be approved by admin before creating listings",
+      });
+    }
 
     // Validate required fields
     if (!trail_id || !price_per_day || !experience_level) {
@@ -249,8 +266,10 @@ export const getGuidesByTrail = async (req, res) => {
               g.guide_id, g.full_name, g.phone, g.experience_years, g.license_no
        FROM guide_trails gt
        JOIN guides g ON gt.guide_id = g.guide_id
+       JOIN guide_verifications gv ON gv.guide_id = g.guide_id
        WHERE gt.trail_id = $1
          AND gt.is_active = true
+         AND gv.verification_status = 'approved'
        ORDER BY gt.price_per_day ASC`,
       [trailId]
     );
@@ -276,14 +295,20 @@ export const getAllGuidesAdmin = async (req, res) => {
         g.phone, 
         g.experience_years, 
         g.created_at,
+        COALESCE(gv.verification_status, 'not_submitted') AS verification_status,
+        gv.citizenship_doc_path,
+        gv.guide_license_doc_path,
+        gv.rejection_reason,
+        gv.reviewed_at,
         COUNT(DISTINCT gt.id) AS total_trails,
         COUNT(DISTINCT gs.service_id) AS total_services,
         COALESCE(ROUND(AVG(gr.rating), 1), 0) AS avg_rating
       FROM guides g
+      LEFT JOIN guide_verifications gv ON g.guide_id = gv.guide_id
       LEFT JOIN guide_trails gt ON g.guide_id = gt.guide_id
       LEFT JOIN guide_services gs ON g.guide_id = gs.guide_id
       LEFT JOIN guide_reviews gr ON g.guide_id = gr.guide_id
-      GROUP BY g.guide_id
+      GROUP BY g.guide_id, gv.verification_status, gv.citizenship_doc_path, gv.guide_license_doc_path, gv.rejection_reason, gv.reviewed_at
       ORDER BY g.created_at DESC
     `);
     

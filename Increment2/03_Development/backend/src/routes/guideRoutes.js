@@ -1,4 +1,8 @@
 import express from "express";
+import multer from "multer";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
 import { verifyToken } from "../middleware/authMiddleware.js";
 import {
   getTrailsForGuide,
@@ -10,6 +14,11 @@ import {
   getGuidesByTrail,
   getAllGuidesAdmin,
 } from "../controllers/guideController.js";
+import {
+  getMyGuideVerificationStatus,
+  submitGuideVerificationDocs,
+  updateGuideVerificationStatus,
+} from "../controllers/guideVerificationController.js";
 import { getMyAvailability, toggleAvailability } from "../controllers/guideAvailabilityController.js";
 import { getMyReviews } from "../controllers/guideReviewController.js";
 import {
@@ -21,6 +30,59 @@ import {
 } from "../controllers/guideServiceController.js";
 
 const router = express.Router();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const srcDir = path.resolve(__dirname, "..");
+const verificationDir = path.join(srcDir, "uploads", "guide-verifications");
+
+if (!fs.existsSync(verificationDir)) {
+  fs.mkdirSync(verificationDir, { recursive: true });
+}
+
+const verificationStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, verificationDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, `${file.fieldname}-${uniqueSuffix}${ext}`);
+  },
+});
+
+const verificationFileFilter = (req, file, cb) => {
+  const allowedTypes = /jpeg|jpg|png|webp/;
+  const extValid = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const mimeValid = allowedTypes.test(file.mimetype);
+  if (extValid && mimeValid) {
+    cb(null, true);
+  } else {
+    cb(new Error("Only image files (jpg, png, webp) are allowed"), false);
+  }
+};
+
+const verificationUpload = multer({
+  storage: verificationStorage,
+  fileFilter: verificationFileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+const verificationUploadFields = verificationUpload.fields([
+  { name: "citizenship_image", maxCount: 1 },
+  { name: "guide_license_image", maxCount: 1 },
+]);
+
+const verificationUploadSafe = (req, res, next) => {
+  verificationUploadFields(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ message: "File too large. Max size is 5 MB per file." });
+    }
+    if (err.code === "LIMIT_UNEXPECTED_FILE") {
+      return res.status(400).json({ message: `Unexpected file field \"${err.field}\" in verification upload.` });
+    }
+    return res.status(400).json({ message: err.message || "Verification document upload error." });
+  });
+};
 
 // Guide-only middleware
 const requireGuide = (req, res, next) => {
@@ -44,6 +106,12 @@ const requireAdmin = (req, res, next) => {
 router.get("/public/trail/:trailId", getGuidesByTrail);
 
 /* ─── GUIDE TRAIL ROUTES ─── */
+
+// Get verification status for current guide
+router.get("/verification-status", verifyToken, requireGuide, getMyGuideVerificationStatus);
+
+// Submit or resubmit verification docs
+router.post("/verification-docs", verifyToken, requireGuide, verificationUploadSafe, submitGuideVerificationDocs);
 
 // Get trails list for dropdown
 router.get("/trails-list", verifyToken, requireGuide, getTrailsForGuide);
@@ -89,6 +157,7 @@ router.get("/reviews", verifyToken, requireGuide, getMyReviews);
 
 /* ─── ADMIN ROUTES ─── */
 router.get("/admin/all", verifyToken, requireAdmin, getAllGuidesAdmin);
+router.patch("/admin/:guideId/verification-status", verifyToken, requireAdmin, updateGuideVerificationStatus);
 
 export default router;
 

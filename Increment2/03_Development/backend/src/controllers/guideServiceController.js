@@ -9,6 +9,19 @@ export const createService = async (req, res) => {
     const guideId = req.user.user_id;
     const { trail_id, title, price_per_day, max_group_size, description } = req.body;
 
+    const verificationCheck = await pool.query(
+      `SELECT verification_status
+       FROM guide_verifications
+       WHERE guide_id = $1`,
+      [guideId]
+    );
+
+    if (verificationCheck.rows[0]?.verification_status !== "approved") {
+      return res.status(403).json({
+        message: "Guide verification must be approved by admin before offering services",
+      });
+    }
+
     // Validate required fields
     if (!trail_id || !title || !price_per_day) {
       return res.status(400).json({
@@ -235,9 +248,11 @@ export const getPublicServicesByTrail = async (req, res) => {
        JOIN guides g         ON gs.guide_id  = g.guide_id
        JOIN guide_trails gt  ON gs.guide_id  = gt.guide_id
                             AND gs.trail_id  = gt.trail_id
+      JOIN guide_verifications gv ON gs.guide_id = gv.guide_id
        WHERE gs.trail_id = $1
          AND gs.is_active = true
          AND gt.is_active = true
+         AND gv.verification_status = 'approved'
        ORDER BY gs.price_per_day ASC`,
       [trailId]
     );

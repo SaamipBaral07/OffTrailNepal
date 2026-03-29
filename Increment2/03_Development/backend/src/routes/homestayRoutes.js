@@ -13,9 +13,11 @@ import {
   deleteHomestay,
   deleteHomestayImage,
   toggleHomestayActive,
+  updateHomestayAvailableRooms,
   getAllHomestaysForAdmin,
   updateHomestayStatus,
   getPublicHomestaysByTrail,
+  getPublicHomestayById,
 } from "../controllers/homestayController.js";
 
 const router = express.Router();
@@ -79,6 +81,9 @@ const requireAdmin = (req, res, next) => {
 // Get approved homestays for a specific trail (used on TrailDetail page)
 router.get("/public/trail/:trailId", getPublicHomestaysByTrail);
 
+// Get one approved homestay detail
+router.get("/public/:id", getPublicHomestayById);
+
 /* ─── ADMIN ROUTES (must be before :id params) ─── */
 
 // Get all homestays for approval
@@ -112,5 +117,8 @@ router.delete("/:homestayId/images/:imageId", verifyToken, requireHost, deleteHo
 
 // Toggle active status
 router.patch("/:id/toggle-active", verifyToken, requireHost, toggleHomestayActive);
+
+// Update available rooms in real-time (manual host update)
+router.patch("/:id/rooms", verifyToken, requireHost, updateHomestayAvailableRooms);
 
 export default router;
