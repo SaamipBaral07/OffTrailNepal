@@ -24,6 +24,8 @@ import { motion } from "framer-motion";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import { useAuth } from "../context/AuthContext";
+import { useLogoutHandler } from "../hooks/useLogoutHandler";
+import LogoutModal from "../components/LogoutModal";
 
 const API = "http://localhost:5000";
 const MOTION_CURVE = [0.22, 1, 0.36, 1];
@@ -114,6 +116,12 @@ const extractGoogleMapSrc = (rawValue) => {
 const HomestayDetail = () => {
   const { id } = useParams();
   const { user } = useAuth();
+  const {
+    handleLogout,
+    handleStayLoggedIn,
+    showLogoutModal,
+    setShowLogoutModal,
+  } = useLogoutHandler();
   const [homestay, setHomestay] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -141,8 +149,14 @@ const HomestayDetail = () => {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#f4f2ee] via-[#faf8f4] to-[#f2efe8]">
-        <Header user={user} />
+        <Header user={user} onLogoutClick={() => setShowLogoutModal(true)} />
         <div className="max-w-7xl mx-auto px-6 pt-32 pb-20 text-center text-gray-500">Loading homestay details...</div>
+
+        <LogoutModal
+          isOpen={showLogoutModal}
+          onConfirm={handleLogout}
+          onCancel={handleStayLoggedIn}
+        />
       </div>
     );
   }
@@ -150,11 +164,17 @@ const HomestayDetail = () => {
   if (!homestay) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#f4f2ee] via-[#faf8f4] to-[#f2efe8]">
-        <Header user={user} />
+        <Header user={user} onLogoutClick={() => setShowLogoutModal(true)} />
         <div className="max-w-7xl mx-auto px-6 pt-32 pb-20">
           <p className="text-gray-600 mb-4">Homestay not found.</p>
           <Link to="/" className="text-blue-600 font-semibold hover:underline">Back to trails</Link>
         </div>
+
+        <LogoutModal
+          isOpen={showLogoutModal}
+          onConfirm={handleLogout}
+          onCancel={handleStayLoggedIn}
+        />
       </div>
     );
   }
@@ -173,7 +193,7 @@ const HomestayDetail = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-cream via-[#f9f7f3] to-stone/40 font-body">
-      <Header user={user} />
+      <Header user={user} onLogoutClick={() => setShowLogoutModal(true)} />
 
       <motion.main
         className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-20 overflow-hidden"
@@ -374,6 +394,12 @@ const HomestayDetail = () => {
       </motion.main>
 
       <Footer />
+
+      <LogoutModal
+        isOpen={showLogoutModal}
+        onConfirm={handleLogout}
+        onCancel={handleStayLoggedIn}
+      />
     </div>
   );
 };

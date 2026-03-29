@@ -68,6 +68,13 @@ export const Header = ({ user, onLogoutClick }) => {
     setMobileMenuOpen(false);
   };
 
+  const triggerLogout = () => {
+    if (typeof onLogoutClick === "function") {
+      onLogoutClick(true);
+    }
+    setDropdownOpen(false);
+  };
+
   return (
     <>
       {/* ═══════════ FLOATING NAVBAR ═══════════ */}
@@ -256,10 +263,7 @@ export const Header = ({ user, onLogoutClick }) => {
                         </div>
                         <div className="border-t border-gray-100 pt-1">
                           <button
-                            onClick={() => {
-                              onLogoutClick(true);
-                              setDropdownOpen(false);
-                            }}
+                            onClick={triggerLogout}
                             className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 hover:text-red-600 flex items-center gap-3 transition-colors"
                           >
                             <LogOut className="h-4 w-4" />
