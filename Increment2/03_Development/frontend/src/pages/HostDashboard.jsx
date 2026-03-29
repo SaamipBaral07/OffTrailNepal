@@ -107,6 +107,10 @@ const HomestayForm = ({ trails, onSubmit, onCancel, initialData, isSubmitting })
     latitude: initialData?.latitude || "",
     longitude: initialData?.longitude || "",
     contact_phone: initialData?.contact_phone || "",
+    amenities: Array.isArray(initialData?.amenities) ? initialData.amenities.join(", ") : initialData?.amenities || "",
+    total_rooms: initialData?.total_rooms || "1",
+    available_rooms: initialData?.available_rooms ?? initialData?.total_rooms ?? "1",
+    google_map_iframe_link: initialData?.google_map_iframe_link || "",
   });
   const [images, setImages] = useState([]);
   const [imagePreviews, setImagePreviews] = useState([]);
@@ -239,6 +243,70 @@ const HomestayForm = ({ trails, onSubmit, onCancel, initialData, isSubmitting })
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
               />
             </div>
+          </div>
+
+          {/* Room Inventory */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Total Rooms <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                name="total_rooms"
+                value={form.total_rooms}
+                onChange={handleChange}
+                required
+                min="1"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                Available Rooms <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="number"
+                name="available_rooms"
+                value={form.available_rooms}
+                onChange={handleChange}
+                required
+                min="0"
+                max={form.total_rooms || undefined}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+              />
+            </div>
+          </div>
+
+          {/* Amenities */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Amenities
+            </label>
+            <textarea
+              name="amenities"
+              value={form.amenities}
+              onChange={handleChange}
+              rows={2}
+              placeholder="WiFi, Hot Shower, Breakfast, Heater"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 resize-none"
+            />
+            <p className="text-xs text-gray-400 mt-1">Separate amenities by commas.</p>
+          </div>
+
+          {/* Google map iframe link */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+              Google Maps Embed Link / iframe
+            </label>
+            <input
+              type="text"
+              name="google_map_iframe_link"
+              value={form.google_map_iframe_link}
+              onChange={handleChange}
+              placeholder="https://www.google.com/maps/embed?... or full iframe code"
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
+            />
           </div>
 
           {/* Contact Phone */}
@@ -455,9 +523,16 @@ const DeleteModal = ({ homestayName, onConfirm, onCancel, isDeleting }) => (
 /* ─────────────────────────────────────────
    HOMESTAY CARD
 ───────────────────────────────────────── */
-const HomestayCard = ({ homestay, onEdit, onDelete, onToggleActive, expanded, onToggleExpand }) => {
+const HomestayCard = ({ homestay, onEdit, onDelete, onToggleActive, onUpdateRooms, expanded, onToggleExpand }) => {
   const primaryImage = homestay.images?.find((img) => img.is_primary);
   const hasImages = homestay.images && homestay.images.length > 0;
+  const [availableRoomsInput, setAvailableRoomsInput] = useState(String(homestay.available_rooms ?? 0));
+  const [totalRoomsInput, setTotalRoomsInput] = useState(String(homestay.total_rooms ?? 1));
+
+  useEffect(() => {
+    setAvailableRoomsInput(String(homestay.available_rooms ?? 0));
+    setTotalRoomsInput(String(homestay.total_rooms ?? 1));
+  }, [homestay.available_rooms, homestay.total_rooms]);
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
@@ -515,6 +590,9 @@ const HomestayCard = ({ homestay, onEdit, onDelete, onToggleActive, expanded, on
             <Users className="h-3.5 w-3.5 text-violet-500" />
             {homestay.capacity} guests
           </span>
+          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${Number(homestay.available_rooms) > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
+            Rooms: {homestay.available_rooms ?? 0}/{homestay.total_rooms ?? 0}
+          </span>
         </div>
 
         {/* Expanded Details */}
@@ -523,10 +601,80 @@ const HomestayCard = ({ homestay, onEdit, onDelete, onToggleActive, expanded, on
             {homestay.description && (
               <p className="text-sm text-gray-600 leading-relaxed">{homestay.description}</p>
             )}
+            {Array.isArray(homestay.amenities) && homestay.amenities.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Amenities</p>
+                <div className="flex flex-wrap gap-2">
+                  {homestay.amenities.map((a, idx) => (
+                    <span key={`${a}-${idx}`} className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                      {a}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {homestay.contact_phone && (
               <div className="flex items-center gap-1.5 text-sm text-gray-600">
                 <Phone className="h-3.5 w-3.5" />
                 {homestay.contact_phone}
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
+                Total Rooms: <span className="font-semibold text-gray-800">{homestay.total_rooms ?? 0}</span>
+              </div>
+              <div className={`text-sm rounded-lg px-3 py-2 border ${Number(homestay.available_rooms) > 0 ? "text-emerald-700 bg-emerald-50 border-emerald-100" : "text-red-700 bg-red-50 border-red-100"}`}>
+                Available Now: <span className="font-semibold">{homestay.available_rooms ?? 0}</span>
+              </div>
+            </div>
+
+            <form
+              className="flex items-end gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                onUpdateRooms(homestay.homestay_id, totalRoomsInput, availableRoomsInput);
+              }}
+            >
+              <div className="flex-1">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Total Rooms</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={totalRoomsInput}
+                  onChange={(e) => setTotalRoomsInput(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Update Available Rooms</label>
+                <input
+                  type="number"
+                  min="0"
+                  max={totalRoomsInput || homestay.total_rooms || 0}
+                  value={availableRoomsInput}
+                  onChange={(e) => setAvailableRoomsInput(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-3 py-2 text-sm font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                Update
+              </button>
+            </form>
+
+            {homestay.google_map_iframe_link && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Google Map</p>
+                <a
+                  href={homestay.google_map_iframe_link}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm font-semibold text-blue-600 hover:underline"
+                >
+                  Open location in Google Maps
+                </a>
               </div>
             )}
             {homestay.latitude && homestay.longitude && (
@@ -641,6 +789,14 @@ const HostDashboard = () => {
     }
   }, []);
 
+  useEffect(() => {
+    if (isLoading || !user) return;
+    const interval = setInterval(() => {
+      fetchHomestays();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [isLoading, user, fetchHomestays]);
+
   // Fetch trails for dropdown
   const fetchTrails = useCallback(async () => {
     try {
@@ -726,6 +882,20 @@ const HostDashboard = () => {
     } catch (err) {
       console.error("Error toggling status:", err);
       showNotification("Failed to toggle status", "error");
+    }
+  };
+
+  const handleUpdateRooms = async (id, totalRoomsValue, availableRoomsValue) => {
+    try {
+      await api.patch(`${API}/homestays/${id}/rooms`, {
+        total_rooms: Number(totalRoomsValue),
+        available_rooms: Number(availableRoomsValue),
+      });
+      showNotification("Available rooms updated.");
+      fetchHomestays();
+    } catch (err) {
+      console.error("Error updating rooms:", err);
+      showNotification(err.response?.data?.message || "Failed to update available rooms", "error");
     }
   };
 
@@ -851,6 +1021,7 @@ const HostDashboard = () => {
                 onEdit={setEditingHomestay}
                 onDelete={setDeletingHomestay}
                 onToggleActive={handleToggleActive}
+                onUpdateRooms={handleUpdateRooms}
                 expanded={expandedCard === homestay.homestay_id}
                 onToggleExpand={(id) => setExpandedCard(expandedCard === id ? null : id)}
               />

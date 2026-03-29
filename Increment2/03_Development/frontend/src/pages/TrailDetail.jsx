@@ -21,6 +21,14 @@ import {
   ChevronRight,
   Users,
   Compass,
+  Wifi,
+  ShowerHead,
+  UtensilsCrossed,
+  Car,
+  Coffee,
+  Tv,
+  Snowflake,
+  Star,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Header } from "../components/Header";
@@ -30,6 +38,10 @@ import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
 
 const API = "http://localhost:5000";
+const MOTION_CURVE = [0.22, 1, 0.36, 1];
+const MOTION_DURATION = 0.32;
+const MOTION_STAGGER = 0.07;
+const MOTION_STAGGER_TIGHT = 0.05;
 
 const difficultyConfig = {
   Easy: {
@@ -60,6 +72,47 @@ const difficultyConfig = {
     glow: "shadow-red-200",
     fill: 4,
   },
+};
+
+const getAmenityMeta = (rawAmenity) => {
+  const amenity = String(rawAmenity || "").trim();
+  const key = amenity.toLowerCase();
+
+  if (key.includes("wifi") || key.includes("wi-fi") || key.includes("internet")) {
+    return { icon: Wifi, label: amenity || "WiFi", tone: "bg-sky-50 text-sky-700 border-sky-200" };
+  }
+  if (key.includes("shower") || key.includes("bath")) {
+    return { icon: ShowerHead, label: amenity || "Hot Shower", tone: "bg-cyan-50 text-cyan-700 border-cyan-200" };
+  }
+  if (key.includes("solar") && (key.includes("water") || key.includes("hot"))) {
+    return { icon: Coffee, label: amenity || "Solar Hot Water", tone: "bg-amber-50 text-amber-700 border-amber-200" };
+  }
+  if (key.includes("breakfast") || key.includes("dinner") || key.includes("meal") || key.includes("food")) {
+    return { icon: UtensilsCrossed, label: amenity || "Local Meals", tone: "bg-orange-50 text-orange-700 border-orange-200" };
+  }
+  if (key.includes("parking") || key.includes("car")) {
+    return { icon: Car, label: amenity || "Parking", tone: "bg-indigo-50 text-indigo-700 border-indigo-200" };
+  }
+  if (key.includes("coffee") || key.includes("tea")) {
+    return { icon: Coffee, label: amenity || "Tea/Coffee", tone: "bg-rose-50 text-rose-700 border-rose-200" };
+  }
+  if (key.includes("tv") || key.includes("television")) {
+    return { icon: Tv, label: amenity || "TV", tone: "bg-violet-50 text-violet-700 border-violet-200" };
+  }
+  if (key.includes("heater") || key.includes("heating") || key.includes("warm")) {
+    return { icon: Snowflake, label: amenity || "Heating", tone: "bg-red-50 text-red-700 border-red-200" };
+  }
+  if (key.includes("mountain view") || key.includes("view") || key.includes("panorama")) {
+    return { icon: Mountain, label: amenity || "Mountain View", tone: "bg-emerald-50 text-emerald-700 border-emerald-200" };
+  }
+  if (key.includes("attached") && key.includes("bath")) {
+    return { icon: ShowerHead, label: amenity || "Attached Bathroom", tone: "bg-teal-50 text-teal-700 border-teal-200" };
+  }
+  if (key.includes("charging") || key.includes("charge") || key.includes("socket") || key.includes("plug")) {
+    return { icon: Tv, label: amenity || "Charging Point", tone: "bg-lime-50 text-lime-700 border-lime-200" };
+  }
+
+  return { icon: Star, label: amenity || "Amenity", tone: "bg-stone-100 text-stone-700 border-stone-200" };
 };
 
 /* ─────────────────────────────────────────────
@@ -195,9 +248,23 @@ const HomestayCard = ({
   distanceKm = null,
   distanceThresholdKm = 3,
   onSelect,
+  layout = "grid",
 }) => {
   const primary = homestay.images?.find((i) => i.is_primary) || homestay.images?.[0];
   const isNearTrail = Number.isFinite(distanceKm) && distanceKm <= distanceThresholdKm;
+  const totalRooms = Number.isFinite(Number(homestay.total_rooms))
+    ? Number(homestay.total_rooms)
+    : Math.max(1, Number(homestay.capacity || 1));
+  const availableRooms = Number.isFinite(Number(homestay.available_rooms))
+    ? Number(homestay.available_rooms)
+    : totalRooms;
+  const isSoldOut = availableRooms <= 0;
+  const amenities = Array.isArray(homestay.amenities)
+    ? homestay.amenities
+    : typeof homestay.amenities === "string"
+      ? homestay.amenities.split(",").map((a) => a.trim()).filter(Boolean)
+      : [];
+  const isListLayout = layout === "list";
 
   return (
     <motion.div
@@ -205,17 +272,17 @@ const HomestayCard = ({
       id={`homestay-card-${homestay.homestay_id}`}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.07 }}
+      transition={{ delay: index * MOTION_STAGGER, duration: MOTION_DURATION, ease: MOTION_CURVE }}
       onClick={() => onSelect?.(homestay.homestay_id)}
-      className={`bg-white rounded-2xl overflow-hidden border transition-all duration-300 group flex flex-col ${
+      className={`bg-white rounded-2xl overflow-hidden border transition-all duration-300 hover:-translate-y-0.5 group ${isListLayout ? "flex flex-col md:flex-row" : "flex flex-col"} ${
         isHighlighted
-          ? "border-emerald-400 ring-2 ring-emerald-200 shadow-lg"
-          : "border-gray-100 hover:border-gold/40 hover:shadow-lg"
+          ? "border-emerald-400 ring-2 ring-emerald-200 shadow-[0_16px_40px_rgba(16,185,129,0.18)]"
+          : "border-gray-100 hover:border-gold/40 hover:shadow-[0_14px_36px_rgba(0,0,0,0.08)]"
       }`}
       style={{ cursor: onSelect ? "pointer" : "default" }}
     >
       {/* Image */}
-      <div className="relative h-44 bg-stone-100 overflow-hidden flex-shrink-0">
+      <div className={`relative bg-stone-100 overflow-hidden flex-shrink-0 ${isListLayout ? "h-56 md:h-auto md:w-[42%]" : "h-52"}`}>
         {primary ? (
           <img
             src={`${API}${primary.image_path}`}
@@ -227,23 +294,31 @@ const HomestayCard = ({
             <Tent className="h-10 w-10 text-stone-300" />
           </div>
         )}
-        <div className="absolute top-3 right-3 bg-white/95 backdrop-blur-sm px-2.5 py-1 rounded-full shadow-sm">
-          <span className="text-xs font-bold text-charcoal">
+
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent pointer-events-none" />
+
+        <div className="absolute top-3 right-3 bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm border border-white/80">
+          <span className="text-xs font-extrabold text-charcoal">
             NPR {Number(homestay.price_per_night).toLocaleString()}
             <span className="font-normal text-gray-400">/night</span>
           </span>
         </div>
+
+        <div className={`absolute bottom-3 left-3 px-3 py-1.5 rounded-full text-[11px] font-semibold shadow-sm border ${isSoldOut ? "bg-red-600 text-white border-red-400" : "bg-emerald-600 text-white border-emerald-400"}`}>
+          {isSoldOut ? "All Rooms Booked" : `${availableRooms}/${totalRooms || "-"} Rooms Available`}
+        </div>
       </div>
 
       {/* Content */}
-      <div className="p-4 flex flex-col flex-1">
-        <h4 className="font-bold text-charcoal text-[15px] leading-tight mb-1.5">{homestay.name}</h4>
-        <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-2.5">
+      <div className={`p-5 flex flex-col flex-1 ${isListLayout ? "md:p-6" : ""}`}>
+        <h4 className={`font-extrabold text-charcoal leading-tight mb-2 ${isListLayout ? "text-xl" : "text-lg"}`}>{homestay.name}</h4>
+        <div className="flex items-center gap-1.5 text-sm text-gray-500 mb-3">
           <MapPin className="h-3 w-3 flex-shrink-0 text-gold" />
           {homestay.location}
         </div>
-        {Number.isFinite(distanceKm) && (
-          <div className="mb-3">
+
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          {Number.isFinite(distanceKm) && (
             <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border ${
               isNearTrail
                 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
@@ -252,24 +327,79 @@ const HomestayCard = ({
               <Route className="h-3 w-3" />
               {distanceKm.toFixed(2)} km from trail
             </span>
-          </div>
-        )}
+          )}
+
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border bg-violet-50 text-violet-700 border-violet-200">
+            <Users className="h-3 w-3" />
+            Up to {homestay.capacity} guests
+          </span>
+        </div>
+
         {homestay.description && (
-          <p className="text-gray-400 text-xs leading-relaxed line-clamp-2 mb-3">{homestay.description}</p>
+          <p className={`text-gray-500 leading-relaxed mb-4 ${isListLayout ? "text-sm line-clamp-3" : "text-xs line-clamp-2"}`}>{homestay.description}</p>
         )}
-        <div className="mt-auto flex items-center justify-between pt-3 border-t border-gray-50">
-          <div className="flex items-center gap-1.5 text-xs text-gray-400">
-            <Users className="h-3.5 w-3.5" />
-            Up to {homestay.capacity} guest{homestay.capacity !== 1 ? "s" : ""}
+
+        {amenities.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-1.5">
+            {amenities.slice(0, isListLayout ? 8 : 4).map((amenity, idx) => (
+              <span
+                key={`${amenity}-${idx}`}
+                className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-full border ${getAmenityMeta(amenity).tone}`}
+              >
+                {(() => {
+                  const { icon: Icon, label } = getAmenityMeta(amenity);
+                  return (
+                    <>
+                      <Icon className="h-3 w-3" />
+                      {label}
+                    </>
+                  );
+                })()}
+              </span>
+            ))}
+            {amenities.length > (isListLayout ? 8 : 4) && (
+              <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-gray-50 text-gray-500 border border-gray-200">
+                +{amenities.length - (isListLayout ? 8 : 4)} more
+              </span>
+            )}
           </div>
+        )}
+
+        {isSoldOut && (
+          <div className="mb-4 text-[11px] font-semibold text-red-700 bg-red-50 border border-red-100 rounded-lg px-2.5 py-2">
+            No rooms currently available. Please check back soon.
+          </div>
+        )}
+
+        <div className="mt-auto flex flex-wrap items-center gap-2 pt-4 border-t border-gray-100">
+          <Link
+            to={`/homestays/${homestay.homestay_id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-charcoal hover:text-gold px-3 py-2 rounded-lg border border-gray-200 hover:border-gold/40 hover:bg-amber-50/50 transition"
+          >
+            View Details <ChevronRight className="h-3.5 w-3.5" />
+          </Link>
+
+          {homestay.google_map_iframe_link && (
+            <a
+              href={homestay.google_map_iframe_link}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition"
+            >
+              View on Maps
+            </a>
+          )}
+
           {homestay.contact_phone && (
             <a
               href={`tel:${homestay.contact_phone}`}
               onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-gold/10 text-gold hover:bg-gold hover:text-white transition-all duration-200"
+              className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition-all duration-200 ${isSoldOut ? "bg-gray-100 text-gray-400 pointer-events-none border border-gray-200" : "bg-gold/10 text-gold hover:bg-gold hover:text-white border border-gold/30"}`}
             >
               <Book className="h-3 w-3" />
-              Book Now
+              {isSoldOut ? "Unavailable" : "Book Now"}
             </a>
           )}
         </div>
@@ -328,8 +458,8 @@ const GuideServiceCard = ({ service, index }) => {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.07 }}
-      className="bg-white rounded-2xl overflow-hidden border border-gray-100 hover:border-gold/40 hover:shadow-lg transition-all duration-300 flex flex-col sm:flex-row"
+      transition={{ delay: index * MOTION_STAGGER, duration: MOTION_DURATION, ease: MOTION_CURVE }}
+      className="bg-white rounded-2xl overflow-hidden border border-gray-100 hover:border-gold/40 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300 flex flex-col sm:flex-row"
     >
       {/* Guide Info Side */}
       <div className="bg-stone-50 p-6 sm:w-1/3 flex flex-col items-center justify-center border-b sm:border-b-0 sm:border-r border-gray-100/80">
@@ -400,8 +530,8 @@ const BaseGuideCard = ({ guide, index }) => {
     <motion.div
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay: index * 0.05 }}
-      className="bg-white rounded-xl p-4 border border-gray-100 flex items-center justify-between hover:border-gold/30 hover:shadow-sm transition-all"
+      transition={{ delay: index * MOTION_STAGGER_TIGHT, duration: MOTION_DURATION, ease: MOTION_CURVE }}
+      className="bg-white rounded-xl p-4 border border-gray-100 flex items-center justify-between hover:border-gold/30 hover:shadow-sm hover:-translate-y-0.5 transition-all duration-300"
     >
       <div className="flex items-center gap-4">
         <div className="w-12 h-12 rounded-full bg-stone-100 text-gold flex items-center justify-center font-bold text-lg">
@@ -431,6 +561,13 @@ const BaseGuideCard = ({ guide, index }) => {
 ───────────────────────────────────────────── */
 const TABS = ["Overview", "Itinerary", "Homestays", "Guides"];
 
+const tabMotion = {
+  initial: { opacity: 0, y: 14, filter: "blur(3px)", scale: 0.995 },
+  animate: { opacity: 1, y: 0, filter: "blur(0px)", scale: 1 },
+  exit: { opacity: 0, y: -10, filter: "blur(3px)", scale: 0.995 },
+  transition: { duration: MOTION_DURATION, ease: MOTION_CURVE },
+};
+
 /* ─────────────────────────────────────────────
    MAIN PAGE
 ───────────────────────────────────────────── */
@@ -451,6 +588,7 @@ const TrailDetail = () => {
   const [pendingScrollHomestayId, setPendingScrollHomestayId] = useState(null);
   const [nearTrailHomestayIds, setNearTrailHomestayIds] = useState([]);
   const [showOnlyNearTrail, setShowOnlyNearTrail] = useState(false);
+  const [homestayViewMode, setHomestayViewMode] = useState("grid");
   const [distanceThresholdKm, setDistanceThresholdKm] = useState(3);
   const [homestayDistanceMap, setHomestayDistanceMap] = useState({});
   const homestayCardRefs = useRef({});
@@ -501,6 +639,17 @@ const TrailDetail = () => {
       }
     };
     fetchHomestays();
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await axios.get(`${API}/api/homestays/public/trail/${id}`);
+        setHomestays(res.data.homestays);
+      } catch (err) {
+        console.error(err);
+      }
+    }, 15000);
+
+    return () => clearInterval(interval);
   }, [id]);
 
   useEffect(() => {
@@ -619,13 +768,13 @@ const TrailDetail = () => {
   const diff = difficultyConfig[trail.difficulty_level] || difficultyConfig["Moderate"];
 
   return (
-    <div className="min-h-screen bg-[#faf9f7]">
+    <div className="min-h-screen bg-gradient-to-b from-[#f5f2eb] via-[#faf9f6] to-[#f2f0e9]">
       <Header user={user} onLogoutClick={() => setShowLogoutModal(true)} />
 
       {/* ════════════════════════════════
           HERO — cinematic full-width
       ════════════════════════════════ */}
-      <div className="relative h-[75vh] min-h-[580px] max-h-[760px] overflow-hidden">
+      <div className="relative h-[75vh] min-h-[580px] max-h-[760px] overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.18)]">
         {/* Hero image with parallax feel */}
         <img
           src={heroImage}
@@ -687,17 +836,17 @@ const TrailDetail = () => {
       {/* ════════════════════════════════
           STICKY TAB BAR
       ════════════════════════════════ */}
-      <div
+        <div
         ref={tabRef}
-        className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-gray-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)] supports-[backdrop-filter]:bg-white/60"
+        className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-gray-100 shadow-[0_10px_30px_rgba(0,0,0,0.05)] supports-[backdrop-filter]:bg-white/60"
       >
-        <div className="max-w-6xl mx-auto px-6 sm:px-10">
-          <div className="flex items-center gap-0">
+        <div className="max-w-6xl mx-auto px-4 sm:px-8 lg:px-10">
+          <div className="flex items-center gap-0 overflow-x-auto no-scrollbar">
             {TABS.map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`relative px-5 py-4 text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${
+                className={`relative whitespace-nowrap px-5 py-4 text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${
                   activeTab === tab
                     ? "text-charcoal"
                     : "text-gray-400 hover:text-gray-600"
@@ -733,17 +882,18 @@ const TrailDetail = () => {
       {/* ════════════════════════════════
           CONTENT AREA
       ════════════════════════════════ */}
-      <div className="max-w-6xl mx-auto px-6 sm:px-10 py-10">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 lg:px-10 py-10">
+        <div className="rounded-3xl border border-white/70 bg-white/70 backdrop-blur-sm shadow-[0_10px_40px_rgba(0,0,0,0.05)] p-5 sm:p-7 lg:p-8">
         <AnimatePresence mode="wait">
 
           {/* ─── OVERVIEW TAB ─── */}
           {activeTab === "Overview" && (
             <motion.div
               key="overview"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.3 }}
+              initial={tabMotion.initial}
+              animate={tabMotion.animate}
+              exit={tabMotion.exit}
+              transition={tabMotion.transition}
             >
               <div className="grid lg:grid-cols-3 gap-8 xl:gap-12">
 
@@ -751,7 +901,7 @@ const TrailDetail = () => {
                 <div className="lg:col-span-2 space-y-10">
 
                   {/* About */}
-                  <div>
+                  <div className="bg-white rounded-2xl border border-gray-100 p-6 lg:p-7 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
                     <div className="flex items-center gap-3 mb-5">
                       <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "linear-gradient(to bottom, #C8932A, #E0B04A)" }} />
                       <h2 className="text-xl font-bold text-charcoal font-heading tracking-tight">About This Trek</h2>
@@ -760,7 +910,7 @@ const TrailDetail = () => {
                   </div>
 
                   {/* Map */}
-                  <div ref={mapSectionRef}>
+                  <div ref={mapSectionRef} className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "linear-gradient(to bottom, #C8932A, #E0B04A)" }} />
                       <h2 className="text-xl font-bold text-charcoal font-heading tracking-tight">Map View</h2>
@@ -782,7 +932,7 @@ const TrailDetail = () => {
 
                   {/* Photo Gallery */}
                   {trail.images?.length > 0 && (
-                    <div>
+                    <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
                           <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "linear-gradient(to bottom, #C8932A, #E0B04A)" }} />
@@ -791,7 +941,7 @@ const TrailDetail = () => {
                             {trail.images.length} photos
                           </span>
                         </div>
-                        <p className="text-xs text-gray-300 hidden sm:block font-medium">Click to enlarge</p>
+                        <p className="text-xs text-gray-300 hidden sm:block font-medium">Tap photos to open gallery</p>
                       </div>
                       <PhotoGallery images={trail.images} />
                     </div>
@@ -922,13 +1072,13 @@ const TrailDetail = () => {
           {activeTab === "Itinerary" && (
             <motion.div
               key="itinerary"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.3 }}
+              initial={tabMotion.initial}
+              animate={tabMotion.animate}
+              exit={tabMotion.exit}
+              transition={tabMotion.transition}
             >
               {trail.itineraries?.length > 0 ? (
-                <div className="max-w-3xl">
+                <div className="max-w-5xl">
                   <div className="flex items-center gap-3 mb-8">
                     <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "linear-gradient(to bottom, #C8932A, #E0B04A)" }} />
                     <h2 className="text-xl font-bold text-charcoal font-heading tracking-tight">Day-by-Day Itinerary</h2>
@@ -1019,10 +1169,10 @@ const TrailDetail = () => {
           {activeTab === "Homestays" && (
             <motion.div
               key="homestays"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.3 }}
+              initial={tabMotion.initial}
+              animate={tabMotion.animate}
+              exit={tabMotion.exit}
+              transition={tabMotion.transition}
             >
               <div className="flex items-center gap-3 mb-8">
                 <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "linear-gradient(to bottom, #C8932A, #E0B04A)" }} />
@@ -1054,13 +1204,30 @@ const TrailDetail = () => {
               ) : (
                 <>
                   {/* Filter/sort bar */}
-                  <div className="flex items-center justify-between mb-5 pb-4 border-b border-gray-100">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6 pb-4 border-b border-gray-100">
                     <p className="text-sm text-gray-400">
                       Showing <span className="font-semibold text-charcoal">{visibleHomestays.length}</span>
                       {showOnlyNearTrail ? " near-trail " : " "}
                       places to stay
                     </p>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                      <div className="inline-flex items-center rounded-full border border-gray-200 bg-white p-1 shadow-sm">
+                        <button
+                          type="button"
+                          onClick={() => setHomestayViewMode("grid")}
+                          className={`px-3 py-1.5 text-xs font-semibold rounded-full transition ${homestayViewMode === "grid" ? "bg-charcoal text-white" : "text-gray-500 hover:bg-gray-100"}`}
+                        >
+                          Grid View
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setHomestayViewMode("split")}
+                          className={`px-3 py-1.5 text-xs font-semibold rounded-full transition ${homestayViewMode === "split" ? "bg-charcoal text-white" : "text-gray-500 hover:bg-gray-100"}`}
+                        >
+                          Split View
+                        </button>
+                      </div>
+
                       <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-full px-3 py-1.5">
                         <span className="font-semibold">Radius</span>
                         <input
@@ -1070,7 +1237,7 @@ const TrailDetail = () => {
                           step={1}
                           value={distanceThresholdKm}
                           onChange={(e) => setDistanceThresholdKm(Number(e.target.value))}
-                          className="w-20 accent-emerald-500"
+                          className="w-24 accent-emerald-500"
                         />
                         <span className="font-bold text-charcoal">{distanceThresholdKm} km</span>
                       </div>
@@ -1099,22 +1266,110 @@ const TrailDetail = () => {
                         Try turning off the filter to see all approved homestays on this trail.
                       </p>
                     </div>
+                  ) : homestayViewMode === "split" ? (
+                    <div className="grid lg:grid-cols-[minmax(0,1fr)_330px] gap-6 items-start">
+                      <div className="space-y-6 relative z-0">
+                        <div className="relative z-0 rounded-2xl overflow-hidden">
+                          <TrailMap
+                            trailName={trail.trail_name}
+                            gpxUrl={gpxUrl}
+                            gpxGeojson={trail.gpx_geojson}
+                            homestays={homestays}
+                            homestaysLoading={homestaysLoading}
+                            selectedHomestayId={selectedHomestayId}
+                            distanceThresholdKm={distanceThresholdKm}
+                            onDistanceThresholdChange={setDistanceThresholdKm}
+                            onHomestaySelect={handleMapHomestaySelect}
+                            onNearTrailHomestaysChange={setNearTrailHomestayIds}
+                            onHomestayDistanceMapChange={setHomestayDistanceMap}
+                          />
+                        </div>
+
+                        <div className="space-y-4 relative z-10 pt-1">
+                          {visibleHomestays.map((h, i) => (
+                            <HomestayCard
+                              key={h.homestay_id}
+                              homestay={h}
+                              index={i}
+                              layout="list"
+                              isHighlighted={selectedHomestayId === h.homestay_id}
+                              distanceKm={homestayDistanceMap[h.homestay_id]}
+                              distanceThresholdKm={distanceThresholdKm}
+                              onSelect={handleHomestayCardSelect}
+                              cardRef={(el) => {
+                                if (el) homestayCardRefs.current[h.homestay_id] = el;
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+
+                      <aside className="hidden lg:block lg:sticky lg:top-24 bg-white rounded-2xl border border-gray-100 p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+                        <h3 className="text-base font-bold text-charcoal mb-2">Stay Planner</h3>
+                        <p className="text-xs text-gray-500 mb-4">Quick booking context for this trail.</p>
+                        <div className="space-y-3">
+                          <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-emerald-700 font-semibold">Near Trail Stays</p>
+                            <p className="text-2xl font-black text-emerald-700 mt-1">{nearTrailHomestayIds.length}</p>
+                          </div>
+                          <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-amber-700 font-semibold">Visible Stays</p>
+                            <p className="text-2xl font-black text-amber-700 mt-1">{visibleHomestays.length}</p>
+                          </div>
+                          <div className="rounded-xl bg-blue-50 border border-blue-100 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-blue-700 font-semibold">Suggestion</p>
+                            <p className="text-xs text-blue-700 mt-1 leading-relaxed">
+                              For easier logistics, prefer stays within {distanceThresholdKm} km of the route and call hosts early in peak season.
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-stone-50 border border-stone-200 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-600 font-semibold">Best For</p>
+                            <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                              Split view works best when you compare map position and amenities side-by-side.
+                            </p>
+                          </div>
+                        </div>
+                      </aside>
+                    </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                      {visibleHomestays.map((h, i) => (
-                        <HomestayCard
-                          key={h.homestay_id}
-                          homestay={h}
-                          index={i}
-                          isHighlighted={selectedHomestayId === h.homestay_id}
-                          distanceKm={homestayDistanceMap[h.homestay_id]}
-                          distanceThresholdKm={distanceThresholdKm}
-                          onSelect={handleHomestayCardSelect}
-                          cardRef={(el) => {
-                            if (el) homestayCardRefs.current[h.homestay_id] = el;
-                          }}
-                        />
-                      ))}
+                    <div className="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+                        {visibleHomestays.map((h, i) => (
+                          <HomestayCard
+                            key={h.homestay_id}
+                            homestay={h}
+                            index={i}
+                            isHighlighted={selectedHomestayId === h.homestay_id}
+                            distanceKm={homestayDistanceMap[h.homestay_id]}
+                            distanceThresholdKm={distanceThresholdKm}
+                            onSelect={handleHomestayCardSelect}
+                            cardRef={(el) => {
+                              if (el) homestayCardRefs.current[h.homestay_id] = el;
+                            }}
+                          />
+                        ))}
+                      </div>
+
+                      <aside className="hidden lg:block lg:sticky lg:top-24 bg-white rounded-2xl border border-gray-100 p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+                        <h3 className="text-base font-bold text-charcoal mb-2">Booking Rail</h3>
+                        <p className="text-xs text-gray-500 mb-4">Use this rail while exploring stays.</p>
+                        <div className="space-y-3">
+                          <div className="rounded-xl bg-stone-50 border border-stone-200 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-600 font-semibold">Current View</p>
+                            <p className="text-sm font-bold text-charcoal mt-1">{homestayViewMode === "split" ? "Split View" : "Grid View"}</p>
+                          </div>
+                          <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-emerald-700 font-semibold">Near Trail</p>
+                            <p className="text-2xl font-black text-emerald-700 mt-1">{nearTrailHomestayIds.length}</p>
+                          </div>
+                          <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-indigo-700 font-semibold">Tip</p>
+                            <p className="text-xs text-indigo-700 mt-1 leading-relaxed">
+                              Switch to Split View to coordinate map markers with stay cards and shortlist quickly.
+                            </p>
+                          </div>
+                        </div>
+                      </aside>
                     </div>
                   )}
                 </>
@@ -1126,75 +1381,102 @@ const TrailDetail = () => {
           {activeTab === "Guides" && (
             <motion.div
               key="guides"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.3 }}
+              initial={tabMotion.initial}
+              animate={tabMotion.animate}
+              exit={tabMotion.exit}
+              transition={tabMotion.transition}
             >
-              <div className="flex items-center gap-3 mb-8">
-                <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "linear-gradient(to bottom, #C8932A, #E0B04A)" }} />
-                <h2 className="text-xl font-bold text-charcoal font-heading tracking-tight">Available Guide Packages</h2>
-                {!guidesLoading && guideServices.length > 0 && (
-                  <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">
-                    {guideServices.length} package{guideServices.length !== 1 ? "s" : ""}
-                  </span>
-                )}
-              </div>
+              <div className="grid lg:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
+                <div>
+                  <div className="flex items-center gap-3 mb-8">
+                    <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "linear-gradient(to bottom, #C8932A, #E0B04A)" }} />
+                    <h2 className="text-xl font-bold text-charcoal font-heading tracking-tight">Available Guide Packages</h2>
+                    {!guidesLoading && guideServices.length > 0 && (
+                      <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">
+                        {guideServices.length} package{guideServices.length !== 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
 
-              {guidesLoading ? (
-                <div className="flex items-center justify-center py-20">
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="w-10 h-10 rounded-full border-2 border-blue-200 border-t-blue-500 animate-spin" />
-                    <p className="text-sm text-gray-400">Finding guide packages...</p>
+                  {guidesLoading ? (
+                    <div className="flex items-center justify-center py-20">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="w-10 h-10 rounded-full border-2 border-blue-200 border-t-blue-500 animate-spin" />
+                        <p className="text-sm text-gray-400">Finding guide packages...</p>
+                      </div>
+                    </div>
+                  ) : guideServices.length === 0 ? (
+                    <div className="flex flex-col items-center py-10 gap-4 bg-white rounded-2xl border border-gray-100 mb-10">
+                      <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center">
+                         <Compass className="h-7 w-7 text-blue-300" />
+                      </div>
+                      <p className="text-gray-600 font-bold">No Service Packages</p>
+                      <p className="text-gray-400 text-sm text-center max-w-xs leading-relaxed">
+                        There are no specialized packages listed for this trail yet. Check for independent guides below.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-5 max-w-4xl mb-12">
+                      {guideServices.map((service, i) => (
+                        <GuideServiceCard key={service.service_id} service={service} index={i} />
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* INDEPENDENT GUIDES SECTION */}
+                  <div className="flex flex-wrap items-center gap-3 mb-6 pt-6 border-t border-gray-100">
+                    <div className="w-1 h-4 rounded-full flex-shrink-0 bg-gray-300" />
+                    <h3 className="text-lg font-bold text-gray-600 font-heading tracking-tight">Independent Base Guides</h3>
+                    {!baseGuidesLoading && baseGuides.length > 0 && (
+                      <span className="text-xs font-semibold text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-100">
+                        {baseGuides.length} guide{baseGuides.length !== 1 ? "s" : ""} available
+                      </span>
+                    )}
                   </div>
+                  
+                  {baseGuidesLoading ? (
+                     <p className="text-sm text-gray-400 py-4">Loading base guides...</p>
+                  ) : baseGuides.length === 0 ? (
+                     <p className="text-sm text-gray-500 bg-gray-50 py-6 px-4 rounded-xl text-center border border-gray-100">
+                        No independent guides are currently assigned to this trail.
+                     </p>
+                  ) : (
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-5xl">
+                        {baseGuides.map((guide, i) => (
+                           <BaseGuideCard key={guide.id} guide={guide} index={i} />
+                        ))}
+                     </div>
+                  )}
                 </div>
-              ) : guideServices.length === 0 ? (
-                <div className="flex flex-col items-center py-10 gap-4 bg-white rounded-2xl border border-gray-100 mb-10">
-                  <div className="w-16 h-16 rounded-2xl bg-blue-50 flex items-center justify-center">
-                     <Compass className="h-7 w-7 text-blue-300" />
+
+                <aside className="hidden lg:block lg:sticky lg:top-24 bg-white rounded-2xl border border-gray-100 p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+                  <h3 className="text-base font-bold text-charcoal mb-2">Guide Info Rail</h3>
+                  <p className="text-xs text-gray-500 mb-4">Quick compare before you call.</p>
+
+                  <div className="space-y-3">
+                    <div className="rounded-xl bg-blue-50 border border-blue-100 p-3">
+                      <p className="text-[11px] uppercase tracking-wide text-blue-700 font-semibold">Packages</p>
+                      <p className="text-2xl font-black text-blue-700 mt-1">{guideServices.length}</p>
+                    </div>
+                    <div className="rounded-xl bg-violet-50 border border-violet-100 p-3">
+                      <p className="text-[11px] uppercase tracking-wide text-violet-700 font-semibold">Base Guides</p>
+                      <p className="text-2xl font-black text-violet-700 mt-1">{baseGuides.length}</p>
+                    </div>
+                    <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+                      <p className="text-[11px] uppercase tracking-wide text-emerald-700 font-semibold">Pro Tip</p>
+                      <p className="text-xs text-emerald-700 mt-1 leading-relaxed">
+                        Compare group size limits and experience level before finalizing. For custom plans, call base guides directly.
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-gray-600 font-bold">No Service Packages</p>
-                  <p className="text-gray-400 text-sm text-center max-w-xs leading-relaxed">
-                    There are no specialized packages listed for this trail yet. Check for independent guides below.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-5 max-w-4xl mb-12">
-                  {guideServices.map((service, i) => (
-                    <GuideServiceCard key={service.service_id} service={service} index={i} />
-                  ))}
-                </div>
-              )}
-              
-              {/* INDEPENDENT GUIDES SECTION */}
-              <div className="flex items-center gap-3 mb-6 pt-6 border-t border-gray-100">
-                <div className="w-1 h-4 rounded-full flex-shrink-0 bg-gray-300" />
-                <h3 className="text-lg font-bold text-gray-600 font-heading tracking-tight">Independent Base Guides</h3>
-                {!baseGuidesLoading && baseGuides.length > 0 && (
-                  <span className="text-xs font-semibold text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-100">
-                    {baseGuides.length} guide{baseGuides.length !== 1 ? "s" : ""} available
-                  </span>
-                )}
+                </aside>
               </div>
-              
-              {baseGuidesLoading ? (
-                 <p className="text-sm text-gray-400 py-4">Loading base guides...</p>
-              ) : baseGuides.length === 0 ? (
-                 <p className="text-sm text-gray-500 bg-gray-50 py-6 px-4 rounded-xl text-center border border-gray-100">
-                    No independent guides are currently assigned to this trail.
-                 </p>
-              ) : (
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-5xl">
-                    {baseGuides.map((guide, i) => (
-                       <BaseGuideCard key={guide.id} guide={guide} index={i} />
-                    ))}
-                 </div>
-              )}
 
             </motion.div>
           )}
 
         </AnimatePresence>
+        </div>
       </div>
 
       <Footer />

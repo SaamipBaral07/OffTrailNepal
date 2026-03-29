@@ -66,6 +66,7 @@ const StatCard = ({ icon: Icon, label, value, accent }) => {
 ───────────────────────────────────────── */
 const StatusBadge = ({ status }) => {
   const config = {
+    not_submitted: { bg: "bg-gray-50 border-gray-200", text: "text-gray-600", dot: "bg-gray-400", label: "Not Submitted" },
     pending: { bg: "bg-amber-50 border-amber-200", text: "text-amber-700", dot: "bg-amber-400", label: "Pending" },
     approved: { bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700", dot: "bg-emerald-400", label: "Approved" },
     rejected: { bg: "bg-red-50 border-red-200", text: "text-red-700", dot: "bg-red-400", label: "Rejected" },
@@ -166,6 +167,28 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleGuideVerificationStatus = async (guideId, status) => {
+    try {
+      let rejection_reason = "";
+      if (status === "rejected") {
+        rejection_reason = window.prompt("Add rejection reason for this guide:") || "";
+        if (!rejection_reason.trim()) {
+          alert("Rejection reason is required.");
+          return;
+        }
+      }
+
+      await api.patch(`${API}/guides/admin/${guideId}/verification-status`, {
+        verification_status: status,
+        rejection_reason,
+      });
+      fetchAdminGuides();
+    } catch (err) {
+      console.error("Error updating guide verification status:", err);
+      alert(err.response?.data?.message || "Failed to update guide verification status");
+    }
+  };
+
   const handleDeleteTrail = async (trailId) => {
     if (!window.confirm("Are you sure you want to delete this trail? This action cannot be undone."))
       return;
@@ -189,6 +212,7 @@ const AdminDashboard = () => {
     );
 
   const pendingHomestays = homestaysAdmin.filter((h) => h.verified_status === "pending").length;
+  const pendingGuides = guidesAdmin.filter((g) => g.verification_status === "pending").length;
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -347,7 +371,7 @@ const AdminDashboard = () => {
             <StatCard
               icon={TrendingUp}
               label="Pending Approvals"
-              value={pendingHomestays}
+              value={pendingHomestays + pendingGuides}
               accent="amber"
             />
             <StatCard
@@ -568,6 +592,26 @@ const AdminDashboard = () => {
                             </p>
                           </div>
                         </div>
+
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <StatusBadge status={g.verification_status} />
+                          {g.verification_status === "pending" && (
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleGuideVerificationStatus(g.guide_id, "approved")}
+                                className="px-3 py-1.5 text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={() => handleGuideVerificationStatus(g.guide_id, "rejected")}
+                                className="px-3 py-1.5 text-xs font-semibold bg-red-500 hover:bg-red-600 text-white rounded-lg"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          )}
+                        </div>
                         
                         <div className="space-y-2 mb-4">
                           <div className="flex items-center font-mono gap-2 text-sm text-gray-600">
@@ -583,6 +627,31 @@ const AdminDashboard = () => {
                             {g.phone}
                           </div>
                         </div>
+
+                        {g.citizenship_doc_path && g.guide_license_doc_path && (
+                          <div className="mb-4 pt-3 border-t border-gray-200 grid grid-cols-2 gap-2">
+                            <a
+                              href={`http://localhost:5000${g.citizenship_doc_path}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              View Citizenship
+                            </a>
+                            <a
+                              href={`http://localhost:5000${g.guide_license_doc_path}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-blue-600 hover:underline"
+                            >
+                              View Guide License
+                            </a>
+                          </div>
+                        )}
+
+                        {g.verification_status === "rejected" && g.rejection_reason && (
+                          <p className="text-xs text-red-600 mb-4">Reason: {g.rejection_reason}</p>
+                        )}
 
                         <div className="flex pt-4 border-t border-gray-200 gap-4">
                           <div className="flex-1">

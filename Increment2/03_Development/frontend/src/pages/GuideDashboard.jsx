@@ -24,6 +24,9 @@ import {
   Calendar,
   Star,
   Package,
+  CheckCircle2,
+  AlertTriangle,
+  Upload,
 } from "lucide-react";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
@@ -82,6 +85,8 @@ const GuideDashboard = () => {
   const [reviews, setReviews] = useState([]);
   const [reviewsStats, setReviewsStats] = useState({ avg: 0, total: 0 });
   const [fetchingData, setFetchingData] = useState(false);
+  const [verification, setVerification] = useState(null);
+  const [verificationSubmitting, setVerificationSubmitting] = useState(false);
 
   // Forms State
   const [showTrailForm, setShowTrailForm] = useState(false);
@@ -89,6 +94,10 @@ const GuideDashboard = () => {
   const [editingTrail, setEditingTrail] = useState(null);
   const [editingService, setEditingService] = useState(null);
   const [formSubmitting, setFormSubmitting] = useState(false);
+
+  const isGuideApproved = verification?.verification_status === "approved";
+  const isGuidePending = verification?.verification_status === "pending";
+  const isGuideRejected = verification?.verification_status === "rejected";
 
   useEffect(() => {
     if (loading) return;
@@ -101,18 +110,20 @@ const GuideDashboard = () => {
   const fetchDashboardData = useCallback(async () => {
     setFetchingData(true);
     try {
-      const [trailsAllRes, myTrailsRes, myServicesRes, myAvailRes, myReviewsRes] = await Promise.all([
+      const [trailsAllRes, myTrailsRes, myServicesRes, myAvailRes, myReviewsRes, verificationRes] = await Promise.all([
         api.get(`${API}/guides/trails-list`),
         api.get(`${API}/guides/my-trails`),
         api.get(`${API}/guides/services`),
         api.get(`${API}/guides/availability`),
-        api.get(`${API}/guides/reviews`)
+        api.get(`${API}/guides/reviews`),
+        api.get(`${API}/guides/verification-status`)
       ]);
       setTrailsList(trailsAllRes.data.trails || []);
       setMyTrails(myTrailsRes.data.guide_trails || []);
       setServices(myServicesRes.data.services || []);
       setAvailability(myAvailRes.data.availability || []);
       setReviews(myReviewsRes.data.reviews || []);
+      setVerification(verificationRes.data.verification || null);
       setReviewsStats({
         avg: myReviewsRes.data.stats?.avg_rating || 0,
         total: myReviewsRes.data.stats?.total_reviews || 0,
@@ -208,6 +219,37 @@ const GuideDashboard = () => {
     } catch (err) {
       console.error(err);
       alert("Failed to delete service.");
+    }
+  };
+
+  const handleVerificationSubmit = async (e) => {
+    e.preventDefault();
+    const citizenshipFile = e.target.citizenship_image.files[0];
+    const licenseFile = e.target.guide_license_image.files[0];
+
+    if (!verification && (!citizenshipFile || !licenseFile)) {
+      alert("Please upload both citizenship and guide license images.");
+      return;
+    }
+
+    setVerificationSubmitting(true);
+    try {
+      const formData = new FormData();
+      if (citizenshipFile) formData.append("citizenship_image", citizenshipFile);
+      if (licenseFile) formData.append("guide_license_image", licenseFile);
+
+      await api.post(`${API}/guides/verification-docs`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      await fetchDashboardData();
+      e.target.reset();
+      alert("Verification documents submitted successfully.");
+    } catch (err) {
+      const msg = err.response?.data?.message || "Failed to submit verification documents";
+      alert(msg);
+    } finally {
+      setVerificationSubmitting(false);
     }
   };
 
@@ -321,6 +363,72 @@ const GuideDashboard = () => {
         </header>
 
         <main className="flex-1 p-6 space-y-6">
+          {!isGuideApproved && (
+            <div className={`rounded-2xl border p-5 ${isGuideRejected ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`}>
+              <div className="flex items-start gap-3 mb-4">
+                {isGuideRejected ? (
+                  <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
+                ) : (
+                  <Upload className="h-5 w-5 text-amber-600 mt-0.5" />
+                )}
+                <div>
+                  <h2 className={`font-semibold ${isGuideRejected ? "text-red-800" : "text-amber-800"}`}>
+                    {isGuidePending
+                      ? "Guide verification is under review"
+                      : isGuideRejected
+                        ? "Verification was rejected"
+                        : "Submit identity documents to get verified"}
+                  </h2>
+                  <p className={`text-sm mt-1 ${isGuideRejected ? "text-red-700" : "text-amber-700"}`}>
+                    You can only create trail listings and service packages after admin approval.
+                  </p>
+                  {isGuideRejected && verification?.rejection_reason && (
+                    <p className="text-sm mt-2 text-red-700">
+                      Rejection reason: {verification.rejection_reason}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <form onSubmit={handleVerificationSubmit} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Citizenship Photo</label>
+                  <input
+                    type="file"
+                    name="citizenship_image"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="block w-full text-sm text-gray-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-white file:text-gray-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Guide License Photo</label>
+                  <input
+                    type="file"
+                    name="guide_license_image"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="block w-full text-sm text-gray-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-white file:text-gray-700"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={verificationSubmitting}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white rounded-xl text-sm font-semibold"
+                >
+                  {verificationSubmitting ? "Submitting..." : verification ? "Resubmit Documents" : "Submit Documents"}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {isGuideApproved && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex items-center gap-3">
+              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+              <p className="text-sm font-semibold text-emerald-800">
+                Your guide verification is approved. You can create and manage listings.
+              </p>
+            </div>
+          )}
+
           {activeTab === "trails" && (
             <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -334,6 +442,7 @@ const GuideDashboard = () => {
                   <button
                     onClick={() => { setEditingTrail(null); setShowTrailForm(true); }}
                     className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition"
+                    disabled={!isGuideApproved}
                   >
                     <Plus className="h-4 w-4" /> Add Trail
                   </button>
@@ -403,14 +512,19 @@ const GuideDashboard = () => {
                   <button
                     onClick={() => { setEditingService(null); setShowServiceForm(true); }}
                     className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition"
-                    disabled={myTrails.length === 0}
+                    disabled={myTrails.length === 0 || !isGuideApproved}
                   >
                     <Plus className="h-4 w-4" /> Add Package
                   </button>
                 </div>
 
                 <div className="p-6">
-                  {myTrails.length === 0 ? (
+                  {!isGuideApproved ? (
+                    <div className="text-center py-10 bg-amber-50 rounded-xl border border-amber-100">
+                      <p className="text-amber-700 font-medium">Guide verification approval is required first.</p>
+                      <p className="text-xs text-amber-600 mt-1">Submit your citizenship and guide license documents above and wait for admin approval.</p>
+                    </div>
+                  ) : myTrails.length === 0 ? (
                     <div className="text-center py-10 bg-amber-50 rounded-xl border border-amber-100">
                       <p className="text-amber-700 font-medium">Assign yourself to a trail first.</p>
                       <p className="text-xs text-amber-600 mt-1">You must be linked to a Trail within "My Trails" before offering packages.</p>
