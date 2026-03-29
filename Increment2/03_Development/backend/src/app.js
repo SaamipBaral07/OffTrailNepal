@@ -7,6 +7,7 @@ import authRoutes from "./routes/authRoutes.js";
 import trailRoutes from "./routes/trailRoutes.js";
 import homestayRoutes from "./routes/homestayRoutes.js";
 import guideRoutes from "./routes/guideRoutes.js";
+import bookingRoutes from "./routes/bookingRoutes.js";
 import { csrfProtection } from "./middleware/csrfMiddleware.js";
 import { refreshTokenLimiter, authLimiter } from "./middleware/rateLimitMiddleware.js";
 import { fileURLToPath } from "url";
@@ -47,6 +48,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/trails", trailRoutes);
 app.use("/api/homestays", homestayRoutes);
 app.use("/api/guides", guideRoutes);
+app.use("/api/bookings", bookingRoutes);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname=path.dirname(__filename);

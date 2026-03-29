@@ -12,6 +12,7 @@ import {
   updateHomestay,
   deleteHomestay,
   deleteHomestayImage,
+  setHomestayPrimaryImage,
   toggleHomestayActive,
   updateHomestayAvailableRooms,
   getAllHomestaysForAdmin,
@@ -114,6 +115,9 @@ router.delete("/:id", verifyToken, requireHost, deleteHomestay);
 
 // Delete a specific image
 router.delete("/:homestayId/images/:imageId", verifyToken, requireHost, deleteHomestayImage);
+
+// Set one image as primary
+router.patch("/:homestayId/images/:imageId/primary", verifyToken, requireHost, setHomestayPrimaryImage);
 
 // Toggle active status
 router.patch("/:id/toggle-active", verifyToken, requireHost, toggleHomestayActive);

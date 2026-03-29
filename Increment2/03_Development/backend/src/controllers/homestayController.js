@@ -365,7 +365,10 @@ export const updateHomestay = async (req, res) => {
       total_rooms,
       available_rooms,
       google_map_iframe_link,
+      replace_existing_images,
     } = req.body;
+
+    const shouldReplaceExistingImages = String(replace_existing_images || "").toLowerCase() === "true";
 
     const hasLatitude = Object.prototype.hasOwnProperty.call(req.body, "latitude");
     const hasLongitude = Object.prototype.hasOwnProperty.call(req.body, "longitude");
@@ -492,8 +495,24 @@ export const updateHomestay = async (req, res) => {
       ]
     );
 
-    // Handle new image uploads
+    // Handle image uploads
     if (req.files && req.files.length > 0) {
+      if (String(req.body?.replace_existing_images || "").toLowerCase() === "true") {
+        const existingImagesToDelete = await client.query(
+          `SELECT image_path FROM homestay_images WHERE homestay_id = $1`,
+          [id]
+        );
+
+        for (const img of existingImagesToDelete.rows) {
+          const filePath = path.join(srcDir, img.image_path.replace(/^\/+/, ""));
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+        }
+
+        await client.query(`DELETE FROM homestay_images WHERE homestay_id = $1`, [id]);
+      }
+
       // Check if there are existing images
       const existingImages = await client.query(
         `SELECT COUNT(*) FROM homestay_images WHERE homestay_id = $1`,
@@ -611,7 +630,7 @@ export const deleteHomestayImage = async (req, res) => {
 
     // Get image path
     const imageResult = await pool.query(
-      `SELECT image_path FROM homestay_images WHERE image_id = $1 AND homestay_id = $2`,
+      `SELECT image_path, is_primary FROM homestay_images WHERE image_id = $1 AND homestay_id = $2`,
       [imageId, homestayId]
     );
 
@@ -628,10 +647,92 @@ export const deleteHomestayImage = async (req, res) => {
     // Delete from DB
     await pool.query(`DELETE FROM homestay_images WHERE image_id = $1`, [imageId]);
 
+    if (imageResult.rows[0].is_primary) {
+      const fallbackImage = await pool.query(
+        `SELECT image_id
+         FROM homestay_images
+         WHERE homestay_id = $1
+         ORDER BY uploaded_at ASC
+         LIMIT 1`,
+        [homestayId]
+      );
+
+      if (fallbackImage.rows.length > 0) {
+        await pool.query(
+          `UPDATE homestay_images
+           SET is_primary = true
+           WHERE image_id = $1`,
+          [fallbackImage.rows[0].image_id]
+        );
+      }
+    }
+
     res.status(200).json({ message: "Image deleted successfully" });
   } catch (err) {
     console.error("Error deleting homestay image:", err);
     res.status(500).json({ message: "Server error deleting image" });
+  }
+};
+
+/* =========================
+   SET PRIMARY HOMESTAY IMAGE
+========================= */
+export const setHomestayPrimaryImage = async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const homestayId = Number.parseInt(req.params.homestayId, 10);
+    const imageId = Number.parseInt(req.params.imageId, 10);
+    const hostId = req.user.user_id;
+
+    if (!Number.isInteger(homestayId) || homestayId <= 0) {
+      return res.status(400).json({ message: "Invalid homestay id" });
+    }
+
+    if (!Number.isInteger(imageId) || imageId <= 0) {
+      return res.status(400).json({ message: "Invalid image id" });
+    }
+
+    await client.query("BEGIN");
+
+    const ownership = await client.query(
+      `SELECT homestay_id FROM homestays WHERE homestay_id = $1 AND host_id = $2`,
+      [homestayId, hostId]
+    );
+
+    if (ownership.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Homestay not found or not owned by you" });
+    }
+
+    const targetImage = await client.query(
+      `SELECT image_id FROM homestay_images WHERE image_id = $1 AND homestay_id = $2`,
+      [imageId, homestayId]
+    );
+
+    if (targetImage.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Image not found" });
+    }
+
+    await client.query(
+      `UPDATE homestay_images SET is_primary = false WHERE homestay_id = $1`,
+      [homestayId]
+    );
+
+    await client.query(
+      `UPDATE homestay_images SET is_primary = true WHERE image_id = $1`,
+      [imageId]
+    );
+
+    await client.query("COMMIT");
+    return res.status(200).json({ message: "Primary image updated successfully" });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error setting primary homestay image:", err);
+    return res.status(500).json({ message: "Server error setting primary image" });
+  } finally {
+    client.release();
   }
 };
 
