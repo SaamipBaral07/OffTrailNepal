@@ -1,6 +1,9 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import pool from "../config/db.js";
 import { setCsrfTokenCookie } from "../middleware/csrfMiddleware.js";
 import {
@@ -22,6 +25,27 @@ const ABSOLUTE_SESSION_MAX_AGE_SECONDS = Math.max(1, Math.floor(ABSOLUTE_SESSION
 const EMAIL_VERIFICATION_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const EMAIL_VERIFICATION_OTP_LENGTH = 6;
 const REFRESH_COOKIE_NAME = "refreshToken";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const srcDir = path.resolve(__dirname, "..");
+
+const getUserTableInfo = (userType) => {
+  const map = {
+    tourist: { table: "tourists", idColumn: "tourist_id" },
+    host: { table: "hosts", idColumn: "host_id" },
+    guide: { table: "guides", idColumn: "guide_id" },
+    admin: { table: "admins", idColumn: "admin_id" },
+  };
+  return map[userType] || null;
+};
+
+const deleteLocalUploadIfExists = (imagePath) => {
+  if (!imagePath) return;
+  const absolutePath = path.join(srcDir, String(imagePath).replace(/^\/+/, ""));
+  if (fs.existsSync(absolutePath)) {
+    fs.unlinkSync(absolutePath);
+  }
+};
 
 const getRefreshCookieOptions = () => ({
   httpOnly: true,
@@ -73,7 +97,8 @@ const buildUserInsertConfig = (payload) => {
     address,
     pan_number,
     experience_years,
-    license_no
+    license_no,
+    profile_image_path
   } = payload;
 
   switch (user_type) {
@@ -84,11 +109,11 @@ const buildUserInsertConfig = (payload) => {
       return {
         idColumn: "tourist_id",
         query: `
-          INSERT INTO tourists (full_name, email, password, phone, nationality)
-          VALUES ($1, $2, $3, $4, $5)
-          RETURNING tourist_id, full_name, email, phone, nationality, created_at
+          INSERT INTO tourists (full_name, email, password, phone, nationality, profile_image_path)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          RETURNING tourist_id, full_name, email, phone, nationality, profile_image_path, created_at
         `,
-        values: [full_name, email, password, phone, nationality]
+        values: [full_name, email, password, phone, nationality, profile_image_path || null]
       };
 
     case "host":
@@ -98,11 +123,11 @@ const buildUserInsertConfig = (payload) => {
       return {
         idColumn: "host_id",
         query: `
-          INSERT INTO hosts (full_name, email, password, phone, address, pan_number)
-          VALUES ($1, $2, $3, $4, $5, $6)
-          RETURNING host_id, full_name, email, phone, address, pan_number, created_at
+          INSERT INTO hosts (full_name, email, password, phone, address, pan_number, profile_image_path)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          RETURNING host_id, full_name, email, phone, address, pan_number, profile_image_path, created_at
         `,
-        values: [full_name, email, password, phone, address, pan_number]
+        values: [full_name, email, password, phone, address, pan_number, profile_image_path || null]
       };
 
     case "guide":
@@ -112,11 +137,11 @@ const buildUserInsertConfig = (payload) => {
       return {
         idColumn: "guide_id",
         query: `
-          INSERT INTO guides (full_name, email, password, phone, license_no, experience_years, address)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-          RETURNING guide_id, full_name, email, phone, license_no, experience_years, address, created_at
+          INSERT INTO guides (full_name, email, password, phone, license_no, experience_years, address, profile_image_path)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          RETURNING guide_id, full_name, email, phone, license_no, experience_years, address, profile_image_path, created_at
         `,
-        values: [full_name, email, password, phone, license_no, experience_years, address]
+        values: [full_name, email, password, phone, license_no, experience_years, address, profile_image_path || null]
       };
 
     default:
@@ -182,6 +207,8 @@ const issueSessionTokens = async (res, req, userId, userType, sessionStartedAt =
    REGISTER CONTROLLER
 ========================= */
 export const register = async (req, res) => {
+  const profile_image_path = req.file ? `/uploads/profiles/${req.file.filename}` : null;
+
   try {
     const {
       full_name,
@@ -199,14 +226,17 @@ export const register = async (req, res) => {
     const normalizedEmail = normalizeEmail(email);
 
     if (!full_name || !normalizedEmail || !password || !phone || !user_type) {
+      deleteLocalUploadIfExists(profile_image_path);
       return res.status(400).json({ message: "All required fields are missing" });
     }
 
     if (!isValidEmail(normalizedEmail)) {
+      deleteLocalUploadIfExists(profile_image_path);
       return res.status(400).json({ message: "Invalid email address" });
     }
 
     if (await isEmailRegistered(normalizedEmail)) {
+      deleteLocalUploadIfExists(profile_image_path);
       return res.status(400).json({ message: "Email already registered" });
     }
 
@@ -222,7 +252,8 @@ export const register = async (req, res) => {
       address,
       pan_number,
       experience_years,
-      license_no
+      license_no,
+      profile_image_path
     };
 
     // Validate user-type-specific data before sending verification email.
@@ -406,6 +437,7 @@ export const login = async (req, res) => {
             full_name: user.full_name,
             email: user.email,
             user_type: table.type,
+            profile_image_path: user.profile_image_path || null,
             created_at: user.created_at
           }
         });
@@ -502,6 +534,335 @@ export const getMe = async (req, res) => {
 };
 
 /* =========================
+   TOURIST PROFILE (GET)
+========================= */
+export const getTouristProfile = async (req, res) => {
+  try {
+    if (req.user.user_type !== "tourist") {
+      return res.status(403).json({ message: "Tourist access only" });
+    }
+
+    const result = await pool.query(
+      `SELECT tourist_id AS id, full_name, email, phone, nationality, profile_image_path, created_at
+       FROM tourists
+       WHERE tourist_id = $1`,
+      [req.user.user_id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ message: "Tourist profile not found" });
+    }
+
+    return res.status(200).json({ profile: result.rows[0] });
+  } catch (error) {
+    console.error("Get tourist profile error:", error);
+    return res.status(500).json({ message: "Server error fetching profile" });
+  }
+};
+
+/* =========================
+   TOURIST PROFILE (UPDATE)
+========================= */
+export const updateTouristProfile = async (req, res) => {
+  try {
+    if (req.user.user_type !== "tourist") {
+      return res.status(403).json({ message: "Tourist access only" });
+    }
+
+    const { full_name, phone, nationality } = req.body;
+
+    const nextFullName = String(full_name || "").trim();
+    const nextPhone = String(phone || "").trim();
+    const nextNationality = String(nationality || "").trim();
+
+    if (!nextFullName || !nextPhone || !nextNationality) {
+      return res.status(400).json({ message: "full_name, phone, and nationality are required" });
+    }
+
+    const result = await pool.query(
+      `UPDATE tourists
+       SET full_name = $1,
+           phone = $2,
+           nationality = $3
+       WHERE tourist_id = $4
+       RETURNING tourist_id AS id, full_name, email, phone, nationality, profile_image_path, created_at`,
+      [nextFullName, nextPhone, nextNationality, req.user.user_id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ message: "Tourist profile not found" });
+    }
+
+    return res.status(200).json({
+      message: "Profile updated successfully",
+      profile: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Update tourist profile error:", error);
+    return res.status(500).json({ message: "Server error updating profile" });
+  }
+};
+
+/* =========================
+   TOURIST PASSWORD (UPDATE)
+========================= */
+export const updateTouristPassword = async (req, res) => {
+  try {
+    if (req.user.user_type !== "tourist") {
+      return res.status(403).json({ message: "Tourist access only" });
+    }
+
+    const { current_password, new_password } = req.body;
+
+    if (!current_password || !new_password) {
+      return res.status(400).json({ message: "current_password and new_password are required" });
+    }
+
+    if (String(new_password).length < 8) {
+      return res.status(400).json({ message: "New password must be at least 8 characters" });
+    }
+
+    const userResult = await pool.query(
+      `SELECT password FROM tourists WHERE tourist_id = $1`,
+      [req.user.user_id]
+    );
+
+    if (!userResult.rows.length) {
+      return res.status(404).json({ message: "Tourist account not found" });
+    }
+
+    const matches = await bcrypt.compare(current_password, userResult.rows[0].password);
+    if (!matches) {
+      return res.status(400).json({ message: "Current password is incorrect" });
+    }
+
+    const hashed = await bcrypt.hash(new_password, 10);
+    await pool.query(
+      `UPDATE tourists SET password = $1 WHERE tourist_id = $2`,
+      [hashed, req.user.user_id]
+    );
+
+    return res.status(200).json({ message: "Password updated successfully" });
+  } catch (error) {
+    console.error("Update tourist password error:", error);
+    return res.status(500).json({ message: "Server error updating password" });
+  }
+};
+
+/* =========================
+   HOST PROFILE (GET)
+========================= */
+export const getHostProfile = async (req, res) => {
+  try {
+    if (req.user.user_type !== "host") {
+      return res.status(403).json({ message: "Host access only" });
+    }
+
+    const result = await pool.query(
+      `SELECT host_id AS id, full_name, email, phone, address, pan_number, profile_image_path, created_at
+       FROM hosts
+       WHERE host_id = $1`,
+      [req.user.user_id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ message: "Host profile not found" });
+    }
+
+    return res.status(200).json({ profile: result.rows[0] });
+  } catch (error) {
+    console.error("Get host profile error:", error);
+    return res.status(500).json({ message: "Server error fetching host profile" });
+  }
+};
+
+/* =========================
+   HOST PROFILE (UPDATE)
+========================= */
+export const updateHostProfile = async (req, res) => {
+  try {
+    if (req.user.user_type !== "host") {
+      return res.status(403).json({ message: "Host access only" });
+    }
+
+    const { full_name, phone, address, pan_number } = req.body;
+
+    const nextFullName = String(full_name || "").trim();
+    const nextPhone = String(phone || "").trim();
+    const nextAddress = String(address || "").trim();
+    const nextPanNumber = String(pan_number || "").trim();
+
+    if (!nextFullName || !nextPhone || !nextAddress || !nextPanNumber) {
+      return res.status(400).json({ message: "full_name, phone, address, and pan_number are required" });
+    }
+
+    const result = await pool.query(
+      `UPDATE hosts
+       SET full_name = $1,
+           phone = $2,
+           address = $3,
+           pan_number = $4
+       WHERE host_id = $5
+       RETURNING host_id AS id, full_name, email, phone, address, pan_number, profile_image_path, created_at`,
+      [nextFullName, nextPhone, nextAddress, nextPanNumber, req.user.user_id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ message: "Host profile not found" });
+    }
+
+    return res.status(200).json({
+      message: "Host profile updated successfully",
+      profile: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Update host profile error:", error);
+    return res.status(500).json({ message: "Server error updating host profile" });
+  }
+};
+
+/* =========================
+   GUIDE PROFILE (GET)
+========================= */
+export const getGuideProfile = async (req, res) => {
+  try {
+    if (req.user.user_type !== "guide") {
+      return res.status(403).json({ message: "Guide access only" });
+    }
+
+    const result = await pool.query(
+      `SELECT guide_id AS id, full_name, email, phone, license_no, experience_years, address, profile_image_path, created_at
+       FROM guides
+       WHERE guide_id = $1`,
+      [req.user.user_id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ message: "Guide profile not found" });
+    }
+
+    return res.status(200).json({ profile: result.rows[0] });
+  } catch (error) {
+    console.error("Get guide profile error:", error);
+    return res.status(500).json({ message: "Server error fetching guide profile" });
+  }
+};
+
+/* =========================
+   GUIDE PROFILE (UPDATE)
+========================= */
+export const updateGuideProfile = async (req, res) => {
+  try {
+    if (req.user.user_type !== "guide") {
+      return res.status(403).json({ message: "Guide access only" });
+    }
+
+    const { full_name, phone, license_no, experience_years, address } = req.body;
+
+    const nextFullName = String(full_name || "").trim();
+    const nextPhone = String(phone || "").trim();
+    const nextLicenseNo = String(license_no || "").trim();
+    const nextAddress = String(address || "").trim();
+    const parsedExperience = Number(experience_years);
+
+    if (!nextFullName || !nextPhone || !nextLicenseNo || !nextAddress || Number.isNaN(parsedExperience) || parsedExperience < 0) {
+      return res.status(400).json({
+        message: "full_name, phone, license_no, address, and valid experience_years are required",
+      });
+    }
+
+    const result = await pool.query(
+      `UPDATE guides
+       SET full_name = $1,
+           phone = $2,
+           license_no = $3,
+           experience_years = $4,
+           address = $5
+       WHERE guide_id = $6
+       RETURNING guide_id AS id, full_name, email, phone, license_no, experience_years, address, profile_image_path, created_at`,
+      [nextFullName, nextPhone, nextLicenseNo, parsedExperience, nextAddress, req.user.user_id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ message: "Guide profile not found" });
+    }
+
+    return res.status(200).json({
+      message: "Guide profile updated successfully",
+      profile: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Update guide profile error:", error);
+    return res.status(500).json({ message: "Server error updating guide profile" });
+  }
+};
+
+/* =========================
+   PROFILE PHOTO (UPDATE)
+========================= */
+export const updateProfilePhoto = async (req, res) => {
+  try {
+    if (!req.user?.user_type || !req.user?.user_id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "Profile photo file is required" });
+    }
+
+    const tableInfo = getUserTableInfo(req.user.user_type);
+    if (!tableInfo) {
+      return res.status(400).json({ message: "Invalid user type" });
+    }
+
+    const currentPhotoResult = await pool.query(
+      `SELECT profile_image_path
+       FROM ${tableInfo.table}
+       WHERE ${tableInfo.idColumn} = $1`,
+      [req.user.user_id]
+    );
+
+    if (!currentPhotoResult.rows.length) {
+      deleteLocalUploadIfExists(`/uploads/profiles/${req.file.filename}`);
+      return res.status(404).json({ message: "User account not found" });
+    }
+
+    const oldImagePath = currentPhotoResult.rows[0].profile_image_path;
+    const nextImagePath = `/uploads/profiles/${req.file.filename}`;
+
+    const result = await pool.query(
+      `UPDATE ${tableInfo.table}
+       SET profile_image_path = $1
+       WHERE ${tableInfo.idColumn} = $2
+       RETURNING full_name, email, profile_image_path`,
+      [nextImagePath, req.user.user_id]
+    );
+
+    if (oldImagePath && oldImagePath !== nextImagePath) {
+      deleteLocalUploadIfExists(oldImagePath);
+    }
+
+    return res.status(200).json({
+      message: "Profile photo updated successfully",
+      profile_image_path: result.rows[0].profile_image_path,
+      user: {
+        id: req.user.user_id,
+        user_type: req.user.user_type,
+        full_name: result.rows[0].full_name,
+        email: result.rows[0].email,
+        profile_image_path: result.rows[0].profile_image_path,
+      },
+    });
+  } catch (error) {
+    if (req.file) {
+      deleteLocalUploadIfExists(`/uploads/profiles/${req.file.filename}`);
+    }
+    console.error("Update profile photo error:", error);
+    return res.status(500).json({ message: "Server error updating profile photo" });
+  }
+};
+
+/* =========================
    REFRESH TOKEN
 ========================= */
 export const refreshTokenHandler = async (req, res) => {
@@ -520,17 +881,11 @@ export const refreshTokenHandler = async (req, res) => {
     );
 
     // Fetch full user profile
-    const tableMap = {
-      tourist: { table: "tourists", id: "tourist_id" },
-      host:    { table: "hosts",    id: "host_id"    },
-      guide:   { table: "guides",   id: "guide_id"   },
-      admin:   { table: "admins",   id: "admin_id"   },
-    };
-    const tableInfo = tableMap[decoded.user_type];
+    const tableInfo = getUserTableInfo(decoded.user_type);
     let userProfile = { id: decoded.user_id, user_type: decoded.user_type };
     if (tableInfo) {
       const profileResult = await pool.query(
-        `SELECT ${tableInfo.id} AS id, full_name, email, created_at FROM ${tableInfo.table} WHERE ${tableInfo.id} = $1`,
+        `SELECT ${tableInfo.idColumn} AS id, full_name, email, profile_image_path, created_at FROM ${tableInfo.table} WHERE ${tableInfo.idColumn} = $1`,
         [decoded.user_id]
       );
       if (profileResult.rows.length > 0) {
