@@ -47,9 +47,16 @@ const deleteLocalUploadIfExists = (imagePath) => {
   }
 };
 
+const getIsSecureCookie = () => {
+  if (typeof process.env.COOKIE_SECURE === "string") {
+    return process.env.COOKIE_SECURE === "true";
+  }
+  return process.env.NODE_ENV === "production";
+};
+
 const getRefreshCookieOptions = () => ({
   httpOnly: true,
-  secure: process.env.COOKIE_SECURE !== "false",
+  secure: getIsSecureCookie(),
   sameSite: "strict",
   path: "/"
 });

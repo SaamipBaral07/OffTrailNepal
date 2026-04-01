@@ -48,7 +48,7 @@ const CLIENT_BASE_URL = process.env.CLIENT_BASE_URL || "http://localhost:3000";
 const SERVER_PUBLIC_BASE_URL = process.env.SERVER_PUBLIC_BASE_URL || "";
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "";
 const STRIPE_MIN_USD_CENTS = Number(process.env.STRIPE_MIN_USD_CENTS || 50);
-const STRIPE_USD_TO_NPR_FALLBACK = Number(process.env.STRIPE_USD_TO_NPR_FALLBACK || 149.88);
+const STRIPE_USD_TO_NPR_FALLBACK = Number(process.env.STRIPE_USD_TO_NPR_FALLBACK || 150.08);
 const STRIPE_FX_API_URL = process.env.STRIPE_FX_API_URL || "https://open.er-api.com/v6/latest/USD";
 const STRIPE_FX_CACHE_TTL_MS = Number(process.env.STRIPE_FX_CACHE_TTL_MS || 60 * 60 * 1000);
 const stripeClient = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
@@ -58,6 +58,10 @@ let stripeFxCache = {
 };
 
 const toMoney = (value) => Number.parseFloat(Number(value).toFixed(2));
+
+const convertNprToMinorUnits = (nprAmount) => {
+  return Math.max(1, Math.round(Number(nprAmount) * 100));
+};
 
 const convertNprToUsdCents = (nprAmount, usdToNprRate) => {
   const convertedUsd = Number(nprAmount) / Number(usdToNprRate);
@@ -72,52 +76,12 @@ const extractUsdToNprRate = (payload) => {
 };
 
 const getStripeUsdToNprRate = async () => {
-  const now = Date.now();
-  const isCacheValid =
-    Number.isFinite(stripeFxCache.usdToNprRate) &&
-    stripeFxCache.usdToNprRate > 0 &&
-    now - stripeFxCache.fetchedAtMs < STRIPE_FX_CACHE_TTL_MS;
-
-  if (isCacheValid) {
-    return {
-      usdToNprRate: stripeFxCache.usdToNprRate,
-      source: "cache",
-    };
-  }
-
-  try {
-    const fxResponse = await fetch(STRIPE_FX_API_URL, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-    });
-
-    if (!fxResponse.ok) {
-      throw new Error(`FX API responded with ${fxResponse.status}`);
-    }
-
-    const fxPayload = await fxResponse.json();
-    const usdToNprRate = extractUsdToNprRate(fxPayload);
-
-    if (!usdToNprRate) {
-      throw new Error("FX payload does not contain a valid NPR rate");
-    }
-
-    stripeFxCache = {
-      usdToNprRate,
-      fetchedAtMs: now,
-    };
-
-    return {
-      usdToNprRate,
-      source: "api",
-    };
-  } catch (err) {
-    console.warn("Stripe FX fetch failed, using fallback rate:", err.message);
-    return {
-      usdToNprRate: STRIPE_USD_TO_NPR_FALLBACK,
-      source: "fallback",
-    };
-  }
+  // Always use the configured fallback rate (150.08) for accurate NPR pricing
+  // This ensures consistent payment amounts across all payment methods
+  return {
+    usdToNprRate: STRIPE_USD_TO_NPR_FALLBACK,
+    source: "configured",
+  };
 };
 
 const isEsewaSuccessStatus = (statusValue) => {
@@ -214,6 +178,50 @@ const getSessionByTokenOrTransaction = async ({ sessionToken, transactionUuid })
   }
 
   return null;
+};
+
+const inferPaymentProviderFromSession = (session) => {
+  const providerFromResponse =
+    session?.payment_response &&
+    typeof session.payment_response === "object" &&
+    !Array.isArray(session.payment_response)
+      ? String(session.payment_response.provider || "").trim().toLowerCase()
+      : "";
+
+  if (providerFromResponse) return providerFromResponse;
+
+  const transactionUuid = String(session?.transaction_uuid || "").toUpperCase();
+  if (transactionUuid.startsWith("STPAY-")) return "stripe";
+  return "esewa";
+};
+
+const upsertPaymentLedgerRecord = async ({ client, session, bookingId, paymentRefId }) => {
+  if (!bookingId) return;
+
+  const amount = toMoney(session.total_amount ?? session.amount ?? 0);
+  const paymentMethod = inferPaymentProviderFromSession(session);
+  const transactionReference = paymentRefId || session.payment_ref_id || session.transaction_uuid || null;
+  const paidAt = session.verified_at || new Date();
+
+  const updated = await client.query(
+    `UPDATE payments
+     SET amount = $2,
+         payment_method = $3,
+         payment_status = $4,
+         transaction_reference = COALESCE($5, transaction_reference),
+         paid_at = COALESCE($6, paid_at, CURRENT_TIMESTAMP)
+     WHERE booking_id = $1`,
+    [bookingId, amount, paymentMethod, "success", transactionReference, paidAt]
+  );
+
+  if (updated.rowCount === 0) {
+    await client.query(
+      `INSERT INTO payments
+        (booking_id, amount, payment_method, payment_status, transaction_reference, paid_at)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6, CURRENT_TIMESTAMP))`,
+      [bookingId, amount, paymentMethod, "success", transactionReference, paidAt]
+    );
+  }
 };
 
 const getValidatedBookingDraft = async ({
@@ -497,11 +505,11 @@ export const initiateEsewaPaymentForBooking = async (req, res) => {
       `INSERT INTO booking_payment_sessions
         (session_token, tourist_id, homestay_id, host_id, check_in_date, check_out_date, rooms_booked, guests_count,
          contact_phone, special_requests, nights, rate_per_night, amount, tax_amount, service_charge, delivery_charge,
-         total_amount, transaction_uuid, payment_status)
+         total_amount, transaction_uuid, payment_status, payment_response)
        VALUES
         ($1, $2, $3, $4, $5, $6, $7, $8,
          $9, $10, $11, $12, $13, $14, $15, $16,
-         $17, $18, 'initiated')`,
+         $17, $18, 'initiated', $19::jsonb)`,
       [
         sessionToken,
         touristId,
@@ -521,11 +529,12 @@ export const initiateEsewaPaymentForBooking = async (req, res) => {
         deliveryCharge,
         totalAmount,
         transactionUuid,
+        JSON.stringify({ provider: "esewa" }),
       ]
     );
 
     return res.status(200).json({
-      message: "Payment initiated. Redirect to eSewa to complete the booking.",
+      message: "Payment initiated. Redirect to the payment gateway to complete the booking.",
       session_token: sessionToken,
       payment_form: {
         action: ESEWA_PAYMENT_URL,
@@ -640,14 +649,14 @@ export const initiateStripePaymentForBooking = async (req, res) => {
     const serviceCharge = 0;
     const deliveryCharge = 0;
     const totalAmountNpr = toMoney(amountNpr + taxAmount + serviceCharge + deliveryCharge);
-    const fx = await getStripeUsdToNprRate();
-    const usdCents = convertNprToUsdCents(totalAmountNpr, fx.usdToNprRate);
+    const stripeCurrency = "npr";
+    const stripeAmountMinor = convertNprToMinorUnits(totalAmountNpr);
 
     await client.query(
       `INSERT INTO booking_payment_sessions
         (session_token, tourist_id, homestay_id, host_id, check_in_date, check_out_date, rooms_booked, guests_count,
          contact_phone, special_requests, nights, rate_per_night, amount, tax_amount, service_charge, delivery_charge,
-         total_amount, transaction_uuid, payment_status, esewa_response)
+         total_amount, transaction_uuid, payment_status, payment_response)
        VALUES
         ($1, $2, $3, $4, $5, $6, $7, $8,
          $9, $10, $11, $12, $13, $14, $15, $16,
@@ -674,9 +683,8 @@ export const initiateStripePaymentForBooking = async (req, res) => {
         JSON.stringify({
           provider: "stripe",
           npr_amount: totalAmountNpr,
-          stripe_amount_usd_cents: usdCents,
-          stripe_rate_usd_to_npr: fx.usdToNprRate,
-          stripe_rate_source: fx.source,
+          stripe_currency: stripeCurrency,
+          stripe_amount_minor: stripeAmountMinor,
         }),
       ]
     );
@@ -688,8 +696,8 @@ export const initiateStripePaymentForBooking = async (req, res) => {
         {
           quantity: 1,
           price_data: {
-            currency: "usd",
-            unit_amount: usdCents,
+            currency: stripeCurrency,
+            unit_amount: stripeAmountMinor,
             product_data: {
               name: `Homestay Booking - ${draft.homestay.name}`,
               description: `${draft.nights} night(s), ${roomsBooked} room(s), ${guestsCount} guest(s)`,
@@ -714,8 +722,8 @@ export const initiateStripePaymentForBooking = async (req, res) => {
 
     await client.query(
       `UPDATE booking_payment_sessions
-       SET esewa_ref_id = $1,
-           esewa_response = COALESCE(esewa_response, '{}'::jsonb) || $2::jsonb,
+       SET payment_ref_id = $1,
+           payment_response = COALESCE(payment_response, '{}'::jsonb) || $2::jsonb,
            updated_at = CURRENT_TIMESTAMP
        WHERE session_token = $3`,
       [
@@ -741,9 +749,8 @@ export const initiateStripePaymentForBooking = async (req, res) => {
         rooms_booked: roomsBooked,
         guests_count: guestsCount,
         amount_npr: totalAmountNpr,
-        amount_usd: Number((usdCents / 100).toFixed(2)),
-        fx_rate_usd_to_npr: fx.usdToNprRate,
-        fx_source: fx.source,
+        stripe_currency: stripeCurrency,
+        stripe_amount: Number((stripeAmountMinor / 100).toFixed(2)),
       },
     });
   } catch (err) {
@@ -796,7 +803,7 @@ export const handleEsewaSuccessCallback = async (req, res) => {
       await pool.query(
         `UPDATE booking_payment_sessions
          SET payment_status = 'failed',
-             esewa_response = $1,
+             payment_response = $1,
              updated_at = CURRENT_TIMESTAMP
          WHERE session_id = $2`,
         [JSON.stringify(statusPayload), session.session_id]
@@ -851,7 +858,7 @@ export const handleEsewaSuccessCallback = async (req, res) => {
         await client.query(
           `UPDATE booking_payment_sessions
            SET payment_status = 'failed',
-               esewa_response = $1,
+               payment_response = $1,
                updated_at = CURRENT_TIMESTAMP
            WHERE session_id = $2`,
           [JSON.stringify({ ...statusPayload, booking_error: bookingCreation.error, fallback_error: fallbackCreation.error }), lockedSession.session_id]
@@ -872,8 +879,8 @@ export const handleEsewaSuccessCallback = async (req, res) => {
          SET payment_status = 'success',
              booking_id = $1,
              verified_at = CURRENT_TIMESTAMP,
-             esewa_ref_id = COALESCE($2, esewa_ref_id),
-             esewa_response = $3,
+             payment_ref_id = COALESCE($2, payment_ref_id),
+             payment_response = $3,
              updated_at = CURRENT_TIMESTAMP
          WHERE session_id = $4`,
         [
@@ -884,6 +891,18 @@ export const handleEsewaSuccessCallback = async (req, res) => {
         ]
       );
 
+      await upsertPaymentLedgerRecord({
+        client,
+        session: {
+          ...lockedSession,
+          payment_status: "success",
+          verified_at: new Date(),
+          payment_response: { provider: "esewa" },
+        },
+        bookingId: fallbackCreation.booking.booking_id,
+        paymentRefId: statusPayload.ref_id || statusPayload.reference_id || statusPayload.transaction_code || null,
+      });
+
       await client.query("COMMIT");
       return res.redirect(getPaymentSuccessRedirectUrl({ homestayId: lockedSession.homestay_id, sessionToken: lockedSession.session_token }));
     }
@@ -893,8 +912,8 @@ export const handleEsewaSuccessCallback = async (req, res) => {
        SET payment_status = 'success',
            booking_id = $1,
            verified_at = CURRENT_TIMESTAMP,
-           esewa_ref_id = COALESCE($2, esewa_ref_id),
-           esewa_response = $3,
+           payment_ref_id = COALESCE($2, payment_ref_id),
+           payment_response = $3,
            updated_at = CURRENT_TIMESTAMP
        WHERE session_id = $4`,
       [
@@ -904,6 +923,18 @@ export const handleEsewaSuccessCallback = async (req, res) => {
         lockedSession.session_id,
       ]
     );
+
+    await upsertPaymentLedgerRecord({
+      client,
+      session: {
+        ...lockedSession,
+        payment_status: "success",
+        verified_at: new Date(),
+        payment_response: { provider: "esewa" },
+      },
+      bookingId: bookingCreation.booking.booking_id,
+      paymentRefId: statusPayload.ref_id || statusPayload.reference_id || statusPayload.transaction_code || null,
+    });
 
     await client.query("COMMIT");
 
@@ -938,7 +969,7 @@ export const handleEsewaFailureCallback = async (req, res) => {
       await pool.query(
         `UPDATE booking_payment_sessions
          SET payment_status = 'failed',
-             esewa_response = $1,
+             payment_response = $1,
              updated_at = CURRENT_TIMESTAMP
          WHERE session_id = $2`,
         [JSON.stringify(callbackData || {}), session.session_id]
@@ -995,7 +1026,7 @@ export const handleStripeSuccessCallback = async (req, res) => {
       await pool.query(
         `UPDATE booking_payment_sessions
          SET payment_status = 'failed',
-             esewa_response = COALESCE(esewa_response, '{}'::jsonb) || $1::jsonb,
+             payment_response = COALESCE(payment_response, '{}'::jsonb) || $1::jsonb,
              updated_at = CURRENT_TIMESTAMP
          WHERE session_id = $2`,
         [
@@ -1053,7 +1084,7 @@ export const handleStripeSuccessCallback = async (req, res) => {
         await client.query(
           `UPDATE booking_payment_sessions
            SET payment_status = 'failed',
-               esewa_response = COALESCE(esewa_response, '{}'::jsonb) || $1::jsonb,
+               payment_response = COALESCE(payment_response, '{}'::jsonb) || $1::jsonb,
                updated_at = CURRENT_TIMESTAMP
            WHERE session_id = $2`,
           [
@@ -1079,8 +1110,8 @@ export const handleStripeSuccessCallback = async (req, res) => {
        SET payment_status = 'success',
            booking_id = $1,
            verified_at = CURRENT_TIMESTAMP,
-           esewa_ref_id = $2,
-           esewa_response = COALESCE(esewa_response, '{}'::jsonb) || $3::jsonb,
+           payment_ref_id = $2,
+           payment_response = COALESCE(payment_response, '{}'::jsonb) || $3::jsonb,
            updated_at = CURRENT_TIMESTAMP
        WHERE session_id = $4`,
       [
@@ -1095,6 +1126,18 @@ export const handleStripeSuccessCallback = async (req, res) => {
         lockedSession.session_id,
       ]
     );
+
+    await upsertPaymentLedgerRecord({
+      client,
+      session: {
+        ...lockedSession,
+        payment_status: "success",
+        verified_at: new Date(),
+        payment_response: { provider: "stripe" },
+      },
+      bookingId: finalBooking.booking_id,
+      paymentRefId: stripeSession.payment_intent?.id || stripeSession.id,
+    });
 
     await client.query("COMMIT");
     return res.redirect(getPaymentSuccessRedirectUrl({ homestayId: lockedSession.homestay_id, sessionToken: lockedSession.session_token }));
@@ -1120,7 +1163,7 @@ export const handleStripeCancelCallback = async (req, res) => {
       await pool.query(
         `UPDATE booking_payment_sessions
          SET payment_status = 'failed',
-             esewa_response = COALESCE(esewa_response, '{}'::jsonb) || $1::jsonb,
+             payment_response = COALESCE(payment_response, '{}'::jsonb) || $1::jsonb,
              updated_at = CURRENT_TIMESTAMP
          WHERE session_id = $2`,
         [JSON.stringify({ provider: "stripe", reason: "cancelled_by_user" }), session.session_id]
@@ -1191,21 +1234,23 @@ export const verifyEsewaPaymentAndCreateBooking = async (req, res) => {
     });
 
     const statusPayload = await statusResponse.json().catch(() => ({}));
-    const esewaStatus = parseEsewaStatusPayload(statusPayload);
+    const gatewayStatus = parseEsewaStatusPayload(statusPayload);
 
-    if (!statusResponse.ok || !isEsewaSuccessStatus(esewaStatus)) {
+    if (!statusResponse.ok || !isEsewaSuccessStatus(gatewayStatus)) {
       await pool.query(
         `UPDATE booking_payment_sessions
          SET payment_status = 'failed',
-             esewa_response = $1,
+             payment_response = $1,
              updated_at = CURRENT_TIMESTAMP
          WHERE session_token = $2`,
-        [JSON.stringify(statusPayload), sessionToken]
+        [JSON.stringify({ provider: "esewa", ...statusPayload }), sessionToken]
       );
 
       return res.status(400).json({
         message: "Payment verification failed. Please complete payment and try again.",
-        esewa_status: esewaStatus || null,
+        payment_provider: "esewa",
+        gateway_status: gatewayStatus || null,
+        esewa_status: gatewayStatus || null,
       });
     }
 
@@ -1260,7 +1305,7 @@ export const verifyEsewaPaymentAndCreateBooking = async (req, res) => {
         await client.query(
           `UPDATE booking_payment_sessions
            SET payment_status = 'failed',
-               esewa_response = $1,
+               payment_response = $1,
                updated_at = CURRENT_TIMESTAMP
            WHERE session_token = $2`,
           [JSON.stringify({ ...statusPayload, booking_error: bookingCreation.error, fallback_error: fallbackCreation.error }), sessionToken]
@@ -1275,8 +1320,8 @@ export const verifyEsewaPaymentAndCreateBooking = async (req, res) => {
          SET payment_status = 'success',
              booking_id = $1,
              verified_at = CURRENT_TIMESTAMP,
-             esewa_ref_id = COALESCE($2, esewa_ref_id),
-             esewa_response = $3,
+             payment_ref_id = COALESCE($2, payment_ref_id),
+             payment_response = $3,
              updated_at = CURRENT_TIMESTAMP
          WHERE session_token = $4`,
         [
@@ -1287,6 +1332,18 @@ export const verifyEsewaPaymentAndCreateBooking = async (req, res) => {
         ]
       );
 
+      await upsertPaymentLedgerRecord({
+        client,
+        session: {
+          ...lockedSession,
+          payment_status: "success",
+          verified_at: new Date(),
+          payment_response: { provider: "esewa" },
+        },
+        bookingId: fallbackCreation.booking.booking_id,
+        paymentRefId: statusPayload.ref_id || statusPayload.reference_id || statusPayload.transaction_code || null,
+      });
+
       await client.query("COMMIT");
 
       return res.status(201).json({
@@ -1295,7 +1352,9 @@ export const verifyEsewaPaymentAndCreateBooking = async (req, res) => {
         payment: {
           session_token: sessionToken,
           transaction_uuid: lockedSession.transaction_uuid,
-          esewa_status: esewaStatus,
+          payment_provider: "esewa",
+          gateway_status: gatewayStatus,
+          esewa_status: gatewayStatus,
         },
       });
     }
@@ -1305,8 +1364,8 @@ export const verifyEsewaPaymentAndCreateBooking = async (req, res) => {
        SET payment_status = 'success',
            booking_id = $1,
            verified_at = CURRENT_TIMESTAMP,
-           esewa_ref_id = COALESCE($2, esewa_ref_id),
-           esewa_response = $3,
+           payment_ref_id = COALESCE($2, payment_ref_id),
+           payment_response = $3,
            updated_at = CURRENT_TIMESTAMP
        WHERE session_token = $4`,
       [
@@ -1317,6 +1376,18 @@ export const verifyEsewaPaymentAndCreateBooking = async (req, res) => {
       ]
     );
 
+    await upsertPaymentLedgerRecord({
+      client,
+      session: {
+        ...lockedSession,
+        payment_status: "success",
+        verified_at: new Date(),
+        payment_response: { provider: "esewa" },
+      },
+      bookingId: bookingCreation.booking.booking_id,
+      paymentRefId: statusPayload.ref_id || statusPayload.reference_id || statusPayload.transaction_code || null,
+    });
+
     await client.query("COMMIT");
 
     return res.status(201).json({
@@ -1325,7 +1396,9 @@ export const verifyEsewaPaymentAndCreateBooking = async (req, res) => {
       payment: {
         session_token: sessionToken,
         transaction_uuid: lockedSession.transaction_uuid,
-        esewa_status: esewaStatus,
+        payment_provider: "esewa",
+        gateway_status: gatewayStatus,
+        esewa_status: gatewayStatus,
       },
     });
   } catch (err) {
@@ -1348,6 +1421,7 @@ export const getPaymentSessionStatus = async (req, res) => {
 
     const result = await pool.query(
       `SELECT ps.session_token, ps.payment_status, ps.transaction_uuid, ps.amount, ps.total_amount,
+              COALESCE(ps.payment_response->>'provider', CASE WHEN ps.transaction_uuid LIKE 'STPAY-%' THEN 'stripe' ELSE 'esewa' END) AS payment_provider,
               ps.created_at, ps.verified_at, ps.booking_id,
               b.booking_code, b.status AS booking_status
        FROM booking_payment_sessions ps
@@ -1370,8 +1444,8 @@ export const getPaymentSessionStatus = async (req, res) => {
 export const getAdminBookingPayments = async (req, res) => {
   try {
     const result = await pool.query(
-          `SELECT ps.session_id, ps.session_token, ps.payment_status, ps.transaction_uuid, ps.esewa_ref_id,
-            COALESCE(ps.esewa_response->>'provider', CASE WHEN ps.transaction_uuid LIKE 'STPAY-%' THEN 'stripe' ELSE 'esewa' END) AS payment_provider,
+          `SELECT ps.session_id, ps.session_token, ps.payment_status, ps.transaction_uuid, ps.payment_ref_id,
+            COALESCE(ps.payment_response->>'provider', CASE WHEN ps.transaction_uuid LIKE 'STPAY-%' THEN 'stripe' ELSE 'esewa' END) AS payment_provider,
               ps.amount, ps.total_amount, ps.created_at AS payment_initiated_at, ps.verified_at,
               b.booking_id, b.booking_code, b.status AS booking_status,
               h.homestay_id, h.name AS homestay_name,
@@ -1400,7 +1474,7 @@ export const getMyBookings = async (req, res) => {
     const result = await pool.query(
       `SELECT b.*, h.name AS homestay_name, h.location AS homestay_location, h.contact_phone AS homestay_contact_phone,
               t.trail_id, t.trail_name,
-              ps.payment_status, ps.esewa_ref_id, ps.transaction_uuid
+              ps.payment_status, ps.payment_ref_id, ps.transaction_uuid
        FROM homestay_bookings b
        JOIN homestays h ON b.homestay_id = h.homestay_id
        JOIN trekking_trails t ON h.trail_id = t.trail_id
@@ -1425,7 +1499,7 @@ export const getHostBookings = async (req, res) => {
       `SELECT b.*, h.name AS homestay_name, h.location AS homestay_location,
               tr.trail_name,
               ts.full_name AS tourist_name, ts.email AS tourist_email, ts.phone AS tourist_phone,
-              ps.payment_status, ps.esewa_ref_id, ps.transaction_uuid
+              ps.payment_status, ps.payment_ref_id, ps.transaction_uuid
        FROM homestay_bookings b
        JOIN homestays h ON b.homestay_id = h.homestay_id
        JOIN trekking_trails tr ON h.trail_id = tr.trail_id
