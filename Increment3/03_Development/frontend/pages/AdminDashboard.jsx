@@ -739,7 +739,7 @@ const AdminDashboard = () => {
                     </div>
                     <div className="text-center">
                       <p className="text-gray-700 font-semibold text-lg">No payment records yet</p>
-                      <p className="text-gray-400 text-sm mt-1">Payment attempts will appear here after tourists start eSewa checkout.</p>
+                      <p className="text-gray-400 text-sm mt-1">Payment attempts will appear here after tourists start checkout.</p>
                     </div>
                   </div>
                 ) : (
@@ -761,8 +761,8 @@ const AdminDashboard = () => {
                           <tr key={record.session_id} className="border-b border-gray-100 align-top">
                             <td className="py-3 pr-4">
                               <p className="font-mono text-xs text-gray-700">{record.transaction_uuid}</p>
-                              <p className="text-xs text-gray-400 mt-1">Ref: {record.esewa_ref_id || "-"}</p>
-                              <p className="text-xs text-gray-500 mt-1 capitalize">Provider: {record.payment_provider || "esewa"}</p>
+                              <p className="text-xs text-gray-400 mt-1">Ref: {record.payment_ref_id || "-"}</p>
+                              <p className="text-xs text-gray-500 mt-1 capitalize">Provider: {record.payment_provider || "unknown"}</p>
                             </td>
                             <td className="py-3 pr-4">
                               <p className="font-semibold text-gray-800">{record.tourist_name}</p>

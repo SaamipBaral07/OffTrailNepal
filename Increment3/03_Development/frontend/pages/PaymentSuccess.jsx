@@ -43,6 +43,18 @@ const PaymentSuccess = () => {
     return `NPR ${amountValue.toLocaleString()}`;
   }, [sessionRecord]);
 
+  const paymentProviderLabel = useMemo(() => {
+    const normalizedProvider = String(sessionRecord?.payment_provider || "").trim().toLowerCase();
+    if (normalizedProvider === "stripe") return "Stripe";
+    if (normalizedProvider === "esewa") return "eSewa";
+
+    const transactionUuid = String(sessionRecord?.transaction_uuid || "").trim().toUpperCase();
+    if (transactionUuid.startsWith("STPAY-")) return "Stripe";
+    if (transactionUuid.startsWith("ESPAY-")) return "eSewa";
+
+    return "";
+  }, [sessionRecord]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#f4f2ee] via-[#faf8f4] to-[#f2efe8]">
       <Header user={user} />
@@ -57,7 +69,7 @@ const PaymentSuccess = () => {
               <p className="text-xs uppercase tracking-[0.18em] text-emerald-700 font-semibold">Payment Completed</p>
               <h1 className="text-3xl sm:text-4xl font-heading text-charcoal mt-1">Your booking is confirmed</h1>
               <p className="text-gray-600 mt-2">
-                Thank you. Your eSewa payment was successful and your homestay booking has been finalized.
+                Thank you. Your {paymentProviderLabel ? `${paymentProviderLabel} ` : ""}payment was successful and your homestay booking has been finalized.
               </p>
             </div>
           </div>
@@ -71,6 +83,7 @@ const PaymentSuccess = () => {
               <p className="text-sm text-gray-700">Booking code: <span className="font-semibold">{sessionRecord.booking_code}</span></p>
             )}
             {amountText && <p className="text-sm text-gray-700">Amount paid: <span className="font-semibold">{amountText}</span></p>}
+            {paymentProviderLabel && <p className="text-sm text-gray-700">Payment method: <span className="font-semibold">{paymentProviderLabel}</span></p>}
             {sessionRecord?.transaction_uuid && (
               <p className="text-sm text-gray-700">Transaction: <span className="font-mono text-xs">{sessionRecord.transaction_uuid}</span></p>
             )}
