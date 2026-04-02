@@ -19,20 +19,65 @@ const parseDateOnly = (value, fieldName) => {
     if (Number.isNaN(value.getTime())) {
       return { error: `${fieldName} is invalid`, value: null };
     }
-    const normalized = new Date(value);
-    normalized.setHours(0, 0, 0, 0);
+
+    // PostgreSQL DATE values are often materialized as local-midnight Date objects.
+    // Preserve the calendar day and re-anchor as UTC date-only to avoid day drift.
+    const isLocalMidnight =
+      value.getHours() === 0 &&
+      value.getMinutes() === 0 &&
+      value.getSeconds() === 0 &&
+      value.getMilliseconds() === 0;
+    const isUtcMidnight =
+      value.getUTCHours() === 0 &&
+      value.getUTCMinutes() === 0 &&
+      value.getUTCSeconds() === 0 &&
+      value.getUTCMilliseconds() === 0;
+
+    const year = isLocalMidnight && !isUtcMidnight ? value.getFullYear() : value.getUTCFullYear();
+    const month = isLocalMidnight && !isUtcMidnight ? value.getMonth() : value.getUTCMonth();
+    const day = isLocalMidnight && !isUtcMidnight ? value.getDate() : value.getUTCDate();
+
+    const normalized = new Date(Date.UTC(year, month, day));
     return { error: null, value: normalized };
   }
 
-  const parsed = new Date(`${value}T00:00:00`);
+  const asString = String(value).trim();
+  const ymdMatch = asString.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (ymdMatch) {
+    const year = Number.parseInt(ymdMatch[1], 10);
+    const month = Number.parseInt(ymdMatch[2], 10);
+    const day = Number.parseInt(ymdMatch[3], 10);
+
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    if (
+      Number.isNaN(parsed.getTime()) ||
+      parsed.getUTCFullYear() !== year ||
+      parsed.getUTCMonth() !== month - 1 ||
+      parsed.getUTCDate() !== day
+    ) {
+      return { error: `${fieldName} is invalid`, value: null };
+    }
+
+    return { error: null, value: parsed };
+  }
+
+  const parsed = new Date(asString);
   if (Number.isNaN(parsed.getTime())) {
     return { error: `${fieldName} is invalid`, value: null };
   }
 
+  parsed.setUTCHours(0, 0, 0, 0);
+
   return { error: null, value: parsed };
 };
 
-const toDateOnly = (date) => date.toISOString().slice(0, 10);
+const toDateOnly = (date) => {
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
 const generateBookingCode = () => {
   const stamp = Date.now().toString(36).toUpperCase();
@@ -51,6 +96,9 @@ const STRIPE_MIN_USD_CENTS = Number(process.env.STRIPE_MIN_USD_CENTS || 50);
 const STRIPE_USD_TO_NPR_FALLBACK = Number(process.env.STRIPE_USD_TO_NPR_FALLBACK || 150.08);
 const STRIPE_FX_API_URL = process.env.STRIPE_FX_API_URL || "https://open.er-api.com/v6/latest/USD";
 const STRIPE_FX_CACHE_TTL_MS = Number(process.env.STRIPE_FX_CACHE_TTL_MS || 60 * 60 * 1000);
+const REFUND_FULL_HOURS = Number(process.env.REFUND_FULL_HOURS || 72);
+const REFUND_PARTIAL_HOURS = Number(process.env.REFUND_PARTIAL_HOURS || 24);
+const REFUND_PARTIAL_RATE = Number(process.env.REFUND_PARTIAL_RATE || 0.5);
 const stripeClient = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 let stripeFxCache = {
   usdToNprRate: null,
@@ -222,6 +270,84 @@ const upsertPaymentLedgerRecord = async ({ client, session, bookingId, paymentRe
       [bookingId, amount, paymentMethod, "success", transactionReference, paidAt]
     );
   }
+};
+
+const evaluateRefundPolicy = ({ checkInDate, paidAmount }) => {
+  const amount = Number(paidAmount || 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return {
+      eligible: false,
+      refundAmount: 0,
+      refundRate: 0,
+      ruleCode: "invalid_amount",
+      reason: "No eligible payment amount found for refund.",
+      hoursUntilCheckIn: null,
+    };
+  }
+
+  const checkInParsed = parseDateOnly(checkInDate, "check_in_date");
+  if (checkInParsed.error) {
+    return {
+      eligible: false,
+      refundAmount: 0,
+      refundRate: 0,
+      ruleCode: "invalid_check_in",
+      reason: "Booking check-in date is invalid for refund evaluation.",
+      hoursUntilCheckIn: null,
+    };
+  }
+
+  const checkIn = checkInParsed.value;
+  const hoursUntilCheckIn = Math.floor((checkIn.getTime() - Date.now()) / (1000 * 60 * 60));
+
+  if (!Number.isFinite(hoursUntilCheckIn)) {
+    return {
+      eligible: false,
+      refundAmount: 0,
+      refundRate: 0,
+      ruleCode: "invalid_check_in",
+      reason: "Booking check-in date is invalid for refund evaluation.",
+      hoursUntilCheckIn: null,
+    };
+  }
+
+  if (hoursUntilCheckIn < REFUND_PARTIAL_HOURS) {
+    return {
+      eligible: false,
+      refundAmount: 0,
+      refundRate: 0,
+      ruleCode: `not_eligible_under_${REFUND_PARTIAL_HOURS}h`,
+      reason: `Refund is not available within ${REFUND_PARTIAL_HOURS} hours of check-in.`,
+      hoursUntilCheckIn,
+    };
+  }
+
+  const partialRate = Math.max(0, Math.min(1, REFUND_PARTIAL_RATE));
+  const isFull = hoursUntilCheckIn >= REFUND_FULL_HOURS;
+  const refundRate = isFull ? 1 : partialRate;
+  const refundAmount = toMoney(amount * refundRate);
+
+  if (refundAmount <= 0) {
+    return {
+      eligible: false,
+      refundAmount: 0,
+      refundRate: 0,
+      ruleCode: "zero_refund",
+      reason: "Calculated refund amount is zero.",
+      hoursUntilCheckIn,
+    };
+  }
+
+  return {
+    eligible: true,
+    refundAmount,
+    refundRate,
+    ruleCode: isFull ? `full_${REFUND_FULL_HOURS}h` : `partial_${REFUND_PARTIAL_HOURS}h`,
+    reason: isFull
+      ? `Eligible for full refund (${REFUND_FULL_HOURS}+ hours before check-in).`
+      : `Eligible for partial refund (${Math.round(refundRate * 100)}%) between ${REFUND_PARTIAL_HOURS} and ${REFUND_FULL_HOURS} hours before check-in.`,
+    hoursUntilCheckIn,
+  };
 };
 
 const getValidatedBookingDraft = async ({
@@ -451,7 +577,7 @@ export const initiateEsewaPaymentForBooking = async (req, res) => {
     const guestsCount = guestsParsed.value;
 
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
 
     if (checkInDate < today) {
       return res.status(400).json({ message: "check_in_date cannot be in the past" });
@@ -617,7 +743,7 @@ export const initiateStripePaymentForBooking = async (req, res) => {
     const guestsCount = guestsParsed.value;
 
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
 
     if (checkInDate < today) {
       return res.status(400).json({ message: "check_in_date cannot be in the past" });
@@ -1444,15 +1570,21 @@ export const getPaymentSessionStatus = async (req, res) => {
 export const getAdminBookingPayments = async (req, res) => {
   try {
     const result = await pool.query(
-          `SELECT ps.session_id, ps.session_token, ps.payment_status, ps.transaction_uuid, ps.payment_ref_id,
+          `SELECT ps.session_id, ps.session_token,
+              COALESCE(p.payment_status, ps.payment_status) AS payment_status,
+              ps.transaction_uuid, COALESCE(p.transaction_reference, ps.payment_ref_id) AS payment_ref_id,
             COALESCE(ps.payment_response->>'provider', CASE WHEN ps.transaction_uuid LIKE 'STPAY-%' THEN 'stripe' ELSE 'esewa' END) AS payment_provider,
               ps.amount, ps.total_amount, ps.created_at AS payment_initiated_at, ps.verified_at,
               b.booking_id, b.booking_code, b.status AS booking_status,
+              r.refund_status, r.requested_amount AS refund_requested_amount,
+              r.requested_at AS refund_requested_at, r.processed_at AS refunded_at,
               h.homestay_id, h.name AS homestay_name,
               t.tourist_id, t.full_name AS tourist_name, t.email AS tourist_email,
               hs.host_id, hs.full_name AS host_name, hs.email AS host_email
        FROM booking_payment_sessions ps
        LEFT JOIN homestay_bookings b ON ps.booking_id = b.booking_id
+       LEFT JOIN payments p ON p.booking_id = b.booking_id
+       LEFT JOIN booking_refunds r ON r.booking_id = b.booking_id
        JOIN homestays h ON ps.homestay_id = h.homestay_id
        JOIN tourists t ON ps.tourist_id = t.tourist_id
        JOIN hosts hs ON ps.host_id = hs.host_id
@@ -1474,11 +1606,22 @@ export const getMyBookings = async (req, res) => {
     const result = await pool.query(
       `SELECT b.*, h.name AS homestay_name, h.location AS homestay_location, h.contact_phone AS homestay_contact_phone,
               t.trail_id, t.trail_name,
-              ps.payment_status, ps.payment_ref_id, ps.transaction_uuid
+              COALESCE(p.payment_status, ps.payment_status) AS payment_status,
+              COALESCE(p.transaction_reference, ps.payment_ref_id) AS payment_ref_id,
+              ps.transaction_uuid, p.payment_method, p.amount AS paid_amount,
+              r.refund_status, r.requested_amount AS refund_requested_amount, r.requested_at AS refund_requested_at
        FROM homestay_bookings b
        JOIN homestays h ON b.homestay_id = h.homestay_id
        JOIN trekking_trails t ON h.trail_id = t.trail_id
-       LEFT JOIN booking_payment_sessions ps ON ps.booking_id = b.booking_id
+       LEFT JOIN LATERAL (
+         SELECT session_id, payment_status, payment_ref_id, transaction_uuid
+         FROM booking_payment_sessions
+         WHERE booking_id = b.booking_id
+         ORDER BY session_id DESC
+         LIMIT 1
+       ) ps ON TRUE
+       LEFT JOIN payments p ON p.booking_id = b.booking_id
+       LEFT JOIN booking_refunds r ON r.booking_id = b.booking_id
        WHERE b.tourist_id = $1
        ORDER BY b.created_at DESC`,
       [touristId]
@@ -1499,12 +1642,23 @@ export const getHostBookings = async (req, res) => {
       `SELECT b.*, h.name AS homestay_name, h.location AS homestay_location,
               tr.trail_name,
               ts.full_name AS tourist_name, ts.email AS tourist_email, ts.phone AS tourist_phone,
-              ps.payment_status, ps.payment_ref_id, ps.transaction_uuid
+              COALESCE(p.payment_status, ps.payment_status) AS payment_status,
+              COALESCE(p.transaction_reference, ps.payment_ref_id) AS payment_ref_id,
+              ps.transaction_uuid, p.payment_method,
+              r.refund_status, r.requested_amount AS refund_requested_amount
        FROM homestay_bookings b
        JOIN homestays h ON b.homestay_id = h.homestay_id
        JOIN trekking_trails tr ON h.trail_id = tr.trail_id
        JOIN tourists ts ON b.tourist_id = ts.tourist_id
-       LEFT JOIN booking_payment_sessions ps ON ps.booking_id = b.booking_id
+       LEFT JOIN LATERAL (
+         SELECT session_id, payment_status, payment_ref_id, transaction_uuid
+         FROM booking_payment_sessions
+         WHERE booking_id = b.booking_id
+         ORDER BY session_id DESC
+         LIMIT 1
+       ) ps ON TRUE
+       LEFT JOIN payments p ON p.booking_id = b.booking_id
+       LEFT JOIN booking_refunds r ON r.booking_id = b.booking_id
        WHERE b.host_id = $1
        ORDER BY b.created_at DESC`,
       [hostId]
@@ -1532,11 +1686,15 @@ export const cancelTouristBooking = async (req, res) => {
 
     const bookingResult = await client.query(
       `SELECT b.booking_id, b.status, b.rooms_booked, b.homestay_id, b.tourist_id,
-              h.total_rooms, h.available_rooms
+              h.total_rooms, h.available_rooms,
+              p.payment_status AS ledger_payment_status,
+              r.refund_status
        FROM homestay_bookings b
        JOIN homestays h ON b.homestay_id = h.homestay_id
+       LEFT JOIN payments p ON p.booking_id = b.booking_id
+       LEFT JOIN booking_refunds r ON r.booking_id = b.booking_id
        WHERE b.booking_id = $1
-       FOR UPDATE`,
+       FOR UPDATE OF b, h`,
       [bookingId]
     );
 
@@ -1554,6 +1712,28 @@ export const cancelTouristBooking = async (req, res) => {
     if (booking.status === "cancelled") {
       await client.query("ROLLBACK");
       return res.status(400).json({ message: "Booking is already cancelled" });
+    }
+
+    if (booking.status === "refund_requested" || booking.refund_status === "requested") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        message: "Refund request is already pending for this booking.",
+        code: "REFUND_ALREADY_REQUESTED",
+      });
+    }
+
+    if (booking.status === "refunded" || booking.refund_status === "processed") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Booking is already refunded" });
+    }
+
+    const paymentStatus = String(booking.ledger_payment_status || "").trim().toLowerCase();
+    if (paymentStatus === "success" || paymentStatus === "refund_requested") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        message: "This booking has a successful payment. Please request a refund instead of direct cancellation.",
+        code: "REFUND_REQUIRED",
+      });
     }
 
     await client.query(
@@ -1580,6 +1760,368 @@ export const cancelTouristBooking = async (req, res) => {
     await client.query("ROLLBACK");
     console.error("Error cancelling booking:", err);
     return res.status(500).json({ message: "Server error cancelling booking" });
+  } finally {
+    client.release();
+  }
+};
+
+export const requestBookingRefund = async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const touristId = req.user.user_id;
+    const bookingId = Number.parseInt(req.params.bookingId, 10);
+    const reason = String(req.body?.reason || "").trim();
+
+    if (!Number.isInteger(bookingId) || bookingId <= 0) {
+      return res.status(400).json({ message: "Invalid booking id" });
+    }
+
+    await client.query("BEGIN");
+
+    const bookingResult = await client.query(
+      `SELECT b.booking_id, b.status, b.tourist_id, b.check_in_date,
+              p.payment_id, p.amount AS paid_amount, p.payment_status AS ledger_payment_status,
+              p.payment_method,
+              ps.session_id, ps.transaction_uuid,
+              r.refund_id, r.refund_status
+       FROM homestay_bookings b
+       LEFT JOIN payments p ON p.booking_id = b.booking_id
+       LEFT JOIN LATERAL (
+         SELECT session_id, transaction_uuid
+         FROM booking_payment_sessions
+         WHERE booking_id = b.booking_id
+         ORDER BY session_id DESC
+         LIMIT 1
+       ) ps ON TRUE
+       LEFT JOIN booking_refunds r ON r.booking_id = b.booking_id
+       WHERE b.booking_id = $1
+       FOR UPDATE OF b`,
+      [bookingId]
+    );
+
+    if (!bookingResult.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    const booking = bookingResult.rows[0];
+    if (booking.tourist_id !== touristId) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ message: "You can only request refunds for your own bookings" });
+    }
+
+    if (booking.status === "cancelled") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Cancelled booking cannot be refunded automatically. Contact support." });
+    }
+
+    if (booking.status === "refunded" || booking.refund_status === "processed") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "This booking is already refunded" });
+    }
+
+    if (booking.status === "refund_requested" || booking.refund_status === "requested") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ message: "Refund request is already pending for this booking" });
+    }
+
+    const paymentStatus = String(booking.ledger_payment_status || "").trim().toLowerCase();
+    if (paymentStatus !== "success") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: "Refund requires a successful payment. For unpaid bookings, use cancel.",
+      });
+    }
+
+    const policy = evaluateRefundPolicy({
+      checkInDate: booking.check_in_date,
+      paidAmount: booking.paid_amount,
+    });
+
+    if (!policy.eligible) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        message: policy.reason,
+        refund_eligible: false,
+        rule_code: policy.ruleCode,
+      });
+    }
+
+    const provider =
+      String(booking.payment_method || "").trim().toLowerCase() ||
+      (String(booking.transaction_uuid || "").toUpperCase().startsWith("STPAY-") ? "stripe" : "esewa");
+
+    await client.query(
+      `INSERT INTO booking_refunds
+        (booking_id, payment_id, session_id, tourist_id, requested_amount, approved_amount, currency,
+         refund_reason, policy_rule, refund_status, provider, requested_at, updated_at)
+       VALUES
+        ($1, $2, $3, $4, $5, $5, 'NPR', $6, $7, 'requested', $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT (booking_id)
+       DO UPDATE SET payment_id = EXCLUDED.payment_id,
+                     session_id = EXCLUDED.session_id,
+                     tourist_id = EXCLUDED.tourist_id,
+                     requested_amount = EXCLUDED.requested_amount,
+                     approved_amount = EXCLUDED.approved_amount,
+                     refund_reason = EXCLUDED.refund_reason,
+                     policy_rule = EXCLUDED.policy_rule,
+                     refund_status = 'requested',
+                     provider = EXCLUDED.provider,
+                     requested_at = CURRENT_TIMESTAMP,
+                     reviewed_at = NULL,
+                     processed_at = NULL,
+                     reviewed_by_user_id = NULL,
+                     review_note = NULL,
+                     gateway_refund_reference = NULL,
+                     gateway_response = NULL,
+                     updated_at = CURRENT_TIMESTAMP`,
+      [
+        bookingId,
+        booking.payment_id,
+        booking.session_id,
+        touristId,
+        policy.refundAmount,
+        reason || null,
+        policy.ruleCode,
+        provider,
+      ]
+    );
+
+    await client.query(
+      `UPDATE homestay_bookings
+       SET status = 'refund_requested',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE booking_id = $1`,
+      [bookingId]
+    );
+
+    await client.query(
+      `UPDATE payments
+       SET payment_status = 'refund_requested'
+       WHERE booking_id = $1`,
+      [bookingId]
+    );
+
+    await client.query(
+      `UPDATE booking_payment_sessions
+       SET payment_status = 'refund_requested',
+           updated_at = CURRENT_TIMESTAMP
+       WHERE booking_id = $1
+         AND payment_status IN ('success', 'refund_requested')`,
+      [bookingId]
+    );
+
+    await client.query("COMMIT");
+
+    return res.status(200).json({
+      message: "Refund request submitted successfully. Our team will review it.",
+      refund: {
+        booking_id: bookingId,
+        requested_amount: policy.refundAmount,
+        refund_rate: policy.refundRate,
+        rule_code: policy.ruleCode,
+        hours_until_check_in: policy.hoursUntilCheckIn,
+        provider,
+      },
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error requesting booking refund:", err);
+    return res.status(500).json({ message: "Server error requesting refund" });
+  } finally {
+    client.release();
+  }
+};
+
+export const reviewBookingRefund = async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const adminUserId = req.user.user_id;
+    const bookingId = Number.parseInt(req.params.bookingId, 10);
+    const action = String(req.body?.action || "").trim().toLowerCase();
+    const reviewNote = String(req.body?.note || "").trim() || null;
+    let gatewayRefundReference = String(req.body?.gateway_refund_reference || "").trim() || null;
+
+    if (!Number.isInteger(bookingId) || bookingId <= 0) {
+      return res.status(400).json({ message: "Invalid booking id" });
+    }
+
+    if (!["process", "reject"].includes(action)) {
+      return res.status(400).json({ message: "action must be either process or reject" });
+    }
+
+    await client.query("BEGIN");
+
+    const refundResult = await client.query(
+      `SELECT r.refund_id, r.refund_status, r.requested_amount, r.provider, r.booking_id,
+              b.rooms_booked, b.homestay_id,
+              h.total_rooms, h.available_rooms,
+              p.payment_method, p.transaction_reference
+       FROM booking_refunds r
+       JOIN homestay_bookings b ON r.booking_id = b.booking_id
+       JOIN homestays h ON b.homestay_id = h.homestay_id
+       LEFT JOIN payments p ON p.booking_id = r.booking_id
+       WHERE r.booking_id = $1
+       FOR UPDATE OF r, b, h`,
+      [bookingId]
+    );
+
+    if (!refundResult.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Refund request not found for booking" });
+    }
+
+    const refund = refundResult.rows[0];
+    if (refund.refund_status !== "requested") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: `Refund request is already ${refund.refund_status}` });
+    }
+
+    if (action === "reject") {
+      await client.query(
+        `UPDATE booking_refunds
+         SET refund_status = 'rejected',
+             reviewed_at = CURRENT_TIMESTAMP,
+             reviewed_by_user_id = $2,
+             review_note = $3,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE refund_id = $1`,
+        [refund.refund_id, adminUserId, reviewNote]
+      );
+
+      await client.query(
+        `UPDATE homestay_bookings
+         SET status = 'confirmed',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE booking_id = $1`,
+        [bookingId]
+      );
+
+      await client.query(
+        `UPDATE payments
+         SET payment_status = 'success'
+         WHERE booking_id = $1`,
+        [bookingId]
+      );
+
+      await client.query(
+        `UPDATE booking_payment_sessions
+         SET payment_status = 'success',
+             updated_at = CURRENT_TIMESTAMP
+         WHERE booking_id = $1
+           AND payment_status = 'refund_requested'`,
+        [bookingId]
+      );
+
+      await client.query("COMMIT");
+      return res.status(200).json({ message: "Refund request rejected and booking restored to confirmed." });
+    }
+
+    const provider =
+      String(refund.provider || refund.payment_method || "").trim().toLowerCase() || "unknown";
+    const paymentReference = String(refund.transaction_reference || "").trim();
+    let gatewayResponse = null;
+
+    if (provider === "stripe" && stripeClient && paymentReference.startsWith("pi_")) {
+      try {
+        const stripeRefund = await stripeClient.refunds.create({
+          payment_intent: paymentReference,
+        });
+
+        if (stripeRefund.status !== "succeeded") {
+          await client.query("ROLLBACK");
+          return res.status(502).json({
+            message: `Stripe refund is not completed yet (status: ${stripeRefund.status}). Please retry after confirmation.`,
+          });
+        }
+
+        gatewayRefundReference = stripeRefund.id;
+        gatewayResponse = {
+          provider: "stripe",
+          refund_id: stripeRefund.id,
+          refund_status: stripeRefund.status,
+          payment_intent: paymentReference,
+        };
+      } catch (err) {
+        await client.query("ROLLBACK");
+        return res.status(502).json({
+          message: "Stripe refund request failed. No database status was changed.",
+          error: err.message,
+        });
+      }
+    } else if (!gatewayRefundReference) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message:
+          "gateway_refund_reference is required for manual refunds (for example eSewa or unsupported Stripe references).",
+      });
+    }
+
+    await client.query(
+      `UPDATE booking_refunds
+       SET refund_status = 'processed',
+           reviewed_at = CURRENT_TIMESTAMP,
+           processed_at = CURRENT_TIMESTAMP,
+           reviewed_by_user_id = $2,
+           review_note = $3,
+           gateway_refund_reference = COALESCE($4, gateway_refund_reference),
+           gateway_response = COALESCE($5::jsonb, gateway_response),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE refund_id = $1`,
+      [refund.refund_id, adminUserId, reviewNote, gatewayRefundReference, gatewayResponse ? JSON.stringify(gatewayResponse) : null]
+    );
+
+    await client.query(
+      `UPDATE homestay_bookings
+       SET status = 'refunded',
+           cancelled_at = COALESCE(cancelled_at, CURRENT_TIMESTAMP),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE booking_id = $1`,
+      [bookingId]
+    );
+
+    await client.query(
+      `UPDATE homestays
+       SET available_rooms = LEAST(total_rooms, available_rooms + $1),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE homestay_id = $2`,
+      [refund.rooms_booked, refund.homestay_id]
+    );
+
+    await client.query(
+      `UPDATE payments
+       SET payment_status = 'refunded'
+       WHERE booking_id = $1`,
+      [bookingId]
+    );
+
+    await client.query(
+      `UPDATE booking_payment_sessions
+       SET payment_status = 'refunded',
+           payment_response = COALESCE(payment_response, '{}'::jsonb) || jsonb_build_object(
+             'refund_processed_at', CURRENT_TIMESTAMP,
+             'refund_reference', $2
+           ),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE booking_id = $1
+         AND payment_status IN ('success', 'refund_requested')`,
+      [bookingId, gatewayRefundReference]
+    );
+
+    await client.query("COMMIT");
+    return res.status(200).json({
+      message: "Refund processed successfully and booking marked as refunded.",
+      refund: {
+        booking_id: bookingId,
+        refund_reference: gatewayRefundReference,
+      },
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error reviewing booking refund:", err);
+    return res.status(500).json({ message: "Server error reviewing refund" });
   } finally {
     client.release();
   }
