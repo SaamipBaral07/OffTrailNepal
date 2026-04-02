@@ -37,28 +37,37 @@ import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
 import { useAuth } from "../context/AuthContext";
 import { getToken } from "../tokenStore";
+import { motion, AnimatePresence } from "framer-motion";
 
 const API = "http://localhost:5000/api";
 
 /* ─────────────────────────────────────────
-   STAT CARD (Light theme)
+   STAT CARD (Premium Theme)
 ───────────────────────────────────────── */
-const StatCard = ({ icon: Icon, label, value, accent }) => {
+const StatCard = ({ icon: Icon, label, value, accent, delay = 0 }) => {
   const accents = {
-    blue: { bg: "bg-blue-50", icon: "bg-blue-500", text: "text-blue-600" },
-    emerald: { bg: "bg-emerald-50", icon: "bg-emerald-500", text: "text-emerald-600" },
-    violet: { bg: "bg-violet-50", icon: "bg-violet-500", text: "text-violet-600" },
-    amber: { bg: "bg-amber-50", icon: "bg-amber-500", text: "text-amber-600" },
+    navy: { bg: "bg-white", iconBg: "bg-navy/10", icon: "text-navy", text: "text-navy" },
+    gold: { bg: "bg-white", iconBg: "bg-gold/10", icon: "text-gold-dark", text: "text-gray-900" },
+    alpine: { bg: "bg-white", iconBg: "bg-alpine/10", icon: "text-alpine", text: "text-gray-900" },
+    charcoal: { bg: "bg-white", iconBg: "bg-charcoal/10", icon: "text-charcoal", text: "text-gray-900" },
   };
-  const a = accents[accent];
+  const a = accents[accent] || accents.navy;
   return (
-    <div className={`relative ${a.bg} rounded-2xl p-5 border border-gray-100 shadow-sm overflow-hidden group hover:shadow-md transition-shadow`}>
-      <div className={`inline-flex p-2.5 rounded-xl ${a.icon} mb-3`}>
-        <Icon className="h-5 w-5 text-white" />
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }} 
+      animate={{ opacity: 1, y: 0 }} 
+      transition={{ delay, duration: 0.4 }}
+      className={`relative ${a.bg} rounded-3xl p-6 border border-gray-100/80 shadow-sm overflow-hidden group hover:shadow-lg transition-all duration-300`}
+    >
+      <div className={`inline-flex p-3 rounded-2xl ${a.iconBg} mb-4 transition-transform duration-300 group-hover:scale-110`}>
+        <Icon className={`h-6 w-6 ${a.icon}`} />
       </div>
-      <p className={`text-2xl font-bold ${a.text} font-mono`}>{value}</p>
-      <p className="text-sm text-gray-500 mt-0.5">{label}</p>
-    </div>
+      <p className={`text-4xl font-bold ${a.text} font-heading tracking-tight`}>{value}</p>
+      <p className="text-sm text-gray-500 mt-1 font-medium">{label}</p>
+      
+      {/* Decorative background element */}
+      <div className={`absolute -right-6 -bottom-6 w-24 h-24 rounded-full ${a.iconBg} opacity-50 group-hover:scale-150 transition-transform duration-500 pointer-events-none`} />
+    </motion.div>
   );
 };
 
@@ -68,13 +77,13 @@ const StatCard = ({ icon: Icon, label, value, accent }) => {
 const StatusBadge = ({ status }) => {
   const config = {
     not_submitted: { bg: "bg-gray-50 border-gray-200", text: "text-gray-600", dot: "bg-gray-400", label: "Not Submitted" },
-    pending: { bg: "bg-amber-50 border-amber-200", text: "text-amber-700", dot: "bg-amber-400", label: "Pending" },
-    approved: { bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700", dot: "bg-emerald-400", label: "Approved" },
-    rejected: { bg: "bg-red-50 border-red-200", text: "text-red-700", dot: "bg-red-400", label: "Rejected" },
+    pending: { bg: "bg-gold/10 border-gold/20", text: "text-gold-dark", dot: "bg-gold", label: "Pending" },
+    approved: { bg: "bg-alpine/10 border-alpine/20", text: "text-alpine-dark", dot: "bg-alpine", label: "Approved" },
+    rejected: { bg: "bg-red-50 border-red-200", text: "text-red-700", dot: "bg-red-500", label: "Rejected" },
   };
   const c = config[status] || config.pending;
   return (
-    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${c.bg} ${c.text}`}>
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] uppercase tracking-wider font-bold border ${c.bg} ${c.text}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
       {c.label}
     </span>
@@ -107,6 +116,15 @@ const AdminDashboard = () => {
   const [guidesLoading, setGuidesLoading] = useState(false);
   const [paymentRecords, setPaymentRecords] = useState([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [reviewingRefundBookingId, setReviewingRefundBookingId] = useState(null);
+  const [refundActionNotice, setRefundActionNotice] = useState(null);
+  const [refundReviewModal, setRefundReviewModal] = useState({
+    open: false,
+    record: null,
+    note: "",
+    gatewayRefundReference: "",
+    error: "",
+  });
 
   useEffect(() => {
     if (loading) return;
@@ -164,6 +182,87 @@ const AdminDashboard = () => {
     }
   }, []);
 
+  const pushRefundNotice = useCallback((type, message) => {
+    const noticeId = Date.now();
+    setRefundActionNotice({ id: noticeId, type, message });
+
+    window.setTimeout(() => {
+      setRefundActionNotice((prev) => (prev?.id === noticeId ? null : prev));
+    }, 7000);
+  }, []);
+
+  const openRefundReviewModal = (record) => {
+    setRefundReviewModal({
+      open: true,
+      record,
+      note: "",
+      gatewayRefundReference: "",
+      error: "",
+    });
+  };
+
+  const closeRefundReviewModal = (force = false) => {
+    if (!force && reviewingRefundBookingId) return;
+    setRefundReviewModal({
+      open: false,
+      record: null,
+      note: "",
+      gatewayRefundReference: "",
+      error: "",
+    });
+  };
+
+  const handleRefundReview = async (action) => {
+    const record = refundReviewModal.record;
+
+    if (!record?.booking_id) {
+      setRefundReviewModal((prev) => ({
+        ...prev,
+        error: "Booking id is missing for this payment record.",
+      }));
+      return;
+    }
+
+    const provider = String(record.payment_provider || "").trim().toLowerCase();
+    const paymentReference = String(record.payment_ref_id || "").trim();
+    const canAutoRefundWithStripe = provider === "stripe" && paymentReference.startsWith("pi_");
+
+    if (action === "process" && !canAutoRefundWithStripe && !refundReviewModal.gatewayRefundReference.trim()) {
+      setRefundReviewModal((prev) => ({
+        ...prev,
+        error: "Gateway refund reference is required to process this refund.",
+      }));
+      return;
+    }
+
+    setReviewingRefundBookingId(record.booking_id);
+    setRefundReviewModal((prev) => ({ ...prev, error: "" }));
+
+    try {
+      const res = await api.patch(`${API}/bookings/${record.booking_id}/refund/review`, {
+        action,
+        note: refundReviewModal.note.trim() || null,
+        gateway_refund_reference:
+          action === "process" && !canAutoRefundWithStripe
+            ? refundReviewModal.gatewayRefundReference.trim()
+            : null,
+      });
+
+      pushRefundNotice("success", res.data?.message || "Refund review updated successfully.");
+      closeRefundReviewModal(true);
+      await fetchAdminPayments();
+    } catch (err) {
+      console.error("Error reviewing refund request:", err);
+      pushRefundNotice("error", err.response?.data?.message || "Failed to review refund request");
+      setRefundReviewModal((prev) => ({
+        ...prev,
+        error: err.response?.data?.message || "Failed to review refund request",
+      }));
+    } finally {
+      setReviewingRefundBookingId(null);
+    }
+  };
+
   useEffect(() => {
     if (!isLoading && user) {
       fetchTrails();
@@ -219,119 +318,109 @@ const AdminDashboard = () => {
 
   if (isLoading)
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 rounded-full border-4 border-blue-500 border-t-transparent animate-spin" />
-          <p className="text-gray-500 text-sm tracking-wide">Loading dashboard…</p>
+      <div className="min-h-screen flex items-center justify-center bg-[#FDFBF7]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-full border-4 border-navy border-t-gold animate-spin" />
+          <p className="text-navy font-heading font-semibold tracking-wide">Loading dashboard…</p>
         </div>
       </div>
     );
 
+  // Homestay Metrics
   const pendingHomestays = homestaysAdmin.filter((h) => h.verified_status === "pending").length;
+  const approvedHomestays = homestaysAdmin.filter((h) => h.verified_status === "approved").length;
+  const rejectedHomestays = homestaysAdmin.filter((h) => h.verified_status === "rejected").length;
+
+  // Guide Metrics
   const pendingGuides = guidesAdmin.filter((g) => g.verification_status === "pending").length;
+  const approvedGuides = guidesAdmin.filter((g) => g.verification_status === "approved").length;
+  const rejectedGuides = guidesAdmin.filter((g) => g.verification_status === "rejected").length;
+
+  // Payment Metrics
+  const successfulPayments = paymentRecords.filter(record => String(record.payment_status || "").trim().toLowerCase() === "success").length;
+  const pendingRefunds = paymentRecords.filter(record => {
+    const paymentStatus = String(record.payment_status || "").trim().toLowerCase();
+    const computedRefundStatus = String(record.refund_status || (paymentStatus === "refund_requested" ? "requested" : paymentStatus === "refunded" ? "processed" : "")).trim().toLowerCase();
+    return computedRefundStatus === "requested";
+  }).length;
+  const totalRevenue = paymentRecords
+    .filter(record => String(record.payment_status || "").trim().toLowerCase() === "success")
+    .reduce((sum, record) => sum + Number(record.total_amount || 0), 0);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-[#FDFBF7] flex font-body">
       {/* ── Sidebar ── */}
-      <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-gray-200 fixed inset-y-0 shadow-sm">
+      <aside className="hidden lg:flex flex-col w-72 bg-navy border-r border-navy-light/30 fixed inset-y-0 shadow-2xl z-50">
         {/* Brand */}
-        <div className="px-6 py-5 border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <div className="relative w-10 h-10 rounded-full overflow-hidden">
-              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-gold/40 via-gold/20 to-gold/40 p-[2px]">
-                <div className="h-full w-full rounded-full bg-white p-0.5">
-                  <img
-                    src="/offtrail-latest.png"
-                    alt="OffTrail Nepal"
-                    className="h-full w-full rounded-full object-cover"
-                  />
-                </div>
-              </div>
+        <div className="px-8 py-8 border-b border-white/5">
+          <div className="flex items-center gap-4">
+            <div className="relative w-12 h-12 rounded-full overflow-hidden shadow-lg shadow-black/40 ring-2 ring-gold/80">
+              <img
+                src="/offtrail-latest.png"
+                alt="OffTrail Nepal"
+                className="h-full w-full object-cover bg-white"
+              />
             </div>
             <div>
-              <p className="text-gray-900 font-bold text-sm leading-none">OffTrailNepal</p>
-              <p className="text-gray-400 text-xs mt-0.5">Admin Console</p>
+              <p className="text-white font-heading font-bold text-2xl tracking-wide leading-none">OffTrail</p>
+              <p className="text-gold mt-1.5 text-[10px] uppercase tracking-[0.2em] font-bold">Admin Panel</p>
             </div>
           </div>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-5 space-y-1">
-          <p className="px-3 mb-2 text-xs font-semibold text-gray-400 uppercase tracking-widest">
-            Management
+        <nav className="flex-1 px-4 py-8 space-y-2">
+          <p className="px-4 mb-4 text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">
+            Overview
           </p>
-          <button
-            onClick={() => setActiveTab("trails")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              activeTab === "trails"
-                ? "bg-blue-50 text-blue-600 border border-blue-100"
-                : "text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            <Mountain className="h-4 w-4" />
-            Trekking Trails
-            <span className={`ml-auto text-xs px-2 py-0.5 rounded-full font-bold ${
-              activeTab === "trails" ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-500"
-            }`}>
-              {trails.length}
-            </span>
-          </button>
-          <button
-            onClick={() => setActiveTab("homestays")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              activeTab === "homestays"
-                ? "bg-blue-50 text-blue-600 border border-blue-100"
-                : "text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            <Home className="h-4 w-4" />
-            Homestay Approvals
-            {pendingHomestays > 0 && (
-              <span className="ml-auto bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full font-bold">
-                {pendingHomestays}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab("guides")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              activeTab === "guides"
-                ? "bg-blue-50 text-blue-600 border border-blue-100"
-                : "text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            <Compass className="h-4 w-4" />
-            Guides Management
-          </button>
-          <button
-            onClick={() => setActiveTab("payments")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              activeTab === "payments"
-                ? "bg-blue-50 text-blue-600 border border-blue-100"
-                : "text-gray-600 hover:bg-gray-50"
-            }`}
-          >
-            <CreditCard className="h-4 w-4" />
-            Booking Payments
-          </button>
+          {[
+            { id: "trails", icon: Mountain, label: "Trekking Trails", count: trails.length },
+            { id: "homestays", icon: Home, label: "Homestay Approvals", count: pendingHomestays > 0 ? pendingHomestays : null, countType: "alert" },
+            { id: "guides", icon: Compass, label: "Guides Management" },
+            { id: "payments", icon: CreditCard, label: "Booking Payments" },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-300 ${
+                activeTab === item.id
+                  ? "bg-gold text-navy shadow-lg shadow-gold/20"
+                  : "text-white/70 hover:bg-white/5 hover:text-white"
+              }`}
+            >
+              <item.icon className="h-5 w-5" />
+              {item.label}
+              {item.count !== undefined && item.count !== null && (
+                <span className={`ml-auto text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                  item.countType === "alert" && activeTab !== item.id
+                    ? "bg-red-500 text-white" 
+                    : activeTab === item.id 
+                    ? "bg-navy/20 text-navy" 
+                    : "bg-white/10 text-white"
+                }`}>
+                  {item.count}
+                </span>
+              )}
+            </button>
+          ))}
         </nav>
 
         {/* User */}
-        <div className="px-4 py-4 border-t border-gray-100">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+        <div className="px-6 py-6 border-t border-white/5 bg-black/20">
+          <div className="flex items-center gap-4 mb-5">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center text-navy font-bold text-base shadow-lg ring-2 ring-white/10">
               {(user?.full_name || "A")[0].toUpperCase()}
             </div>
             <div className="min-w-0">
-              <p className="text-gray-900 text-sm font-semibold truncate">
-                {user?.full_name || "Admin"}
+              <p className="text-white text-sm font-bold truncate leading-tight">
+                {user?.full_name || "Administrator"}
               </p>
-              <p className="text-gray-400 text-xs">Administrator</p>
+              <p className="text-white/50 text-[11px] font-medium mt-0.5 uppercase tracking-wider">Control Center</p>
             </div>
           </div>
           <button
             onClick={setShowLogoutModal}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 border border-red-100 text-red-600 rounded-xl text-sm font-medium transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-sm font-bold transition-colors border border-red-500/20 hover:border-red-500/40"
           >
             <LogOut className="h-4 w-4" />
             Sign Out
@@ -340,17 +429,20 @@ const AdminDashboard = () => {
       </aside>
 
       {/* ── Main Content ── */}
-      <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
+      <div className="flex-1 lg:ml-72 flex flex-col min-h-screen relative overflow-hidden">
+        {/* Background Decorative Element */}
+        <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-gradient-to-br from-gold/5 via-alpine/5 to-transparent rounded-full blur-3xl -z-10 transform translate-x-1/3 -translate-y-1/3 pointer-events-none" />
+        
         {/* Top bar */}
-        <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between sticky top-0 z-20 shadow-sm">
+        <header className="bg-white/80 backdrop-blur-xl border-b border-gray-200/50 px-8 py-5 flex items-center justify-between sticky top-0 z-20 shadow-sm">
           <div>
-            <h1 className="text-gray-900 font-bold text-xl tracking-tight">
+            <h1 className="text-navy font-heading font-bold text-2xl tracking-tight">
               {activeTab === "trails" && "Trail Management"}
               {activeTab === "homestays" && "Homestay Approvals"}
               {activeTab === "guides" && "Guides Management"}
               {activeTab === "payments" && "Booking Payments"}
             </h1>
-            <p className="text-gray-400 text-xs mt-0.5">
+            <p className="text-gray-500 text-sm mt-1 font-medium">
               {new Date().toLocaleDateString("en-US", {
                 weekday: "long",
                 year: "numeric",
@@ -359,45 +451,37 @@ const AdminDashboard = () => {
               })}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-1.5 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-emerald-600 text-xs font-medium">System Online</span>
+          <div className="flex items-center gap-4">
+            <div className="hidden sm:flex items-center gap-2 bg-alpine/10 border border-alpine/20 px-4 py-2 rounded-full shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-alpine animate-pulse" />
+              <span className="text-alpine-dark text-[11px] font-bold tracking-wide uppercase">System Online</span>
             </div>
             {/* Mobile nav buttons */}
             <div className="lg:hidden flex gap-2">
-              <button
-                onClick={() => setActiveTab("trails")}
-                className={`p-2 rounded-xl transition ${activeTab === "trails" ? "bg-blue-50 text-blue-600" : "text-gray-400 hover:bg-gray-100"}`}
-              >
-                <Mountain className="h-5 w-5" />
-              </button>
-              <button
-                onClick={() => setActiveTab("homestays")}
-                className={`p-2 rounded-xl transition relative ${activeTab === "homestays" ? "bg-blue-50 text-blue-600" : "text-gray-400 hover:bg-gray-100"}`}
-              >
-                <Home className="h-5 w-5" />
-                {pendingHomestays > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-amber-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
-                    {pendingHomestays}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => setActiveTab("guides")}
-                className={`p-2 rounded-xl transition ${activeTab === "guides" ? "bg-blue-50 text-blue-600" : "text-gray-400 hover:bg-gray-100"}`}
-              >
-                <Compass className="h-5 w-5" />
-              </button>
-              <button
-                onClick={() => setActiveTab("payments")}
-                className={`p-2 rounded-xl transition ${activeTab === "payments" ? "bg-blue-50 text-blue-600" : "text-gray-400 hover:bg-gray-100"}`}
-              >
-                <CreditCard className="h-5 w-5" />
-              </button>
+              {[
+                { id: "trails", icon: Mountain },
+                { id: "homestays", icon: Home, count: pendingHomestays },
+                { id: "guides", icon: Compass },
+                { id: "payments", icon: CreditCard },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`p-2.5 rounded-xl transition-all relative ${
+                    activeTab === item.id ? "bg-navy text-gold shadow-md" : "text-gray-400 hover:bg-gray-100"
+                  }`}
+                >
+                  <item.icon className="h-5 w-5" />
+                  {item.count > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold shadow-sm">
+                      {item.count}
+                    </span>
+                  )}
+                </button>
+              ))}
               <button
                 onClick={setShowLogoutModal}
-                className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition"
+                className="p-2.5 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all border border-transparent hover:border-red-100"
               >
                 <LogOut className="h-5 w-5" />
               </button>
@@ -405,25 +489,45 @@ const AdminDashboard = () => {
           </div>
         </header>
 
-        <main className="flex-1 px-6 py-6 space-y-6">
+        <main className="flex-1 px-8 py-8 space-y-8 z-10 w-full max-w-[1600px] mx-auto">
           {/* Stats Row */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard icon={Mountain} label="Total Trails" value={trails.length} accent="blue" />
-            <StatCard icon={Home} label="Homestays" value={homestaysAdmin.length} accent="emerald" />
-            <StatCard
-              icon={TrendingUp}
-              label="Pending Approvals"
-              value={pendingHomestays + pendingGuides}
-              accent="amber"
-            />
-            <StatCard
-              icon={CreditCard}
-              label="Payment Sessions"
-              value={paymentRecords.length}
-              accent="violet"
-            />
-          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+            {activeTab === "trails" && (
+              <>
+                <StatCard icon={Mountain} label="Active Trails" value={trails.length} accent="navy" delay={0.1} />
+                <StatCard icon={MapPin} label="Moderate Trails" value={trails.filter(t => String(t.difficulty_level || "").toLowerCase() === "moderate").length} accent="alpine" delay={0.2} />
+                <StatCard icon={TrendingUp} label="Difficult Trails" value={trails.filter(t => String(t.difficulty_level || "").toLowerCase() === "hard" || String(t.difficulty_level || "").toLowerCase() === "difficult").length} accent="gold" delay={0.3} />
+                <StatCard icon={CheckCircle} label="System Status" value={"Operational"} accent="charcoal" delay={0.4} />
+              </>
+            )}
+            
+            {activeTab === "homestays" && (
+              <>
+                <StatCard icon={Home} label="Total Homestays" value={homestaysAdmin.length} accent="navy" delay={0.1} />
+                <StatCard icon={CheckCircle} label="Approved" value={approvedHomestays} accent="alpine" delay={0.2} />
+                <StatCard icon={Activity} label="Pending Approvals" value={pendingHomestays} accent="gold" delay={0.3} />
+                <StatCard icon={XCircle} label="Rejected" value={rejectedHomestays} accent="charcoal" delay={0.4} />
+              </>
+            )}
 
+            {activeTab === "guides" && (
+              <>
+                <StatCard icon={Compass} label="Registered Guides" value={guidesAdmin.length} accent="navy" delay={0.1} />
+                <StatCard icon={CheckCircle} label="Verified" value={approvedGuides} accent="alpine" delay={0.2} />
+                <StatCard icon={Activity} label="Pending Verification" value={pendingGuides} accent="gold" delay={0.3} />
+                <StatCard icon={XCircle} label="Rejected" value={rejectedGuides} accent="charcoal" delay={0.4} />
+              </>
+            )}
+
+            {activeTab === "payments" && (
+              <>
+                <StatCard icon={CreditCard} label="Payment Sessions" value={paymentRecords.length} accent="navy" delay={0.1} />
+                <StatCard icon={CheckCircle} label="Successful" value={successfulPayments} accent="alpine" delay={0.2} />
+                <StatCard icon={DollarSign} label="Total Volume" value={`Rs. ${totalRevenue.toLocaleString()}`} accent="gold" delay={0.3} />
+                <StatCard icon={TrendingUp} label="Refund Requests" value={pendingRefunds} accent="charcoal" delay={0.4} />
+              </>
+            )}
+          </div>
           {/* ═══════════════════════════════════════════
               TRAILS TAB
           ═══════════════════════════════════════════ */}
@@ -743,58 +847,139 @@ const AdminDashboard = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-gray-500 border-b border-gray-100">
-                          <th className="py-2 pr-4 font-semibold">Session</th>
-                          <th className="py-2 pr-4 font-semibold">Tourist</th>
-                          <th className="py-2 pr-4 font-semibold">Homestay</th>
-                          <th className="py-2 pr-4 font-semibold">Amount</th>
-                          <th className="py-2 pr-4 font-semibold">Payment</th>
-                          <th className="py-2 pr-4 font-semibold">Booking</th>
-                          <th className="py-2 pr-4 font-semibold">Initiated</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paymentRecords.map((record) => (
-                          <tr key={record.session_id} className="border-b border-gray-100 align-top">
-                            <td className="py-3 pr-4">
-                              <p className="font-mono text-xs text-gray-700">{record.transaction_uuid}</p>
-                              <p className="text-xs text-gray-400 mt-1">Ref: {record.payment_ref_id || "-"}</p>
-                              <p className="text-xs text-gray-500 mt-1 capitalize">Provider: {record.payment_provider || "unknown"}</p>
-                            </td>
-                            <td className="py-3 pr-4">
-                              <p className="font-semibold text-gray-800">{record.tourist_name}</p>
-                              <p className="text-xs text-gray-500">{record.tourist_email}</p>
-                            </td>
-                            <td className="py-3 pr-4">
-                              <p className="font-semibold text-gray-800">{record.homestay_name}</p>
-                              <p className="text-xs text-gray-500">Host: {record.host_name}</p>
-                            </td>
-                            <td className="py-3 pr-4 font-semibold text-gray-800">NPR {Number(record.total_amount || 0).toLocaleString()}</td>
-                            <td className="py-3 pr-4">
-                              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${record.payment_status === "success" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : record.payment_status === "failed" ? "bg-red-50 text-red-700 border border-red-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
-                                {record.payment_status}
-                              </span>
-                            </td>
-                            <td className="py-3 pr-4">
-                              {record.booking_code ? (
-                                <>
-                                  <p className="font-mono text-xs text-gray-700">{record.booking_code}</p>
-                                  <p className="text-xs text-gray-500 mt-1">{record.booking_status}</p>
-                                </>
+                  <div className="space-y-4">
+                    {paymentRecords.map((record) => {
+                      const paymentStatus = String(record.payment_status || "").trim().toLowerCase();
+                      const computedRefundStatus = String(
+                        record.refund_status ||
+                          (paymentStatus === "refund_requested"
+                            ? "requested"
+                            : paymentStatus === "refunded"
+                            ? "processed"
+                            : "")
+                      )
+                        .trim()
+                        .toLowerCase();
+                      const isRefundPending = computedRefundStatus === "requested";
+                      const isBusy = reviewingRefundBookingId === record.booking_id;
+
+                      return (
+                        <div key={record.session_id} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
+                          {/* Decorative Left Border based on Payment status */}
+                          <div className={`absolute left-0 top-0 bottom-0 w-1.5 transition-colors ${
+                            paymentStatus === 'success' ? 'bg-emerald-500' :
+                            paymentStatus === 'failed' ? 'bg-red-500' :
+                            paymentStatus === 'refunded' ? 'bg-blue-500' : 'bg-amber-500'
+                          }`} />
+                          
+                          <div className="flex flex-col lg:flex-row justify-between gap-6 ml-2">
+                            {/* Block 1: Tourist & Identity */}
+                            <div className="flex-[2] min-w-0">
+                              <div className="flex items-center gap-4 mb-2">
+                                <div className="w-12 h-12 rounded-full bg-navy/5 flex items-center justify-center text-navy font-bold text-lg shadow-sm border border-navy/10">
+                                  {(record.tourist_name || "A")[0].toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <h3 className="font-bold text-gray-900 truncate text-base">{record.tourist_name}</h3>
+                                  <p className="text-sm text-gray-500 truncate flex items-center gap-1.5 mt-0.5">
+                                    <Mail className="h-3 w-3" /> {record.tourist_email}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="mt-4 pl-[4rem]">
+                                <p className="font-mono text-xs text-gray-600 bg-gray-50 inline-block px-2.5 py-1 rounded border border-gray-100 uppercase">
+                                  REF: {record.payment_ref_id || record.transaction_uuid}
+                                </p>
+                                <p className="text-[11px] font-medium text-gray-400 mt-2 flex items-center gap-1">
+                                    <Clock className="w-3.5 h-3.5" /> {new Date(record.payment_initiated_at).toLocaleString()}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Block 2: Destination & Booking */}
+                            <div className="flex-[2] py-2 lg:py-0 border-t lg:border-t-0 border-gray-100">
+                              <h4 className="text-sm font-bold text-navy flex items-center gap-2 mb-1.5">
+                                  <Home className="w-4 h-4 text-gold-dark" /> {record.homestay_name}
+                              </h4>
+                              <p className="text-xs font-medium text-gray-500 mb-4">Host: {record.host_name}</p>
+                              
+                              <div>
+                                {record.booking_code ? (
+                                  <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 shadow-sm">
+                                      <span className="font-mono text-xs font-bold">{record.booking_code}</span>
+                                      <span className="w-1 h-1 rounded-full bg-blue-300" />
+                                      <span className="text-xs font-semibold capitalize tracking-wide">{record.booking_status}</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-gray-400 italic flex items-center gap-1.5 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
+                                    <XCircle className="w-3.5 h-3.5 text-gray-300"/> No Booking Created
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Block 3: Payment & Amount */}
+                            <div className="flex-[1.5] flex flex-col justify-center border-t lg:border-t-0 lg:border-l border-gray-100 pt-3 lg:pt-0 lg:pl-6">
+                              <div className="mb-3">
+                                <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-1">
+                                  Amount ({record.payment_provider || "unknown"})
+                                </p>
+                                <p className="text-2xl font-bold text-gray-900 font-heading tracking-tight">
+                                  <span className="text-sm text-gray-400 mr-1 font-body">NPR</span>
+                                  {Number(record.total_amount || 0).toLocaleString()}
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                  <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wider uppercase shadow-sm ${
+                                    paymentStatus === "success"
+                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      : paymentStatus === "failed"
+                                      ? "bg-red-50 text-red-700 border border-red-200"
+                                      : paymentStatus === "refunded"
+                                      ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                      : "bg-amber-50 text-amber-700 border border-amber-200"
+                                  }`}>
+                                    {paymentStatus || "unknown"}
+                                  </span>
+
+                                  {computedRefundStatus && (
+                                     <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wider uppercase shadow-sm ${
+                                      computedRefundStatus === "processed"
+                                        ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                        : computedRefundStatus === "rejected"
+                                        ? "bg-red-50 text-red-700 border border-red-200"
+                                        : "bg-amber-50 text-amber-500 border border-amber-200"
+                                    }`}>
+                                      Refund {computedRefundStatus}
+                                    </span>
+                                  )}
+                              </div>
+                            </div>
+
+                            {/* Block 4: Actions */}
+                            <div className="flex flex-col items-center justify-center min-w-[140px] border-t lg:border-t-0 lg:border-l border-gray-100 pt-4 lg:pt-0 lg:pl-6">
+                              {isRefundPending ? (
+                                <button
+                                  disabled={isBusy}
+                                  onClick={() => openRefundReviewModal(record)}
+                                  className="w-full flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-4 py-3 text-sm font-bold text-navy hover:shadow-lg focus:ring-2 focus:ring-gold focus:ring-offset-2 hover:scale-[1.02] disabled:opacity-60 disabled:hover:scale-100 transition-all font-body"
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />}
+                                    Review Refund
+                                  </div>
+                                  <span className="text-[10px] font-mono text-navy/70 uppercase">NPR {Number(record.refund_requested_amount).toLocaleString()}</span>
+                                </button>
                               ) : (
-                                <span className="text-xs text-gray-400">Not created</span>
+                                <div className="text-center w-full px-2 py-4 bg-gray-50 rounded-xl border border-gray-100 border-dashed">
+                                  <span className="text-xs text-gray-400 font-medium tracking-wide">No Review<br/>Required</span>
+                                </div>
                               )}
-                            </td>
-                            <td className="py-3 pr-4 text-xs text-gray-500">
-                              {new Date(record.payment_initiated_at).toLocaleString()}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -808,6 +993,155 @@ const AdminDashboard = () => {
         onConfirm={handleLogout}
         onCancel={handleStayLoggedIn}
       />
+
+      {refundActionNotice && (
+        <div className="fixed right-4 top-4 z-[70] w-full max-w-md">
+          <div
+            className={`rounded-xl border px-4 py-3 shadow-lg ${
+              refundActionNotice.type === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-red-200 bg-red-50 text-red-700"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <p className="flex-1 text-sm font-medium">{refundActionNotice.message}</p>
+              <button
+                onClick={() => setRefundActionNotice(null)}
+                className="rounded p-1 text-current/70 hover:bg-black/5 hover:text-current"
+                aria-label="Dismiss notice"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {refundReviewModal.open && refundReviewModal.record && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/40" onClick={closeRefundReviewModal} />
+          <div className="relative w-full max-w-xl rounded-2xl border border-gray-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Review Refund Request</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Booking {refundReviewModal.record.booking_code || `#${refundReviewModal.record.booking_id}`}
+                </p>
+              </div>
+              <button
+                onClick={closeRefundReviewModal}
+                disabled={Boolean(reviewingRefundBookingId)}
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Tourist</p>
+                  <p className="font-semibold text-gray-800 mt-1">{refundReviewModal.record.tourist_name}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Homestay</p>
+                  <p className="font-semibold text-gray-800 mt-1">{refundReviewModal.record.homestay_name}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Provider</p>
+                  <p className="font-semibold text-gray-800 mt-1 capitalize">{refundReviewModal.record.payment_provider || "unknown"}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide">Requested Amount</p>
+                  <p className="font-semibold text-gray-800 mt-1">
+                    NPR {Number(refundReviewModal.record.refund_requested_amount || 0).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                  Review Note (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={refundReviewModal.note}
+                  onChange={(e) =>
+                    setRefundReviewModal((prev) => ({ ...prev, note: e.target.value, error: "" }))
+                  }
+                  placeholder="Add a short review note for this refund decision"
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-blue-300 focus:outline-none"
+                />
+              </div>
+
+              {(() => {
+                const provider = String(refundReviewModal.record.payment_provider || "").trim().toLowerCase();
+                const paymentReference = String(refundReviewModal.record.payment_ref_id || "").trim();
+                const canAutoRefundWithStripe = provider === "stripe" && paymentReference.startsWith("pi_");
+
+                if (canAutoRefundWithStripe) {
+                  return (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                      Stripe auto-refund is available for this payment reference. Manual gateway refund reference is not required.
+                    </div>
+                  );
+                }
+
+                return (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                      Gateway Refund Reference (Required for Process)
+                    </label>
+                    <input
+                      type="text"
+                      value={refundReviewModal.gatewayRefundReference}
+                      onChange={(e) =>
+                        setRefundReviewModal((prev) => ({
+                          ...prev,
+                          gatewayRefundReference: e.target.value,
+                          error: "",
+                        }))
+                      }
+                      placeholder="Enter eSewa/manual refund reference"
+                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:border-blue-300 focus:outline-none"
+                    />
+                  </div>
+                );
+              })()}
+
+              {refundReviewModal.error && (
+                <p className="text-sm text-red-600">{refundReviewModal.error}</p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-6 py-4">
+              <button
+                onClick={closeRefundReviewModal}
+                disabled={Boolean(reviewingRefundBookingId)}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleRefundReview("reject")}
+                disabled={Boolean(reviewingRefundBookingId)}
+                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+              >
+                {Boolean(reviewingRefundBookingId) && <Loader2 className="h-4 w-4 animate-spin" />}
+                Reject
+              </button>
+              <button
+                onClick={() => handleRefundReview("process")}
+                disabled={Boolean(reviewingRefundBookingId)}
+                className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+              >
+                {Boolean(reviewingRefundBookingId) && <Loader2 className="h-4 w-4 animate-spin" />}
+                Process
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

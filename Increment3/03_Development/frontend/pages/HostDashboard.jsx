@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
 import api from "../api";
 import {
   LogOut,
@@ -14,7 +15,6 @@ import {
   Mountain,
   X,
   Upload,
- 
   Loader2,
   Eye,
   EyeOff,
@@ -26,6 +26,12 @@ import {
   CalendarDays,
   BadgeCheck,
   Star,
+  Shield,
+  Mail,
+  Activity,
+  Compass,
+  Key,
+  UserCircle,
 } from "lucide-react";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
@@ -38,6 +44,7 @@ const API = "http://localhost:5000/api";
    STATUS BADGE
 ───────────────────────────────────────── */
 const StatusBadge = ({ status }) => {
+  const normalized = status ? status.toLowerCase() : "pending";
   const config = {
     pending: {
       bg: "bg-amber-50 border-amber-200",
@@ -59,40 +66,58 @@ const StatusBadge = ({ status }) => {
     },
   };
 
-  const c = config[status] || config.pending;
+  const c = config[normalized] || config.pending;
   const Icon = c.icon;
 
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${c.bg} ${c.text}`}
-    >
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${c.bg} ${c.text} backdrop-blur-sm shadow-sm`}>
       <Icon className="h-3.5 w-3.5" />
-      {c.label}
+      <span className="tracking-wide uppercase">{c.label}</span>
     </span>
   );
 };
 
 /* ─────────────────────────────────────────
-   STAT CARD
+   STAT CARD (ANIMATED PREMIUM)
 ───────────────────────────────────────── */
-const StatCard = ({ icon: Icon, label, value, accent }) => {
+const StatCard = ({ icon: Icon, label, value, accent, delay }) => {
   const accents = {
-    blue: "from-blue-500 to-blue-600",
-    emerald: "from-emerald-500 to-teal-500",
-    amber: "from-amber-500 to-orange-500",
-    purple: "from-violet-500 to-purple-600",
+    navy: "from-[#0A192F] to-[#112240]",
+    gold: "from-[#D4AF37] to-[#F1D570]",
+    alpine: "from-[#2C5234] to-[#3A6B44]",
+    charcoal: "from-[#333333] to-[#4A4A4A]",
   };
+
+  const iconColors = {
+    navy: "text-[#0A192F] bg-[#0A192F]/10",
+    gold: "text-[#D4AF37] bg-[#D4AF37]/10",
+    alpine: "text-[#2C5234] bg-[#2C5234]/10",
+    charcoal: "text-[#333333] bg-[#333333]/10",
+  };
+
   return (
-    <div className="relative bg-white rounded-2xl p-5 border border-gray-100 shadow-sm overflow-hidden group hover:shadow-md transition-shadow">
-      <div
-        className={`absolute -right-4 -top-4 w-20 h-20 rounded-full bg-gradient-to-br ${accents[accent]} opacity-10 group-hover:opacity-20 transition-opacity`}
-      />
-      <div className={`inline-flex p-2.5 rounded-xl bg-gradient-to-br ${accents[accent]} mb-3`}>
-        <Icon className="h-5 w-5 text-white" />
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay, duration: 0.5, ease: "easeOut" }}
+      className="relative bg-white rounded-2xl p-6 border border-gray-100 shadow-sm overflow-hidden group hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+    >
+      <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full bg-gradient-to-br ${accents[accent]} opacity-5 group-hover:opacity-10 group-hover:scale-150 transition-all duration-700 ease-in-out`} />
+      <div className="flex items-start justify-between relative z-10">
+        <div>
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: delay + 0.2, duration: 0.4 }}
+            className={`inline-flex p-3 rounded-xl ${iconColors[accent]} mb-4 ring-1 ring-inset ring-current/10`}
+          >
+            <Icon className="h-6 w-6" />
+          </motion.div>
+          <p className="text-3xl font-bold text-gray-900 font-heading tracking-tight group-hover:text-[#0A192F] transition-colors">{value}</p>
+          <p className="text-sm font-semibold text-gray-500 mt-1 tracking-wide uppercase">{label}</p>
+        </div>
       </div>
-      <p className="text-2xl font-bold text-gray-900 font-mono">{value}</p>
-      <p className="text-sm text-gray-500 mt-0.5">{label}</p>
-    </div>
+    </motion.div>
   );
 };
 
@@ -621,202 +646,242 @@ const HomestayCard = ({ homestay, onEdit, onDelete, onToggleActive, onUpdateRoom
   }, [homestay.available_rooms, homestay.total_rooms]);
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-      {/* Card Header with Image */}
-      <div className="relative">
+    <div className="flex flex-col bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden hover:shadow-2xl hover:shadow-navy/10 transition-all duration-500 group transform hover:-translate-y-1">
+      {/* ── Visual Header ── */}
+      <div className="relative h-[260px] w-full overflow-hidden bg-[#0A192F]">
         {hasImages ? (
           <img
             src={`http://localhost:5000${primaryImage?.image_path || homestay.images[0].image_path}`}
             alt={homestay.name}
-            className="w-full h-48 object-cover"
+            className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 opacity-90 group-hover:opacity-100"
           />
         ) : (
-          <div className="w-full h-48 bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center">
-            <Home className="h-16 w-16 text-blue-300" />
+          <div className="w-full h-full flex flex-col items-center justify-center bg-navy/5">
+            <Home className="h-20 w-20 text-navy/20" />
           </div>
         )}
-        <div className="absolute top-3 left-3">
+        
+        {/* Gradient Overlay for Text Visibility */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0A192F]/95 via-[#0A192F]/20 to-transparent"></div>
+
+        {/* Floating Top Elements */}
+        <div className="absolute top-4 left-4 flex gap-2">
           <StatusBadge status={homestay.verified_status} />
         </div>
         {!homestay.is_active && (
-          <div className="absolute top-3 right-3 bg-gray-800/80 text-white text-xs px-2 py-1 rounded-full">
-            Inactive
+          <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-red-600/90 backdrop-blur text-white text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-widest shadow-lg">
+            <EyeOff className="w-3 h-3" /> Hidden
           </div>
         )}
+
+        {/* Overlay Details */}
+        <div className="absolute bottom-4 left-4 right-4">
+          <h3 className="text-2xl font-bold font-heading text-white leading-tight truncate mb-1">
+            {homestay.name}
+          </h3>
+          <div className="flex items-center gap-2 text-sm text-white/80 font-medium">
+            <MapPin className="h-4 w-4 text-gold shrink-0" />
+            <span className="truncate">{homestay.location}</span>
+          </div>
+        </div>
       </div>
 
-      {/* Card Body */}
-      <div className="p-5">
-        <div className="flex items-start justify-between mb-2">
-          <h3 className="text-lg font-bold text-gray-900 leading-tight">{homestay.name}</h3>
-          <button onClick={() => onToggleExpand(homestay.homestay_id)} className="ml-2 mt-0.5">
-            {expanded ? (
-              <ChevronUp className="h-5 w-5 text-gray-400" />
-            ) : (
-              <ChevronDown className="h-5 w-5 text-gray-400" />
-            )}
-          </button>
-        </div>
-
-        <div className="flex items-center gap-1.5 text-sm text-gray-500 mb-1">
-          <MapPin className="h-3.5 w-3.5" />
-          {homestay.location}
-        </div>
-        <div className="flex items-center gap-1.5 text-sm text-blue-600 mb-3">
-          <Mountain className="h-3.5 w-3.5" />
-          {homestay.trail_name} — {homestay.region}
-        </div>
-
-        <div className="flex items-center gap-4 text-sm text-gray-700 mb-4">
-          <span className="flex items-center gap-1">
-            <DollarSign className="h-3.5 w-3.5 text-emerald-500" />
-            NPR {Number(homestay.price_per_night).toLocaleString()}/night
-          </span>
-          <span className="flex items-center gap-1">
-            <Users className="h-3.5 w-3.5 text-violet-500" />
-            {homestay.capacity} guests
-          </span>
-          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${Number(homestay.available_rooms) > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
-            Rooms: {homestay.available_rooms ?? 0}/{homestay.total_rooms ?? 0}
-          </span>
-        </div>
-
-        {/* Expanded Details */}
-        {expanded && (
-          <div className="border-t border-gray-100 pt-4 mt-2 space-y-3">
-            {homestay.description && (
-              <p className="text-sm text-gray-600 leading-relaxed">{homestay.description}</p>
-            )}
-            {Array.isArray(homestay.amenities) && homestay.amenities.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Amenities</p>
-                <div className="flex flex-wrap gap-2">
-                  {homestay.amenities.map((a, idx) => (
-                    <span key={`${a}-${idx}`} className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
-                      {a}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {homestay.contact_phone && (
-              <div className="flex items-center gap-1.5 text-sm text-gray-600">
-                <Phone className="h-3.5 w-3.5" />
-                {homestay.contact_phone}
-              </div>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="text-sm text-gray-600 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100">
-                Total Rooms: <span className="font-semibold text-gray-800">{homestay.total_rooms ?? 0}</span>
-              </div>
-              <div className={`text-sm rounded-lg px-3 py-2 border ${Number(homestay.available_rooms) > 0 ? "text-emerald-700 bg-emerald-50 border-emerald-100" : "text-red-700 bg-red-50 border-red-100"}`}>
-                Available Now: <span className="font-semibold">{homestay.available_rooms ?? 0}</span>
-              </div>
-            </div>
-
-            <form
-              className="flex items-end gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                onUpdateRooms(homestay.homestay_id, totalRoomsInput, availableRoomsInput);
-              }}
-            >
-              <div className="flex-1">
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Total Rooms</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={totalRoomsInput}
-                  onChange={(e) => setTotalRoomsInput(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Update Available Rooms</label>
-                <input
-                  type="number"
-                  min="0"
-                  max={totalRoomsInput || homestay.total_rooms || 0}
-                  value={availableRoomsInput}
-                  onChange={(e) => setAvailableRoomsInput(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                />
-              </div>
-              <button
-                type="submit"
-                className="px-3 py-2 text-sm font-semibold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
-              >
-                Update
-              </button>
-            </form>
-
-            {homestay.google_map_iframe_link && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Google Map</p>
-                <a
-                  href={homestay.google_map_iframe_link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-sm font-semibold text-blue-600 hover:underline"
-                >
-                  Open location in Google Maps
-                </a>
-              </div>
-            )}
-            {homestay.latitude && homestay.longitude && (
-              <div className="flex items-center gap-1.5 text-sm text-gray-500">
-                <MapPin className="h-3.5 w-3.5" />
-                {Number(homestay.latitude).toFixed(6)}, {Number(homestay.longitude).toFixed(6)}
-              </div>
-            )}
-            {/* All images */}
-            {hasImages && homestay.images.length > 1 && (
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                  All Photos ({homestay.images.length})
-                </p>
-                <div className="flex gap-2 flex-wrap">
-                  {homestay.images.map((img) => (
-                    <img
-                      key={img.image_id}
-                      src={`http://localhost:5000${img.image_path}`}
-                      alt="Homestay"
-                      className="h-16 w-16 object-cover rounded-lg border"
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
-            <p className="text-xs text-gray-400">
-              Created: {new Date(homestay.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+      {/* ── Content Body ── */}
+      <div className="flex-1 flex flex-col">
+        {/* Key Metrics Grid */}
+        <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-50 bg-gray-50/30">
+          <div className="px-3 py-4 text-center">
+            <p className="text-[9px] uppercase font-bold text-gray-400 tracking-widest mb-1.5 flex items-center justify-center gap-1">
+              <DollarSign className="w-3 h-3" /> Per Night
+            </p>
+            <p className="font-bold text-gray-900 text-sm">NPR {Number(homestay.price_per_night).toLocaleString()}</p>
+          </div>
+          <div className="px-3 py-4 text-center">
+            <p className="text-[9px] uppercase font-bold text-gray-400 tracking-widest mb-1.5 flex items-center justify-center gap-1">
+              <Users className="w-3 h-3" /> Capacity
+            </p>
+            <p className="font-bold text-gray-900 text-sm">{homestay.capacity} Pax</p>
+          </div>
+          <div className="px-3 py-4 text-center">
+            <p className="text-[9px] uppercase font-bold text-gray-400 tracking-widest mb-1.5 flex items-center justify-center gap-1">
+              <Home className="w-3 h-3 text-gold" /> Rooms
+            </p>
+            <p className={`font-bold text-sm ${Number(homestay.available_rooms) > 0 ? "text-emerald-600" : "text-red-500"}`}>
+              {homestay.available_rooms ?? 0} / {homestay.total_rooms ?? 0}
             </p>
           </div>
-        )}
+        </div>
 
-        {/* Actions */}
-        <div className="flex gap-2 mt-4 pt-3 border-t border-gray-100">
-          <button
-            onClick={() => onEdit(homestay)}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition-colors"
-          >
-            <Pencil className="h-3.5 w-3.5" /> Edit
-          </button>
+        {/* Trail Affiliation & Expander */}
+        <div className="px-5 pt-4 pb-1">
+          <div className="flex items-center justify-between mb-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-navy/5 text-navy border border-navy/10 rounded-xl text-[11px] font-bold tracking-wide max-w-[65%]">
+              <Mountain className="h-3.5 w-3.5 text-gold shrink-0" />
+              <span className="truncate">{homestay.trail_name}</span>
+            </div>
+            
+            <button 
+              onClick={() => onToggleExpand(homestay.homestay_id)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-navy bg-white border border-gray-200 hover:border-navy hover:bg-navy/5 rounded-xl transition-colors shrink-0"
+            >
+              {expanded ? "Less" : "More"}
+              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+          </div>
+
+          {/* Expanded Details Section */}
+          <AnimatePresence>
+            {expanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="pt-5 mt-4 border-t border-gray-100 space-y-6">
+                  
+                  {/* About Block */}
+                  {homestay.description && (
+                    <div>
+                      <h4 className="text-xs font-bold text-navy mb-2 flex items-center gap-2">
+                         Description
+                      </h4>
+                      <p className="text-sm text-gray-600 leading-relaxed font-medium bg-[#FDFBF7] p-4 rounded-2xl border border-gold/10">
+                        {homestay.description}
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* Visual Tags */}
+                  {Array.isArray(homestay.amenities) && homestay.amenities.length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-bold text-navy mb-2 flex items-center gap-2">
+                         Amenities
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {homestay.amenities.map((a, idx) => (
+                          <span key={`${a}-${idx}`} className="text-[11px] px-3 py-1 font-bold rounded-lg bg-white border border-gray-200 text-gray-600 shadow-sm">
+                            {a}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Connect Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {homestay.contact_phone && (
+                      <div className="flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-xl">
+                        <div className="p-2 bg-navy/5 text-navy rounded-lg">
+                          <Phone className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Phone</p>
+                          <p className="text-sm font-bold text-gray-900">{homestay.contact_phone}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {homestay.google_map_iframe_link && (
+                      <div className="flex items-center gap-3 p-3 bg-white border border-gray-100 rounded-xl">
+                        <div className="p-2 bg-gold/10 text-gold-dark rounded-lg">
+                          <MapPin className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Maps</p>
+                          <a href={homestay.google_map_iframe_link} target="_blank" rel="noreferrer" className="text-sm font-bold text-gold-dark hover:underline">
+                            View Pin
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Inventory Management Block */}
+                  <div className="bg-navy rounded-2xl p-5 shadow-lg relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full blur-2xl transform translate-x-10 -translate-y-10" />
+                    <h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2 relative z-10">
+                       Room Inventory Matrix
+                    </h4>
+                    <form
+                      className="flex flex-col sm:flex-row items-end gap-3 relative z-10"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        onUpdateRooms(homestay.homestay_id, totalRoomsInput, availableRoomsInput);
+                      }}
+                    >
+                      <div className="flex-1 w-full">
+                        <label className="block text-[10px] font-bold text-white/50 uppercase tracking-widest mb-1.5 ml-1">Total Limit</label>
+                        <input
+                          type="number" min="1" value={totalRoomsInput}
+                          onChange={(e) => setTotalRoomsInput(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-white/10 border border-white/10 text-white rounded-xl text-sm font-bold focus:border-gold focus:ring-1 focus:ring-gold transition-all"
+                        />
+                      </div>
+                      <div className="flex-1 w-full">
+                        <label className="block text-[10px] font-bold text-white/50 uppercase tracking-widest mb-1.5 ml-1">Available Now</label>
+                        <input
+                          type="number" min="0" max={totalRoomsInput || homestay.total_rooms || 0}
+                          value={availableRoomsInput}
+                          onChange={(e) => setAvailableRoomsInput(e.target.value)}
+                          className="w-full px-4 py-2.5 bg-white/10 border border-white/10 text-emerald-400 rounded-xl text-sm font-bold focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 transition-all"
+                        />
+                      </div>
+                      <button type="submit" className="w-full sm:w-auto px-6 py-2.5 text-sm font-bold rounded-xl bg-gold text-navy hover:bg-gold-light shadow-md transition-colors whitespace-nowrap">
+                        Push Stats
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* All images */}
+                  {hasImages && homestay.images.length > 1 && (
+                    <div>
+                      <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
+                        Gallery ({homestay.images.length} Photos)
+                      </h4>
+                      <div className="flex gap-3 overflow-x-auto pb-2 snap-x">
+                        {homestay.images.map((img) => (
+                          <img
+                            key={img.image_id}
+                            src={`http://localhost:5000${img.image_path}`}
+                            alt="Gallery item"
+                            className="h-20 w-32 object-cover rounded-xl shadow-sm border border-gray-200 shrink-0 snap-start"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* ── Professional Action Footer ── */}
+        <div className="px-5 py-4 border-t border-gray-100 bg-gray-50/50 flex justify-end gap-3 mt-auto">
           <button
             onClick={() => onToggleActive(homestay.homestay_id)}
-            className={`flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-xl transition-colors ${
-              homestay.is_active
-                ? "text-amber-600 bg-amber-50 hover:bg-amber-100"
-                : "text-emerald-600 bg-emerald-50 hover:bg-emerald-100"
-            }`}
-            title={homestay.is_active ? "Deactivate" : "Activate"}
+            className="flex items-center justify-center w-10 h-10 rounded-full transition-all bg-white border border-gray-200 hover:border-gray-300 shadow-sm text-gray-500 hover:text-navy"
+            title={homestay.is_active ? "Mark as Hidden" : "Mark as Active"}
           >
-            {homestay.is_active ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            {homestay.is_active ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4 text-emerald-600" />}
           </button>
+          
+          <button
+            onClick={() => onEdit(homestay)}
+            className="flex items-center justify-center w-10 h-10 rounded-full transition-all bg-white border border-gray-200 hover:border-blue-200 shadow-sm text-gray-500 hover:text-blue-600"
+            title="Edit Property"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+
           <button
             onClick={() => onDelete(homestay)}
-            className="flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors"
+            className="flex items-center justify-center w-10 h-10 rounded-full transition-all bg-red-50 border border-red-100 hover:border-red-300 shadow-sm text-red-500 hover:text-red-700 hover:bg-red-100"
+            title="Delete Property"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -854,6 +919,12 @@ const HostDashboard = () => {
   const [bookings, setBookings] = useState([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
 
+  const scrollToSection = (sectionId) => {
+    const element = document.getElementById(sectionId);
+    if (!element) return;
+    element.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   // Auth check
   useEffect(() => {
     if (loading) return;
@@ -870,37 +941,37 @@ const HostDashboard = () => {
   };
 
   // Fetch homestays
-  const fetchHomestays = useCallback(async () => {
-    setHomestaysLoading(true);
+  const fetchHomestays = useCallback(async (isPolling = false) => {
+    if (!isPolling) setHomestaysLoading(true);
     try {
       const res = await api.get(`${API}/homestays/my`);
       setHomestays(res.data.homestays);
     } catch (err) {
       console.error("Error fetching homestays:", err);
-      showNotification("Failed to load homestays", "error");
+      if (!isPolling) showNotification("Failed to load homestays", "error");
     } finally {
-      setHomestaysLoading(false);
+      if (!isPolling) setHomestaysLoading(false);
     }
   }, []);
 
-  const fetchHostBookings = useCallback(async () => {
-    setBookingsLoading(true);
+  const fetchHostBookings = useCallback(async (isPolling = false) => {
+    if (!isPolling) setBookingsLoading(true);
     try {
       const res = await api.get(`/api/bookings/host`);
       setBookings(res.data.bookings || []);
     } catch (err) {
       console.error("Error fetching host bookings:", err);
-      showNotification("Failed to load bookings", "error");
+      if (!isPolling) showNotification("Failed to load bookings", "error");
     } finally {
-      setBookingsLoading(false);
+      if (!isPolling) setBookingsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (isLoading || !user) return;
     const interval = setInterval(() => {
-      fetchHomestays();
-      fetchHostBookings();
+      fetchHomestays(true);
+      fetchHostBookings(true);
     }, 15000);
     return () => clearInterval(interval);
   }, [isLoading, user, fetchHomestays, fetchHostBookings]);
@@ -1019,92 +1090,154 @@ const HostDashboard = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-blue-50">
-        <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-10 w-10 text-blue-600 animate-spin" />
-          <p className="text-gray-500 font-medium">Loading dashboard...</p>
+      <div className="min-h-screen flex items-center justify-center bg-[#FDFBF7]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-full border-4 border-navy border-t-gold animate-spin" />
+          <p className="text-navy font-heading font-semibold tracking-wide">Loading dashboard...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+    <div className="min-h-screen bg-[#FDFBF7] flex font-body">
       {/* Notification Toast */}
-      {notification && (
-        <div
-          className={`fixed top-4 right-4 z-[100] px-5 py-3 rounded-xl shadow-lg text-sm font-semibold transition-all ${
-            notification.type === "error"
-              ? "bg-red-600 text-white"
-              : "bg-emerald-600 text-white"
-          }`}
-        >
-          {notification.message}
-        </div>
-      )}
+      <AnimatePresence>
+        {notification && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, x: "-50%" }}
+            animate={{ opacity: 1, y: 0, x: "-50%" }}
+            exit={{ opacity: 0, y: -20, x: "-50%" }}
+            className={`fixed top-4 left-1/2 z-[100] px-6 py-3 rounded-xl shadow-lg shadow-black/10 text-sm font-semibold tracking-wide ${
+              notification.type === "error"
+                ? "bg-red-50 border border-red-200 text-red-700"
+                : "bg-emerald-50 border border-emerald-200 text-emerald-700"
+            }`}
+          >
+            {notification.message}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Nav */}
-      <nav className="bg-white shadow-sm border-b sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <div className="relative w-10 h-10 rounded-full overflow-hidden mr-2">
-                <div className="absolute inset-0 rounded-full bg-gradient-to-br from-gold/40 via-gold/20 to-gold/40 p-[2px]">
-                  <div className="h-full w-full rounded-full bg-white p-0.5">
-                    <img
-                      src="/offtrail-latest.png"
-                      alt="OffTrail Nepal"
-                      className="h-full w-full rounded-full object-cover"
-                    />
-                  </div>
-                </div>
-              </div>
-              <span className="text-xl font-bold text-gray-900">OffTrailNepal</span>
-              <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full">
-                Host
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <Link
-                to="/host-profile"
-                className="hidden sm:inline-flex items-center px-3 py-2 text-sm font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-xl border border-blue-100"
-              >
-                My Profile
+      {/* ── Sidebar ── */}
+      <aside className="hidden lg:flex flex-col w-72 bg-navy border-r border-navy-light/30 fixed inset-y-0 shadow-2xl z-50">
+        {/* Brand */}
+        <div className="px-8 py-8 border-b border-white/5">
+          <div className="flex items-center gap-4">
+            <div className="relative w-12 h-12 rounded-full overflow-hidden shadow-lg shadow-black/40 ring-2 ring-gold/80 hover:ring-gold transition-all duration-300">
+              <Link to="/">
+                <img src="/offtrail-latest.png" alt="OffTrail Nepal" className="h-full w-full object-cover bg-white" />
               </Link>
-              <div className="h-10 w-10 rounded-full overflow-hidden border border-blue-100 bg-blue-50">
-                {profileImageUrl ? (
-                  <img src={profileImageUrl} alt={user?.full_name || "Host"} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="h-full w-full flex items-center justify-center text-blue-700 font-bold text-sm">
-                    {(user?.full_name || "H").charAt(0).toUpperCase()}
-                  </div>
-                )}
+            </div>
+            <div>
+              <p className="text-white font-heading font-bold text-2xl tracking-wide leading-none">OffTrail</p>
+              <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-gold/10 border border-gold/20 mt-1.5">
+                <Shield className="w-3 h-3 text-gold" />
+                <span className="text-[9px] font-bold text-gold uppercase tracking-widest">Host Portal</span>
               </div>
-              <button
-                onClick={setShowLogoutModal}
-                className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition-colors duration-300"
-              >
-                <LogOut className="h-5 w-5" />
-                <span className="hidden sm:inline">Logout</span>
-              </button>
             </div>
           </div>
         </div>
-      </nav>
+
+        {/* Nav */}
+        <nav className="flex-1 px-4 py-8 space-y-2 overflow-y-auto">
+          <p className="px-4 mb-4 text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">
+            Dashboard
+          </p>
+          <button
+            type="button"
+            onClick={() => scrollToSection("overview")}
+            className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-300 text-white/70 hover:bg-white/5 hover:text-white"
+          >
+            <Home className="h-5 w-5" /> Overview
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollToSection("properties")}
+            className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-300 text-white/70 hover:bg-white/5 hover:text-white"
+          >
+            <Key className="h-5 w-5" /> Properties
+            <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-bold bg-white/10 text-white">{homestays.length || 0}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollToSection("bookings")}
+            className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-300 text-white/70 hover:bg-white/5 hover:text-white"
+          >
+            <CalendarDays className="h-5 w-5" /> Booking Requests
+            {bookings.length > 0 && <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-bold bg-gold/20 text-gold">{bookings.length}</span>}
+          </button>
+          <div className="pt-4 mt-4 border-t border-white/5">
+            <Link to="/host-profile" className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-300 text-white/70 hover:bg-white/5 hover:text-white">
+              <UserCircle className="h-5 w-5" /> My Profile
+            </Link>
+          </div>
+        </nav>
+
+        {/* User */}
+        <div className="px-6 py-6 border-t border-white/5 bg-black/20">
+          <div className="flex items-center gap-4 mb-5">
+            <div className="w-10 h-10 rounded-full border-2 border-gold/30 overflow-hidden bg-navy-light shadow-inner shadow-black/50 shrink-0">
+              {profileImageUrl ? (
+                <img src={profileImageUrl} alt="Host" className="h-full w-full object-cover" />
+              ) : (
+                <div className="h-full w-full flex items-center justify-center text-gold font-bold font-heading">
+                  {(user?.full_name || "H").charAt(0).toUpperCase()}
+                </div>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-white text-sm font-bold truncate leading-tight">
+                {user?.full_name || "Host Representative"}
+              </p>
+              <p className="text-white/50 text-[10px] font-medium mt-0.5 uppercase tracking-wider">Control Center</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowLogoutModal(true)}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-sm font-bold transition-colors border border-red-500/20 hover:border-red-500/40"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign Out
+          </button>
+        </div>
+      </aside>
+
+      {/* ── Main Content Wrapper ── */}
+      <div className="flex-1 lg:ml-72 flex flex-col min-h-screen relative overflow-x-hidden scroll-smooth bg-[#FDFBF7]">
+        {/* Background Decorative Element */}
+        <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-gradient-to-br from-gold/5 via-alpine/5 to-transparent rounded-full blur-3xl -z-10 transform translate-x-1/3 -translate-y-1/3 pointer-events-none" />
+        
+        {/* Mobile Header (Visible only on small screens) */}
+        <header className="lg:hidden bg-navy border-b border-navy-light/30 px-4 py-4 sticky top-0 z-40 shadow-xl shadow-navy/10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link to="/" className="w-10 h-10 rounded-full overflow-hidden ring-2 ring-gold/80">
+              <img src="/offtrail-latest.png" alt="OffTrail Nepal" className="h-full w-full object-cover bg-white" />
+            </Link>
+            <div>
+              <h1 className="text-lg font-heading font-bold text-white tracking-wide">
+                OffTrail<span className="text-gold">Nepal</span>
+              </h1>
+            </div>
+          </div>
+          <button onClick={() => setShowLogoutModal(true)} className="p-2 text-red-400 hover:bg-red-500/10 rounded-xl border border-transparent">
+            <LogOut className="h-5 w-5" />
+          </button>
+        </header>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main id="overview" className="max-w-[1600px] w-full mx-auto px-4 sm:px-8 py-8 space-y-8 relative z-10">
         {/* Welcome */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-8 gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Host Dashboard</h1>
-            <p className="text-gray-500 mt-1">
-              Welcome back, <span className="font-semibold text-gray-700">{user?.full_name || "Host"}</span>
+            <h2 className="text-3xl font-heading font-bold text-gray-900 tracking-tight">Host Dashboard</h2>
+            <p className="text-gray-500 mt-1 font-medium">
+              Welcome back, <span className="font-bold text-navy">{user?.full_name || "Host"}</span>
             </p>
           </div>
           <button
             onClick={() => setShowCreateForm(true)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold shadow-sm hover:shadow transition-all"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-br from-gold to-gold-dark hover:shadow-lg hover:shadow-gold/20 text-navy rounded-xl font-bold shadow-sm transition-all hover:-translate-y-0.5 hover:scale-[1.02]"
           >
             <Plus className="h-5 w-5" />
             Add New Homestay
@@ -1112,16 +1245,16 @@ const HostDashboard = () => {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-          <StatCard icon={Home} label="Total Listings" value={stats.total} accent="blue" />
-          <StatCard icon={Clock} label="Pending Review" value={stats.pending} accent="amber" />
-          <StatCard icon={CheckCircle} label="Approved" value={stats.approved} accent="emerald" />
-          <StatCard icon={XCircle} label="Rejected" value={stats.rejected} accent="purple" />
-          <StatCard icon={CalendarDays} label="Active Bookings" value={stats.bookings} accent="blue" />
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-6">
+          <StatCard icon={Home} label="Total Listings" value={stats.total} accent="navy" delay={0.1} />
+          <StatCard icon={Clock} label="Pending Review" value={stats.pending} accent="gold" delay={0.2} />
+          <StatCard icon={CheckCircle} label="Approved" value={stats.approved} accent="alpine" delay={0.3} />
+          <StatCard icon={XCircle} label="Rejected" value={stats.rejected} accent="charcoal" delay={0.4} />
+          <StatCard icon={CalendarDays} label="Active Bookings" value={stats.bookings} accent="navy" delay={0.5} />
         </div>
 
         {/* Homestay Listings */}
-        <div className="mb-4">
+        <div id="properties" className="mb-4 pt-4 scroll-mt-20">
           <h2 className="text-xl font-bold text-gray-900">Your Homestay Listings</h2>
           <p className="text-sm text-gray-500 mt-1">
             Manage your properties and track their approval status
@@ -1167,7 +1300,7 @@ const HostDashboard = () => {
           </div>
         )}
 
-        <div className="mt-10 mb-4">
+        <div id="bookings" className="mt-10 mb-4 pt-4 scroll-mt-20">
           <h2 className="text-xl font-bold text-gray-900">Recent Booking Requests</h2>
           <p className="text-sm text-gray-500 mt-1">
             New reservations from tourists are shown here in real time.
@@ -1183,57 +1316,86 @@ const HostDashboard = () => {
             No bookings yet. Once tourists book rooms, details will appear here.
           </div>
         ) : (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 text-gray-600 uppercase text-xs tracking-wider">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Booking</th>
-                    <th className="px-4 py-3 text-left">Tourist</th>
-                    <th className="px-4 py-3 text-left">Stay</th>
-                    <th className="px-4 py-3 text-left">Rooms/Guests</th>
-                    <th className="px-4 py-3 text-left">Amount</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {bookings.map((booking) => {
-                    const isCancelled = booking.status === "cancelled";
-                    return (
-                      <tr key={booking.booking_id} className="hover:bg-gray-50/80">
-                        <td className="px-4 py-3">
-                          <p className="font-semibold text-gray-900">{booking.booking_code}</p>
-                          <p className="text-gray-500 text-xs">{booking.homestay_name}</p>
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-gray-800">{booking.tourist_name}</p>
-                          <p className="text-xs text-gray-500">{booking.tourist_email}</p>
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">
-                          <p>{new Date(booking.check_in_date).toLocaleDateString()} - {new Date(booking.check_out_date).toLocaleDateString()}</p>
-                          <p className="text-xs text-gray-500">Booked on {new Date(booking.created_at).toLocaleDateString()}</p>
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">
-                          {booking.rooms_booked} room{booking.rooms_booked > 1 ? "s" : ""} / {booking.guests_count} guests
-                        </td>
-                        <td className="px-4 py-3 font-semibold text-gray-900">
-                          NPR {Number(booking.total_price || 0).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${isCancelled ? "bg-red-50 text-red-700 border border-red-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
-                            {isCancelled ? <XCircle className="h-3.5 w-3.5" /> : <BadgeCheck className="h-3.5 w-3.5" />}
-                            {isCancelled ? "Cancelled" : "Confirmed"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+          <div className="space-y-4">
+            {bookings.map((booking) => {
+              const isCancelled = booking.status === "cancelled";
+              return (
+                <div key={booking.booking_id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-lg transition-all duration-300 md:flex md:items-center md:justify-between gap-6 group relative overflow-hidden">
+                  {/* Left Accent Bar */}
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${isCancelled ? "bg-red-500" : "bg-emerald-500"}`} />
+
+                  {/* Tourist Info (Left Structure) */}
+                  <div className="flex items-center gap-4 md:w-1/4 mb-4 md:mb-0">
+                    <div className="h-12 w-12 rounded-full overflow-hidden border border-gray-200 bg-gray-50 flex items-center justify-center shrink-0">
+                      <Users className="h-6 w-6 text-navy/40" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-gray-900 tracking-tight leading-tight">{booking.tourist_name}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5 text-xs text-gray-500">
+                        <Mail className="h-3 w-3" />
+                        <span className="truncate max-w-[150px]" title={booking.tourist_email}>{booking.tourist_email}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Booking Details (Middle Structure) */}
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:w-2/4">
+                    {/* Stay Config */}
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Stay Profile</p>
+                      <p className="font-bold text-navy truncate">{booking.homestay_name}</p>
+                      <p className="text-xs font-semibold text-gray-500 mt-0.5">
+                        <span className="text-gold">Code:</span> {booking.booking_code}
+                      </p>
+                    </div>
+
+                    {/* Schedule */}
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Schedule</p>
+                      <div className="flex items-center gap-1.5 font-bold text-gray-800 text-sm">
+                        <CalendarDays className="h-3.5 w-3.5 text-blue-500" />
+                        {new Date(booking.check_in_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        <span className="text-gray-400">→</span>
+                        {new Date(booking.check_out_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </div>
+                    </div>
+
+                    {/* Room Volume */}
+                    <div className="hidden lg:block">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Scale</p>
+                      <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-navy/5 border border-navy/10 text-xs font-bold text-navy">
+                        <span>{booking.rooms_booked} Unit{booking.rooms_booked > 1 ? "s" : ""}</span>
+                        <span className="h-3 w-[1px] bg-navy/20" />
+                        <span>{booking.guests_count} Pax</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* End Data (Right Structure) */}
+                  <div className="flex items-center justify-between md:justify-end md:w-1/4 gap-5 pt-4 md:pt-0 mt-4 md:mt-0 border-t md:border-t-0 border-gray-100">
+                    <div className="md:text-right">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Valuation</p>
+                      <p className="font-bold text-gray-900 leading-none">
+                        <span className="text-emerald-600 text-xs mr-0.5">NPR</span>
+                        {Number(booking.total_price || 0).toLocaleString()}
+                      </p>
+                    </div>
+                    
+                    <span className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border ${
+                      isCancelled 
+                      ? "bg-red-50 text-red-700 border-red-200" 
+                      : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 transition-colors cursor-default"
+                    }`}>
+                      {isCancelled ? <XCircle className="h-3.5 w-3.5" /> : <BadgeCheck className="h-3.5 w-3.5" />}
+                      {isCancelled ? "Cancelled" : "Confirmed"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
-      </div>
+      </main>
 
       {/* Create Form Modal */}
       {showCreateForm && (
@@ -1274,6 +1436,7 @@ const HostDashboard = () => {
         onConfirm={handleLogout}
         onCancel={handleStayLoggedIn}
       />
+      </div>
     </div>
   );
 };

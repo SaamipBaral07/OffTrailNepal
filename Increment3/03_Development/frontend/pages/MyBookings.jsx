@@ -33,6 +33,7 @@ const MyBookings = () => {
   const [loadingBookings, setLoadingBookings] = useState(true);
   const [notification, setNotification] = useState(null);
   const [cancellingBookingId, setCancellingBookingId] = useState(null);
+  const [refundingBookingId, setRefundingBookingId] = useState(null);
   const {
     handleLogout,
     handleStayLoggedIn,
@@ -88,6 +89,31 @@ const MyBookings = () => {
       showNotice(err.response?.data?.message || "Failed to cancel booking", "error");
     } finally {
       setCancellingBookingId(null);
+    }
+  };
+
+  const requestRefund = async (bookingId) => {
+    const reasonInput = window.prompt("Enter a short reason for your refund request (optional):", "");
+    if (reasonInput === null) return;
+
+    setRefundingBookingId(bookingId);
+    try {
+      const res = await api.post(`/api/bookings/${bookingId}/refund/request`, {
+        reason: String(reasonInput || "").trim() || null,
+      });
+      showNotice(res.data.message || "Refund request submitted");
+      await fetchBookings();
+    } catch (err) {
+      const statusCode = err.response?.status;
+      const serverMessage = err.response?.data?.message;
+
+      if (!serverMessage && statusCode === 404) {
+        showNotice("Refund API route is not available on the running backend. Please restart server.", "error");
+      } else {
+        showNotice(serverMessage || "Failed to request refund", "error");
+      }
+    } finally {
+      setRefundingBookingId(null);
     }
   };
 
@@ -151,7 +177,12 @@ const MyBookings = () => {
         ) : (
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {bookings.map((booking) => {
-              const isCancelled = booking.status === "cancelled";
+              const bookingStatus = String(booking.status || "").toLowerCase();
+              const paymentStatus = String(booking.payment_status || "").toLowerCase();
+              const isCancelled = bookingStatus === "cancelled";
+              const isRefundRequested = bookingStatus === "refund_requested" || paymentStatus === "refund_requested";
+              const isRefunded = bookingStatus === "refunded" || paymentStatus === "refunded";
+              const isPaid = paymentStatus === "success" || isRefundRequested || isRefunded;
               return (
                 <article
                   key={booking.booking_id}
@@ -161,13 +192,17 @@ const MyBookings = () => {
                     <h2 className="text-xl font-bold text-charcoal">{booking.homestay_name}</h2>
                     <span
                       className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${
-                        isCancelled
+                        isRefunded
+                          ? "border-blue-200 bg-blue-50 text-blue-700"
+                          : isRefundRequested
+                          ? "border-amber-200 bg-amber-50 text-amber-700"
+                          : isCancelled
                           ? "border-red-200 bg-red-50 text-red-700"
                           : "border-emerald-200 bg-emerald-50 text-emerald-700"
                       }`}
                     >
-                      {isCancelled ? <XCircle className="h-3.5 w-3.5" /> : <BadgeCheck className="h-3.5 w-3.5" />}
-                      {isCancelled ? "Cancelled" : "Confirmed"}
+                      {(isCancelled || isRefundRequested) ? <XCircle className="h-3.5 w-3.5" /> : <BadgeCheck className="h-3.5 w-3.5" />}
+                      {isRefunded ? "Refunded" : isRefundRequested ? "Refund Requested" : isCancelled ? "Cancelled" : "Confirmed"}
                     </span>
                   </div>
 
@@ -181,13 +216,28 @@ const MyBookings = () => {
                   <div className="mt-4 rounded-2xl border border-gold/20 bg-gold-pale/40 p-3 text-sm text-gray-700">
                     <p className="font-semibold text-navy">Booking Code: {booking.booking_code}</p>
                     <p className="mt-1">Total Price: NPR {Number(booking.total_price || 0).toLocaleString()}</p>
+                    <p className="mt-1 capitalize">Payment Status: {paymentStatus || "not_paid"}</p>
+                    {booking.refund_requested_amount && (
+                      <p className="mt-1">Refund Requested: NPR {Number(booking.refund_requested_amount).toLocaleString()}</p>
+                    )}
                   </div>
 
                   {booking.special_requests && (
                     <p className="mt-3 text-xs text-gray-500">Special request: {booking.special_requests}</p>
                   )}
 
-                  {!isCancelled && (
+                  {!isCancelled && !isRefundRequested && !isRefunded && isPaid && (
+                    <button
+                      onClick={() => requestRefund(booking.booking_id)}
+                      disabled={refundingBookingId === booking.booking_id}
+                      className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-70"
+                    >
+                      {refundingBookingId === booking.booking_id && <Loader2 className="h-4 w-4 animate-spin" />}
+                      Request Refund
+                    </button>
+                  )}
+
+                  {!isCancelled && !isRefundRequested && !isRefunded && !isPaid && (
                     <button
                       onClick={() => cancelBooking(booking.booking_id)}
                       disabled={cancellingBookingId === booking.booking_id}
