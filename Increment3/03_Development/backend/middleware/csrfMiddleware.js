@@ -10,7 +10,9 @@ const CSRF_IGNORED_PATHS = new Set([
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
   "/api/bookings/payment/esewa/success",
-  "/api/bookings/payment/esewa/failure"
+  "/api/bookings/payment/esewa/failure",
+  "/api/guide-bookings/payment/esewa/success",
+  "/api/guide-bookings/payment/esewa/failure"
 ]);
 
 const getIsSecureCookie = () => {

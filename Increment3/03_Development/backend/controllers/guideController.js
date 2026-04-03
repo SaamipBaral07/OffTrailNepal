@@ -34,7 +34,7 @@ export const getTrailsForGuide = async (req, res) => {
 export const addGuideToTrail = async (req, res) => {
   try {
     const guideId = req.user.user_id;
-    const { trail_id, price_per_day, experience_level } = req.body;
+    const { trail_id, experience_level } = req.body;
 
     const verificationStatus = await getGuideVerificationStatus(guideId);
     if (verificationStatus !== "approved") {
@@ -44,9 +44,9 @@ export const addGuideToTrail = async (req, res) => {
     }
 
     // Validate required fields
-    if (!trail_id || !price_per_day || !experience_level) {
+    if (!trail_id || !experience_level) {
       return res.status(400).json({
-        message: "trail_id, price_per_day, and experience_level are required",
+        message: "trail_id and experience_level are required",
       });
     }
 
@@ -78,10 +78,10 @@ export const addGuideToTrail = async (req, res) => {
 
     // Insert
     const result = await pool.query(
-      `INSERT INTO guide_trails (guide_id, trail_id, price_per_day, experience_level)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO guide_trails (guide_id, trail_id, experience_level)
+       VALUES ($1, $2, $3)
        RETURNING *`,
-      [guideId, trail_id, parseFloat(price_per_day), experience_level]
+      [guideId, trail_id, experience_level]
     );
 
     // Fetch with trail info
@@ -135,7 +135,7 @@ export const updateGuideTrail = async (req, res) => {
   try {
     const { id } = req.params;
     const guideId = req.user.user_id;
-    const { price_per_day, experience_level, is_active } = req.body;
+    const { experience_level, is_active } = req.body;
 
     // Validate experience_level if provided
     if (experience_level) {
@@ -159,13 +159,11 @@ export const updateGuideTrail = async (req, res) => {
 
     const result = await pool.query(
       `UPDATE guide_trails SET
-        price_per_day = COALESCE($1, price_per_day),
-        experience_level = COALESCE($2, experience_level),
-        is_active = COALESCE($3, is_active)
-       WHERE id = $4 AND guide_id = $5
+        experience_level = COALESCE($1, experience_level),
+        is_active = COALESCE($2, is_active)
+       WHERE id = $3 AND guide_id = $4
        RETURNING *`,
       [
-        price_per_day ? parseFloat(price_per_day) : null,
         experience_level || null,
         typeof is_active === "boolean" ? is_active : null,
         id,
@@ -262,7 +260,7 @@ export const getGuidesByTrail = async (req, res) => {
     const { trailId } = req.params;
 
     const result = await pool.query(
-      `SELECT gt.id, gt.price_per_day, gt.experience_level,
+      `SELECT gt.id, gt.experience_level,
               g.guide_id, g.full_name, g.phone, g.experience_years, g.license_no
        FROM guide_trails gt
        JOIN guides g ON gt.guide_id = g.guide_id
@@ -270,7 +268,7 @@ export const getGuidesByTrail = async (req, res) => {
        WHERE gt.trail_id = $1
          AND gt.is_active = true
          AND gv.verification_status = 'approved'
-       ORDER BY gt.price_per_day ASC`,
+       ORDER BY g.experience_years DESC, g.full_name ASC`,
       [trailId]
     );
 
