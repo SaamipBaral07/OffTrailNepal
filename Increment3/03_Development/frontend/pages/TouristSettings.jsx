@@ -7,7 +7,7 @@ import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import { useAuth } from "../context/AuthContext";
 import { getToken } from "../tokenStore";
 import api from "../api";
-import { Bell, KeyRound, Loader2, Lock, Save, ShieldCheck, UserRound } from "lucide-react";
+import { Bell, KeyRound, Loader2, Lock, Save, ShieldCheck, UserRound, Home } from "lucide-react";
 
 const SETTINGS_KEY = "offtrail-tourist-settings";
 
@@ -114,6 +114,13 @@ const TouristSettings = () => {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-20">
         <section className="rounded-3xl border border-gold/20 bg-white/95 shadow-[0_10px_30px_rgba(12,35,64,0.08)] p-6 sm:p-8 mb-6">
+          <button
+            onClick={() => navigate("/")}
+            className="inline-flex items-center gap-2 rounded-lg border border-gold/30 bg-white px-4 py-2 text-sm font-semibold text-gold hover:bg-gold/5 transition-all mb-3"
+          >
+            <Home className="h-4 w-4" />
+            Back to Home
+          </button>
           <p className="uppercase text-[11px] tracking-[0.24em] text-gold-dark font-semibold mb-2">Tourist Space</p>
           <h1 className="text-3xl sm:text-4xl font-heading text-charcoal">Settings</h1>
           <p className="text-gray-500 mt-2">Manage your security and personal preference controls.</p>

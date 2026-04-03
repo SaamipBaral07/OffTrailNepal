@@ -7,7 +7,7 @@ import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import { useAuth } from "../context/AuthContext";
 import { getToken, getCsrfToken } from "../tokenStore";
 import api from "../api";
-import { Loader2, Save, UserRound, Mail, Phone, Flag, CalendarDays, ArrowRight, Camera } from "lucide-react";
+import { Loader2, Save, UserRound, Mail, Phone, Flag, CalendarDays, ArrowRight, Camera, Home } from "lucide-react";
 
 const TouristProfile = () => {
   const navigate = useNavigate();
@@ -186,6 +186,13 @@ const TouristProfile = () => {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-20">
         <section className="rounded-3xl border border-gold/20 bg-white/95 shadow-[0_10px_30px_rgba(12,35,64,0.08)] p-6 sm:p-8 mb-6">
+          <button
+            onClick={() => navigate("/")}
+            className="inline-flex items-center gap-2 rounded-lg border border-gold/30 bg-white px-4 py-2 text-sm font-semibold text-gold hover:bg-gold/5 transition-all mb-3"
+          >
+            <Home className="h-4 w-4" />
+            Back to Home
+          </button>
           <p className="uppercase text-[11px] tracking-[0.24em] text-gold-dark font-semibold mb-2">Tourist Space</p>
           <h1 className="text-3xl sm:text-4xl font-heading text-charcoal">My Profile</h1>
           <p className="text-gray-500 mt-2">Keep your traveler details updated for smoother bookings and host communication.</p>

@@ -184,6 +184,13 @@ const MyBookings = () => {
         <section className="rounded-3xl border border-gold/20 bg-white/90 shadow-[0_10px_30px_rgba(12,35,64,0.08)] p-6 sm:p-8 mb-8">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
+              <button
+                onClick={() => navigate("/")}
+                className="inline-flex items-center gap-2 rounded-lg border border-gold/30 bg-white px-4 py-2 text-sm font-semibold text-gold hover:bg-gold/5 transition-all mb-3"
+              >
+                <Home className="h-4 w-4" />
+                Back to Home
+              </button>
               <p className="uppercase text-[11px] tracking-[0.24em] text-gold-dark font-semibold mb-2">Tourist Dashboard</p>
               <h1 className="text-3xl sm:text-4xl font-heading text-charcoal">My Bookings</h1>
               <p className="text-gray-500 mt-2">Track your homestay and guide-package bookings in one place.</p>
