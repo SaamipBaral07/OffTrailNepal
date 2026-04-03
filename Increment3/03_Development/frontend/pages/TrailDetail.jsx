@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -36,6 +36,7 @@ import { Footer } from "../components/Footer";
 import TrailMap from "../components/TrailMap";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
+import api from "../api";
 
 const API = "http://localhost:5000";
 const MOTION_CURVE = [0.22, 1, 0.36, 1];
@@ -453,7 +454,8 @@ const DifficultyBar = ({ level }) => {
 /* ─────────────────────────────────────────────
    GUIDE SERVICE CARD
 ───────────────────────────────────────────── */
-const GuideServiceCard = ({ service, index }) => {
+const GuideServiceCard = ({ service, index, user, onBookPackage }) => {
+  const isTourist = user?.user_type === "tourist";
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -501,12 +503,22 @@ const GuideServiceCard = ({ service, index }) => {
             Max Group: {service.max_group_size} pax
           </div>
           
-          <a
-            href={`tel:${service.guide_phone}`}
-            className="flex items-center gap-2 px-4 py-2 bg-charcoal text-white text-xs font-bold rounded-xl hover:bg-black transition-colors shadow-sm"
-          >
-            <Phone className="h-3.5 w-3.5" /> Book Guide
-          </a>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onBookPackage(service)}
+              className="flex items-center gap-2 px-4 py-2 bg-charcoal text-white text-xs font-bold rounded-xl hover:bg-black transition-colors shadow-sm"
+            >
+              <Book className="h-3.5 w-3.5" />
+              {isTourist ? "Book Package" : "Book Package"}
+            </button>
+            <a
+              href={`tel:${service.guide_phone}`}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-colors shadow-sm"
+            >
+              <Phone className="h-3.5 w-3.5" /> Call
+            </a>
+          </div>
         </div>
       </div>
     </motion.div>
@@ -547,12 +559,163 @@ const BaseGuideCard = ({ guide, index }) => {
       </div>
       
       <div className="text-right">
-        <p className="font-bold text-charcoal">NPR {Number(guide.price_per_day).toLocaleString()} <span className="text-[10px] text-gray-400 font-normal">/day</span></p>
-        <a href={`tel:${guide.phone}`} className="inline-block mt-1 text-xs text-gold hover:text-amber-600 font-semibold" >
-          Contact Guide
-        </a>
+        <p className="font-bold text-charcoal">Base Guide Profile</p>
+        <p className="text-[10px] text-gray-400 font-normal mt-0.5">Bookings are available only through package cards</p>
       </div>
     </motion.div>
+  );
+};
+
+const GuidePackageBookingModal = ({
+  service,
+  isOpen,
+  onClose,
+  onSubmit,
+  submitting,
+  paymentMethod,
+  setPaymentMethod,
+}) => {
+  const [form, setForm] = useState({
+    start_date: "",
+    end_date: "",
+    participants_count: 1,
+    contact_phone: "",
+    special_requests: "",
+  });
+
+  useEffect(() => {
+    if (!isOpen) {
+      setForm({
+        start_date: "",
+        end_date: "",
+        participants_count: 1,
+        contact_phone: "",
+        special_requests: "",
+      });
+    }
+  }, [isOpen, service?.service_id]);
+
+  if (!isOpen || !service) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl">
+        <div className="flex items-center justify-between p-6 border-b border-gray-100">
+          <div>
+            <h3 className="text-xl font-bold text-charcoal">Book Guide Package</h3>
+            <p className="text-xs text-gray-500 mt-1">{service.title} · {service.guide_name}</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-2 hover:bg-gray-100 rounded-xl transition">
+            <span className="text-lg text-gray-500">×</span>
+          </button>
+        </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSubmit({ ...form, service_id: service.service_id });
+          }}
+          className="p-6 space-y-4"
+        >
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Date</label>
+              <input
+                type="date"
+                required
+                value={form.start_date}
+                onChange={(e) => setForm((prev) => ({ ...prev, start_date: e.target.value }))}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Date</label>
+              <input
+                type="date"
+                required
+                value={form.end_date}
+                onChange={(e) => setForm((prev) => ({ ...prev, end_date: e.target.value }))}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Participants</label>
+              <input
+                type="number"
+                min="1"
+                max={service.max_group_size || 1}
+                required
+                value={form.participants_count}
+                onChange={(e) => setForm((prev) => ({ ...prev, participants_count: e.target.value }))}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
+              />
+              <p className="text-[11px] text-gray-400 mt-1">Max {service.max_group_size} people</p>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Contact Phone</label>
+              <input
+                type="text"
+                value={form.contact_phone}
+                onChange={(e) => setForm((prev) => ({ ...prev, contact_phone: e.target.value }))}
+                placeholder="+977-98XXXXXXXX"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Special Requests</label>
+            <textarea
+              rows={3}
+              value={form.special_requests}
+              onChange={(e) => setForm((prev) => ({ ...prev, special_requests: e.target.value }))}
+              placeholder="Fitness level, dietary needs, pace preference, permits, etc."
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl resize-none"
+            />
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-gray-700 mb-1.5">Payment Method</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("esewa")}
+                className={`px-4 py-2.5 border rounded-xl text-sm font-semibold ${paymentMethod === "esewa" ? "border-gold bg-gold-pale text-gold-dark" : "border-gray-200 text-gray-600"}`}
+              >
+                eSewa
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentMethod("stripe")}
+                className={`px-4 py-2.5 border rounded-xl text-sm font-semibold ${paymentMethod === "stripe" ? "border-gold bg-gold-pale text-gold-dark" : "border-gray-200 text-gray-600"}`}
+              >
+                Stripe
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-gray-700 font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="flex-1 px-4 py-2.5 bg-charcoal text-white rounded-xl font-semibold hover:bg-black disabled:opacity-70"
+            >
+              {submitting ? "Redirecting..." : "Proceed to Payment"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 };
 
@@ -573,6 +736,7 @@ const tabMotion = {
 ───────────────────────────────────────────── */
 const TrailDetail = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [trail, setTrail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
@@ -583,6 +747,10 @@ const TrailDetail = () => {
   
   const [baseGuides, setBaseGuides] = useState([]);
   const [baseGuidesLoading, setBaseGuidesLoading] = useState(false);
+  const [showGuideBookingModal, setShowGuideBookingModal] = useState(false);
+  const [selectedGuideService, setSelectedGuideService] = useState(null);
+  const [guidePaymentMethod, setGuidePaymentMethod] = useState("esewa");
+  const [guideBookingSubmitting, setGuideBookingSubmitting] = useState(false);
 
   const [selectedHomestayId, setSelectedHomestayId] = useState(null);
   const [pendingScrollHomestayId, setPendingScrollHomestayId] = useState(null);
@@ -729,6 +897,65 @@ const TrailDetail = () => {
     const nearSet = new Set(nearTrailHomestayIds);
     return homestays.filter((h) => nearSet.has(h.homestay_id));
   }, [homestays, showOnlyNearTrail, nearTrailHomestayIds]);
+
+  const handleOpenGuidePackageBooking = (service) => {
+    if (!user) {
+      navigate("/login", { replace: false });
+      return;
+    }
+
+    if (user.user_type !== "tourist") {
+      window.alert("Only tourist accounts can book guide packages.");
+      return;
+    }
+
+    setSelectedGuideService(service);
+    setShowGuideBookingModal(true);
+  };
+
+  const handleSubmitGuideBooking = async (payload) => {
+    setGuideBookingSubmitting(true);
+    try {
+      if (guidePaymentMethod === "stripe") {
+        const stripeRes = await api.post("/api/guide-bookings/payment/stripe/initiate", payload);
+        const checkoutUrl = stripeRes.data?.checkout_url;
+
+        if (!checkoutUrl) {
+          throw new Error("Invalid Stripe payment response");
+        }
+
+        window.location.href = checkoutUrl;
+        return;
+      }
+
+      const res = await api.post("/api/guide-bookings/payment/initiate", payload);
+      const paymentForm = res.data?.payment_form;
+
+      if (!paymentForm?.action || !paymentForm?.fields) {
+        throw new Error("Invalid payment response from server");
+      }
+
+      const form = document.createElement("form");
+      form.method = (paymentForm.method || "POST").toUpperCase();
+      form.action = paymentForm.action;
+      form.style.display = "none";
+
+      Object.entries(paymentForm.fields).forEach(([key, value]) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = key;
+        input.value = String(value ?? "");
+        form.appendChild(input);
+      });
+
+      document.body.appendChild(form);
+      form.submit();
+    } catch (err) {
+      window.alert(err.response?.data?.message || "Failed to initiate guide package payment.");
+    } finally {
+      setGuideBookingSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -1412,13 +1639,19 @@ const TrailDetail = () => {
                       </div>
                       <p className="text-gray-600 font-bold">No Service Packages</p>
                       <p className="text-gray-400 text-sm text-center max-w-xs leading-relaxed">
-                        There are no specialized packages listed for this trail yet. Check for independent guides below.
+                        There are no specialized packages listed for this trail yet. Package checkout is required for booking and payment.
                       </p>
                     </div>
                   ) : (
                     <div className="space-y-5 max-w-4xl mb-12">
                       {guideServices.map((service, i) => (
-                        <GuideServiceCard key={service.service_id} service={service} index={i} />
+                        <GuideServiceCard
+                          key={service.service_id}
+                          service={service}
+                          index={i}
+                          user={user}
+                          onBookPackage={handleOpenGuidePackageBooking}
+                        />
                       ))}
                     </div>
                   )}
@@ -1451,7 +1684,7 @@ const TrailDetail = () => {
 
                 <aside className="hidden lg:block lg:sticky lg:top-24 bg-white rounded-2xl border border-gray-100 p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
                   <h3 className="text-base font-bold text-charcoal mb-2">Guide Info Rail</h3>
-                  <p className="text-xs text-gray-500 mb-4">Quick compare before you call.</p>
+                  <p className="text-xs text-gray-500 mb-4">Quick compare before booking.</p>
 
                   <div className="space-y-3">
                     <div className="rounded-xl bg-blue-50 border border-blue-100 p-3">
@@ -1465,7 +1698,7 @@ const TrailDetail = () => {
                     <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
                       <p className="text-[11px] uppercase tracking-wide text-emerald-700 font-semibold">Pro Tip</p>
                       <p className="text-xs text-emerald-700 mt-1 leading-relaxed">
-                        Compare group size limits and experience level before finalizing. For custom plans, call base guides directly.
+                        Book and pay only through package cards to keep every transaction protected and trackable in OffTrail Nepal.
                       </p>
                     </div>
                   </div>
@@ -1485,6 +1718,20 @@ const TrailDetail = () => {
         isOpen={showLogoutModal}
         onConfirm={handleLogout}
         onCancel={handleStayLoggedIn}
+      />
+
+      <GuidePackageBookingModal
+        service={selectedGuideService}
+        isOpen={showGuideBookingModal}
+        onClose={() => {
+          if (guideBookingSubmitting) return;
+          setShowGuideBookingModal(false);
+          setSelectedGuideService(null);
+        }}
+        onSubmit={handleSubmitGuideBooking}
+        submitting={guideBookingSubmitting}
+        paymentMethod={guidePaymentMethod}
+        setPaymentMethod={setGuidePaymentMethod}
       />
     </div>
   );

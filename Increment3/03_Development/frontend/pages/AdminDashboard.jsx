@@ -116,6 +116,8 @@ const AdminDashboard = () => {
   const [guidesLoading, setGuidesLoading] = useState(false);
   const [paymentRecords, setPaymentRecords] = useState([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [guidePaymentRecords, setGuidePaymentRecords] = useState([]);
+  const [guidePaymentsLoading, setGuidePaymentsLoading] = useState(false);
   const [reviewingRefundBookingId, setReviewingRefundBookingId] = useState(null);
   const [refundActionNotice, setRefundActionNotice] = useState(null);
   const [refundReviewModal, setRefundReviewModal] = useState({
@@ -182,6 +184,18 @@ const AdminDashboard = () => {
     }
   }, []);
 
+  const fetchAdminGuidePayments = useCallback(async () => {
+    setGuidePaymentsLoading(true);
+    try {
+      const res = await api.get(`${API}/guide-bookings/admin/payments`);
+      setGuidePaymentRecords(res.data.records || []);
+    } catch (err) {
+      console.error("Error fetching admin guide payment records:", err);
+    } finally {
+      setGuidePaymentsLoading(false);
+    }
+  }, []);
+
   const pushRefundNotice = useCallback((type, message) => {
     const noticeId = Date.now();
     setRefundActionNotice({ id: noticeId, type, message });
@@ -191,10 +205,10 @@ const AdminDashboard = () => {
     }, 7000);
   }, []);
 
-  const openRefundReviewModal = (record) => {
+  const openRefundReviewModal = (record, bookingType = "homestay") => {
     setRefundReviewModal({
       open: true,
-      record,
+      record: { ...record, booking_type: bookingType },
       note: "",
       gatewayRefundReference: "",
       error: "",
@@ -239,7 +253,8 @@ const AdminDashboard = () => {
     setRefundReviewModal((prev) => ({ ...prev, error: "" }));
 
     try {
-      const res = await api.patch(`${API}/bookings/${record.booking_id}/refund/review`, {
+      const basePath = record.booking_type === "guide_package" ? "guide-bookings" : "bookings";
+      const res = await api.patch(`${API}/${basePath}/${record.booking_id}/refund/review`, {
         action,
         note: refundReviewModal.note.trim() || null,
         gateway_refund_reference:
@@ -251,6 +266,7 @@ const AdminDashboard = () => {
       pushRefundNotice("success", res.data?.message || "Refund review updated successfully.");
       closeRefundReviewModal(true);
       await fetchAdminPayments();
+      await fetchAdminGuidePayments();
     } catch (err) {
       console.error("Error reviewing refund request:", err);
       pushRefundNotice("error", err.response?.data?.message || "Failed to review refund request");
@@ -269,8 +285,9 @@ const AdminDashboard = () => {
       fetchAdminHomestays();
       fetchAdminGuides();
       fetchAdminPayments();
+      fetchAdminGuidePayments();
     }
-  }, [isLoading, user, fetchTrails, fetchAdminHomestays, fetchAdminGuides, fetchAdminPayments]);
+  }, [isLoading, user, fetchTrails, fetchAdminHomestays, fetchAdminGuides, fetchAdminPayments, fetchAdminGuidePayments]);
 
   const handleHomestayStatus = async (id, status) => {
     try {
@@ -337,13 +354,14 @@ const AdminDashboard = () => {
   const rejectedGuides = guidesAdmin.filter((g) => g.verification_status === "rejected").length;
 
   // Payment Metrics
-  const successfulPayments = paymentRecords.filter(record => String(record.payment_status || "").trim().toLowerCase() === "success").length;
-  const pendingRefunds = paymentRecords.filter(record => {
+  const allPaymentRecords = [...paymentRecords, ...guidePaymentRecords];
+  const successfulPayments = allPaymentRecords.filter(record => String(record.payment_status || "").trim().toLowerCase() === "success").length;
+  const pendingRefunds = allPaymentRecords.filter(record => {
     const paymentStatus = String(record.payment_status || "").trim().toLowerCase();
     const computedRefundStatus = String(record.refund_status || (paymentStatus === "refund_requested" ? "requested" : paymentStatus === "refunded" ? "processed" : "")).trim().toLowerCase();
     return computedRefundStatus === "requested";
   }).length;
-  const totalRevenue = paymentRecords
+  const totalRevenue = allPaymentRecords
     .filter(record => String(record.payment_status || "").trim().toLowerCase() === "success")
     .reduce((sum, record) => sum + Number(record.total_amount || 0), 0);
 
@@ -522,6 +540,7 @@ const AdminDashboard = () => {
             {activeTab === "payments" && (
               <>
                 <StatCard icon={CreditCard} label="Payment Sessions" value={paymentRecords.length} accent="navy" delay={0.1} />
+                <StatCard icon={Compass} label="Guide Sessions" value={guidePaymentRecords.length} accent="alpine" delay={0.2} />
                 <StatCard icon={CheckCircle} label="Successful" value={successfulPayments} accent="alpine" delay={0.2} />
                 <StatCard icon={DollarSign} label="Total Volume" value={`Rs. ${totalRevenue.toLocaleString()}`} accent="gold" delay={0.3} />
                 <StatCard icon={TrendingUp} label="Refund Requests" value={pendingRefunds} accent="charcoal" delay={0.4} />
@@ -825,8 +844,8 @@ const AdminDashboard = () => {
                     <CreditCard className="h-4 w-4 text-violet-500" />
                   </div>
                   <div>
-                    <h2 className="text-gray-900 font-semibold text-base">Homestay Booking Payments</h2>
-                    <p className="text-gray-400 text-xs">Monitor payment sessions, references, and booking statuses</p>
+                    <h2 className="text-gray-900 font-semibold text-base">Booking Payments</h2>
+                    <p className="text-gray-400 text-xs">Monitor homestay and guide package payment sessions, statuses, and refunds</p>
                   </div>
                 </div>
               </div>
@@ -860,7 +879,7 @@ const AdminDashboard = () => {
                       )
                         .trim()
                         .toLowerCase();
-                      const isRefundPending = computedRefundStatus === "requested";
+                      const isRefundPending = ["requested", "processing"].includes(computedRefundStatus);
                       const isBusy = reviewingRefundBookingId === record.booking_id;
 
                       return (
@@ -961,12 +980,12 @@ const AdminDashboard = () => {
                               {isRefundPending ? (
                                 <button
                                   disabled={isBusy}
-                                  onClick={() => openRefundReviewModal(record)}
+                                  onClick={() => openRefundReviewModal(record, "homestay")}
                                   className="w-full flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-4 py-3 text-sm font-bold text-navy hover:shadow-lg focus:ring-2 focus:ring-gold focus:ring-offset-2 hover:scale-[1.02] disabled:opacity-60 disabled:hover:scale-100 transition-all font-body"
                                 >
                                   <div className="flex items-center gap-1.5">
                                     {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />}
-                                    Review Refund
+                                    {computedRefundStatus === "processing" ? "Finalize Refund" : "Review Refund"}
                                   </div>
                                   <span className="text-[10px] font-mono text-navy/70 uppercase">NPR {Number(record.refund_requested_amount).toLocaleString()}</span>
                                 </button>
@@ -982,6 +1001,78 @@ const AdminDashboard = () => {
                     })}
                   </div>
                 )}
+
+                <div className="mt-10 border-t border-gray-100 pt-8">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="p-2 rounded-lg bg-blue-50 border border-blue-100">
+                      <Compass className="h-4 w-4 text-blue-500" />
+                    </div>
+                    <div>
+                      <h3 className="text-gray-900 font-semibold text-base">Guide Package Payments</h3>
+                      <p className="text-gray-400 text-xs">Admin review queue for guide package refunds</p>
+                    </div>
+                  </div>
+
+                  {guidePaymentsLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                      <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+                    </div>
+                  ) : guidePaymentRecords.length === 0 ? (
+                    <div className="rounded-xl border border-gray-100 bg-gray-50 p-5 text-sm text-gray-500">
+                      No guide payment records yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {guidePaymentRecords.map((record) => {
+                        const paymentStatus = String(record.payment_status || "").trim().toLowerCase();
+                        const computedRefundStatus = String(
+                          record.refund_status ||
+                            (paymentStatus === "refund_requested"
+                              ? "requested"
+                              : paymentStatus === "refunded"
+                              ? "processed"
+                              : "")
+                        )
+                          .trim()
+                          .toLowerCase();
+                        const isRefundPending = ["requested", "processing"].includes(computedRefundStatus);
+                        const isBusy = reviewingRefundBookingId === record.booking_id;
+
+                        return (
+                          <div key={`guide-${record.session_id}`} className="rounded-xl border border-gray-200 p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <p className="font-semibold text-gray-900">{record.service_title}</p>
+                                <p className="text-xs text-gray-500 mt-1">Tourist: {record.tourist_name} • Guide: {record.guide_name}</p>
+                                <p className="text-xs text-gray-500 mt-1">Ref: {record.payment_ref_id || record.transaction_uuid}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-semibold text-gray-900">NPR {Number(record.total_amount || 0).toLocaleString()}</p>
+                                <p className="text-[11px] text-gray-500 capitalize">{paymentStatus || "unknown"}</p>
+                                {computedRefundStatus && (
+                                  <p className="text-[11px] text-amber-600 capitalize">Refund {computedRefundStatus}</p>
+                                )}
+                              </div>
+                            </div>
+
+                            {isRefundPending && (
+                              <div className="mt-3 flex justify-end">
+                                <button
+                                  disabled={isBusy}
+                                  onClick={() => openRefundReviewModal(record, "guide_package")}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-gold/40 bg-gold/10 px-3 py-1.5 text-xs font-semibold text-navy hover:bg-gold/20 disabled:opacity-60"
+                                >
+                                  {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
+                                  {computedRefundStatus === "processing" ? "Finalize Refund" : "Review Refund"}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1045,7 +1136,7 @@ const AdminDashboard = () => {
                 </div>
                 <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
                   <p className="text-xs text-gray-500 uppercase tracking-wide">Homestay</p>
-                  <p className="font-semibold text-gray-800 mt-1">{refundReviewModal.record.homestay_name}</p>
+                  <p className="font-semibold text-gray-800 mt-1">{refundReviewModal.record.homestay_name || refundReviewModal.record.service_title}</p>
                 </div>
                 <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
                   <p className="text-xs text-gray-500 uppercase tracking-wide">Provider</p>

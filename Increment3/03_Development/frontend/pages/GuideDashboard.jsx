@@ -27,6 +27,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Upload,
+  XCircle,
 } from "lucide-react";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
@@ -84,6 +85,8 @@ const GuideDashboard = () => {
   const [availability, setAvailability] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [reviewsStats, setReviewsStats] = useState({ avg: 0, total: 0 });
+  const [guideBookings, setGuideBookings] = useState([]);
+  const [updatingBookingId, setUpdatingBookingId] = useState(null);
   const [fetchingData, setFetchingData] = useState(false);
   const [verification, setVerification] = useState(null);
   const [verificationSubmitting, setVerificationSubmitting] = useState(false);
@@ -116,13 +119,14 @@ const GuideDashboard = () => {
   const fetchDashboardData = useCallback(async () => {
     setFetchingData(true);
     try {
-      const [trailsAllRes, myTrailsRes, myServicesRes, myAvailRes, myReviewsRes, verificationRes] = await Promise.all([
+      const [trailsAllRes, myTrailsRes, myServicesRes, myAvailRes, myReviewsRes, verificationRes, bookingsRes] = await Promise.all([
         api.get(`${API}/guides/trails-list`),
         api.get(`${API}/guides/my-trails`),
         api.get(`${API}/guides/services`),
         api.get(`${API}/guides/availability`),
         api.get(`${API}/guides/reviews`),
-        api.get(`${API}/guides/verification-status`)
+        api.get(`${API}/guides/verification-status`),
+        api.get(`/api/guide-bookings/guide`),
       ]);
       setTrailsList(trailsAllRes.data.trails || []);
       setMyTrails(myTrailsRes.data.guide_trails || []);
@@ -130,6 +134,7 @@ const GuideDashboard = () => {
       setAvailability(myAvailRes.data.availability || []);
       setReviews(myReviewsRes.data.reviews || []);
       setVerification(verificationRes.data.verification || null);
+      setGuideBookings(bookingsRes.data.bookings || []);
       setReviewsStats({
         avg: myReviewsRes.data.stats?.avg_rating || 0,
         total: myReviewsRes.data.stats?.total_reviews || 0,
@@ -259,6 +264,30 @@ const GuideDashboard = () => {
     }
   };
 
+  const handleGuideBookingStatus = async (bookingId, status) => {
+    const promptMessage = status === "cancelled"
+      ? "Optional cancellation note for the tourist/admin refund team:"
+      : status === "rejected"
+      ? "Optional rejection note for the tourist/admin refund team:"
+      : "Optional confirmation note:";
+    const note = window.prompt(promptMessage, "");
+    if (note === null) return;
+
+    setUpdatingBookingId(bookingId);
+    try {
+      const res = await api.patch(`/api/guide-bookings/${bookingId}/status`, {
+        status,
+        note: String(note || "").trim() || null,
+      });
+      window.alert(res.data?.message || "Booking updated");
+      await fetchDashboardData();
+    } catch (err) {
+      window.alert(err.response?.data?.message || "Failed to update booking status");
+    } finally {
+      setUpdatingBookingId(null);
+    }
+  };
+
   // --- AVAILABILITY ---
   const handleToggleAvailability = async (e) => {
     e.preventDefault();
@@ -306,6 +335,7 @@ const GuideDashboard = () => {
           {[
             { id: "trails", label: "My Trails", icon: Mountain },
             { id: "services", label: "My Services", icon: Package },
+            { id: "bookings", label: "Bookings", icon: Users },
             { id: "availability", label: "Availability", icon: Calendar },
             { id: "reviews", label: "Reviews", icon: Star }
           ].map(tab => (
@@ -366,6 +396,7 @@ const GuideDashboard = () => {
             {[
               { id: "trails", icon: Mountain },
               { id: "services", icon: Package },
+              { id: "bookings", icon: Users },
               { id: "availability", icon: Calendar },
               { id: "reviews", icon: Star }
             ].map(tab => (
@@ -491,12 +522,6 @@ const GuideDashboard = () => {
                               <p className="text-xs text-gray-500 flex items-center gap-1 mt-1"><MapPin className="h-3.5 w-3.5" /> {t.region}</p>
                             </div>
                             <ExperienceBadge level={t.experience_level} />
-                          </div>
-
-                          <div className="flex items-center gap-1 mb-4">
-                            <DollarSign className="h-4 w-4 text-emerald-500" />
-                            <span className="text-2xl font-bold font-mono text-gray-900">{Number(t.price_per_day).toLocaleString()}</span>
-                            <span className="text-xs text-gray-500 font-medium ml-1">NPR / day</span>
                           </div>
 
                           <div className="flex gap-2 pt-4 border-t border-gray-100">
@@ -664,6 +689,120 @@ const GuideDashboard = () => {
             </div>
           )}
 
+          {activeTab === "bookings" && (
+            <>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatCard icon={Users} label="Total Bookings" value={guideBookings.length} accent="blue" />
+                <StatCard icon={Clock} label="Pending" value={guideBookings.filter((b) => String(b.status || "").toLowerCase() === "pending").length} accent="amber" />
+                <StatCard icon={CheckCircle2} label="Confirmed" value={guideBookings.filter((b) => String(b.status || "").toLowerCase() === "confirmed").length} accent="emerald" />
+                <StatCard icon={XCircle} label="Closed/Refund" value={guideBookings.filter((b) => ["cancelled", "rejected", "expired", "refund_requested", "refunded"].includes(String(b.status || "").toLowerCase())).length} accent="purple" />
+              </div>
+
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-gray-900 font-semibold text-base">Guide Package Bookings</h2>
+                  <p className="text-xs text-gray-400">Accept, cancel, and track booking state</p>
+                </div>
+
+                {guideBookings.length === 0 ? (
+                  <div className="text-center py-12">
+                    <Users className="h-10 w-10 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 font-medium">No package bookings yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {guideBookings.map((booking) => {
+                      const bookingStatus = String(booking.status || "").toLowerCase();
+                      const refundStatus = String(booking.refund_status || "").toLowerCase();
+                      const isPending = bookingStatus === "pending";
+                      const isConfirmed = bookingStatus === "confirmed";
+                      const isLocked = ["refund_requested", "refunded", "rejected", "expired"].includes(bookingStatus) || ["processing", "refunded"].includes(refundStatus);
+
+                      return (
+                        <div key={booking.booking_id} className="rounded-2xl border border-gray-200 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <h3 className="font-bold text-gray-900">{booking.service_title}</h3>
+                              <p className="text-xs text-gray-500 mt-1">{booking.tourist_name} • {booking.trail_name}</p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                {new Date(booking.start_date).toLocaleDateString()} to {new Date(booking.end_date).toLocaleDateString()} • {booking.participants_count} participant{Number(booking.participants_count) > 1 ? "s" : ""}
+                              </p>
+                              {booking.approval_deadline_at && bookingStatus === "pending" && (
+                                <p className="text-xs text-amber-600 mt-1">Approval deadline: {new Date(booking.approval_deadline_at).toLocaleString()}</p>
+                              )}
+                              {refundStatus && (
+                                <p className="text-xs text-cyan-700 mt-1 capitalize">Refund status: {refundStatus}</p>
+                              )}
+                              {booking.refund_reference && (
+                                <p className="text-xs text-gray-500 mt-1">Refund ref: {booking.refund_reference}</p>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-semibold text-gray-900">NPR {Number(booking.total_price || 0).toLocaleString()}</p>
+                              <span className={`inline-flex mt-1 items-center rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                                bookingStatus === "confirmed"
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : bookingStatus === "pending"
+                                  ? "border-violet-200 bg-violet-50 text-violet-700"
+                                : bookingStatus === "rejected"
+                                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                                : bookingStatus === "expired"
+                                  ? "border-orange-200 bg-orange-50 text-orange-700"
+                                  : bookingStatus === "cancelled"
+                                  ? "border-red-200 bg-red-50 text-red-700"
+                                  : bookingStatus === "refund_requested"
+                                  ? "border-amber-200 bg-amber-50 text-amber-700"
+                                  : "border-blue-200 bg-blue-50 text-blue-700"
+                              }`}>
+                                {bookingStatus.replace("_", " ")}
+                              </span>
+                            </div>
+                          </div>
+
+                          {!isLocked && (
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {isPending && (
+                                <>
+                                <button
+                                  onClick={() => handleGuideBookingStatus(booking.booking_id, "confirmed")}
+                                  disabled={updatingBookingId === booking.booking_id}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                                >
+                                  {updatingBookingId === booking.booking_id && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                                  Accept
+                                </button>
+                                <button
+                                  onClick={() => handleGuideBookingStatus(booking.booking_id, "rejected")}
+                                  disabled={updatingBookingId === booking.booking_id}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                                >
+                                  {updatingBookingId === booking.booking_id && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                                  Reject
+                                </button>
+                                </>
+                              )}
+
+                              {isConfirmed && (
+                                <button
+                                  onClick={() => handleGuideBookingStatus(booking.booking_id, "cancelled")}
+                                  disabled={updatingBookingId === booking.booking_id}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
+                                >
+                                  {updatingBookingId === booking.booking_id && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                                  Cancel
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
           {activeTab === "reviews" && (
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
               <div className="flex items-center gap-6 mb-8 border-b border-gray-100 pb-6">
@@ -748,7 +887,6 @@ const GuideDashboard = () => {
 const TrailForm = ({ trails, onSubmit, onCancel, initialData, isSubmitting }) => {
   const [form, setForm] = useState({
     trail_id: initialData?.trail_id || "",
-    price_per_day: initialData?.price_per_day || "",
     experience_level: initialData?.experience_level || "",
   });
 
@@ -772,10 +910,6 @@ const TrailForm = ({ trails, onSubmit, onCancel, initialData, isSubmitting }) =>
               </select>
             </div>
           )}
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Price Per Day (NPR)</label>
-            <input type="number" name="price_per_day" value={form.price_per_day} onChange={handleChange} required className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500" />
-          </div>
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5">Experience Level</label>
             <select name="experience_level" value={form.experience_level} onChange={handleChange} required className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500">

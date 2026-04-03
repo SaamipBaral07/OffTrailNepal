@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { CheckCircle2, CalendarCheck2, Loader2, Home, ReceiptText } from "lucide-react";
+import { CheckCircle2, CalendarCheck2, Loader2, Home, ReceiptText, AlertTriangle } from "lucide-react";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import { useAuth } from "../context/AuthContext";
@@ -11,6 +11,10 @@ const PaymentSuccess = () => {
   const [searchParams] = useSearchParams();
   const sessionToken = searchParams.get("session_token") || "";
   const homestayId = searchParams.get("homestay_id") || "";
+  const bookingType = searchParams.get("booking_type") || "homestay";
+  const serviceId = searchParams.get("service_id") || "";
+  const paymentQueryStatus = String(searchParams.get("payment") || "").trim().toLowerCase();
+  const paymentFailureReason = String(searchParams.get("reason") || "").trim();
 
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionRecord, setSessionRecord] = useState(null);
@@ -23,7 +27,11 @@ const PaymentSuccess = () => {
       setSessionLoading(true);
       setSessionError("");
       try {
-        const res = await api.get(`/api/bookings/payment/session/${sessionToken}`);
+        const endpoint =
+          bookingType === "guide_package"
+            ? `/api/guide-bookings/payment/session/${sessionToken}`
+            : `/api/bookings/payment/session/${sessionToken}`;
+        const res = await api.get(endpoint);
         setSessionRecord(res.data?.payment || null);
       } catch (err) {
         setSessionError(err.response?.data?.message || "Could not load payment details.");
@@ -35,7 +43,17 @@ const PaymentSuccess = () => {
     if (!loading) {
       loadSession();
     }
-  }, [loading, sessionToken, user]);
+  }, [bookingType, loading, sessionToken, user]);
+
+  const bookingLabel = bookingType === "guide_package" ? "guide package" : "homestay booking";
+
+  const resolvedPaymentStatus = String(sessionRecord?.payment_status || "").trim().toLowerCase();
+  const isFailedByQuery = paymentQueryStatus === "failed";
+  const isFailedBySession = ["failed", "expired", "cancelled"].includes(resolvedPaymentStatus);
+  const isSuccessBySession = resolvedPaymentStatus === "success";
+  const isConfirmedSuccess =
+    paymentQueryStatus === "success" && (isSuccessBySession || (!sessionToken && !isFailedByQuery));
+  const showFailedState = isFailedByQuery || isFailedBySession || (paymentQueryStatus === "success" && sessionToken && !sessionLoading && !isSuccessBySession);
 
   const amountText = useMemo(() => {
     const amountValue = Number(sessionRecord?.total_amount ?? sessionRecord?.amount ?? 0);
@@ -62,30 +80,59 @@ const PaymentSuccess = () => {
       <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-20">
         <section className="rounded-3xl border border-emerald-200 bg-white p-6 sm:p-8 shadow-[0_12px_30px_rgba(12,35,64,0.08)]">
           <div className="flex items-start gap-4">
-            <div className="rounded-2xl bg-emerald-100 p-3 text-emerald-700">
-              <CheckCircle2 className="h-8 w-8" />
+            <div className={`rounded-2xl p-3 ${showFailedState ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+              {showFailedState ? <AlertTriangle className="h-8 w-8" /> : <CheckCircle2 className="h-8 w-8" />}
             </div>
             <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-emerald-700 font-semibold">Payment Completed</p>
-              <h1 className="text-3xl sm:text-4xl font-heading text-charcoal mt-1">Your booking is confirmed</h1>
-              <p className="text-gray-600 mt-2">
-                Thank you. Your {paymentProviderLabel ? `${paymentProviderLabel} ` : ""}payment was successful and your homestay booking has been finalized.
-              </p>
+              {showFailedState ? (
+                <>
+                  <p className="text-xs uppercase tracking-[0.18em] text-red-700 font-semibold">Payment Failed</p>
+                  <h1 className="text-3xl sm:text-4xl font-heading text-charcoal mt-1">Your booking was not completed</h1>
+                  <p className="text-gray-600 mt-2">
+                    Your {paymentProviderLabel ? `${paymentProviderLabel} ` : ""}payment did not complete successfully, so no {bookingLabel} was created.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs uppercase tracking-[0.18em] text-emerald-700 font-semibold">Payment Completed</p>
+                  <h1 className="text-3xl sm:text-4xl font-heading text-charcoal mt-1">Your booking is confirmed</h1>
+                  <p className="text-gray-600 mt-2">
+                    Thank you. Your {paymentProviderLabel ? `${paymentProviderLabel} ` : ""}payment was successful and your {bookingLabel} has been finalized.
+                  </p>
+                </>
+              )}
             </div>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 space-y-2">
-            <p className="text-sm text-emerald-800 font-semibold">Transaction summary</p>
+          <div className={`mt-6 rounded-2xl p-4 space-y-2 ${showFailedState ? "border border-red-200 bg-red-50/70" : "border border-emerald-200 bg-emerald-50/70"}`}>
+            <p className={`text-sm font-semibold ${showFailedState ? "text-red-800" : "text-emerald-800"}`}>
+              {showFailedState ? "Payment attempt summary" : "Transaction summary"}
+            </p>
             <p className="text-sm text-gray-700">
               Session token: <span className="font-mono text-xs">{sessionToken || "N/A"}</span>
             </p>
             {sessionRecord?.booking_code && (
               <p className="text-sm text-gray-700">Booking code: <span className="font-semibold">{sessionRecord.booking_code}</span></p>
             )}
-            {amountText && <p className="text-sm text-gray-700">Amount paid: <span className="font-semibold">{amountText}</span></p>}
+            {sessionRecord?.service_title && (
+              <p className="text-sm text-gray-700">Package: <span className="font-semibold">{sessionRecord.service_title}</span></p>
+            )}
+            {sessionRecord?.guide_name && (
+              <p className="text-sm text-gray-700">Guide: <span className="font-semibold">{sessionRecord.guide_name}</span></p>
+            )}
+            {amountText && (
+              <p className="text-sm text-gray-700">
+                {showFailedState ? "Amount attempted" : "Amount paid"}: <span className="font-semibold">{amountText}</span>
+              </p>
+            )}
             {paymentProviderLabel && <p className="text-sm text-gray-700">Payment method: <span className="font-semibold">{paymentProviderLabel}</span></p>}
             {sessionRecord?.transaction_uuid && (
               <p className="text-sm text-gray-700">Transaction: <span className="font-mono text-xs">{sessionRecord.transaction_uuid}</span></p>
+            )}
+            {(paymentFailureReason || isFailedBySession) && (
+              <p className="text-sm text-red-700">
+                Reason: <span className="font-semibold">{paymentFailureReason || resolvedPaymentStatus || "payment_failed"}</span>
+              </p>
             )}
           </div>
 
@@ -101,21 +148,33 @@ const PaymentSuccess = () => {
           )}
 
           <div className="mt-7 flex flex-wrap gap-3">
-            <Link
-              to="/my-bookings"
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-gold to-[#D4A43A] px-4 py-2.5 text-sm font-bold text-navy"
-            >
-              <CalendarCheck2 className="h-4 w-4" />
-              View My Bookings
-            </Link>
+            {!showFailedState && (
+              <Link
+                to="/my-bookings"
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-gold to-[#D4A43A] px-4 py-2.5 text-sm font-bold text-navy"
+              >
+                <CalendarCheck2 className="h-4 w-4" />
+                View My Bookings
+              </Link>
+            )}
 
-            {homestayId && (
+            {homestayId && bookingType !== "guide_package" && (
               <Link
                 to={`/homestays/${homestayId}`}
                 className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
               >
                 <ReceiptText className="h-4 w-4" />
-                Back To Homestay
+                {showFailedState ? "Try Payment Again" : "Back To Homestay"}
+              </Link>
+            )}
+
+            {serviceId && bookingType === "guide_package" && (
+              <Link
+                to="/"
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                <ReceiptText className="h-4 w-4" />
+                Explore More Packages
               </Link>
             )}
 

@@ -19,6 +19,7 @@ import HostDashboard from "./pages/HostDashboard";
 import GuideDashboard from "./pages/GuideDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import PaymentSuccess from "./pages/PaymentSuccess";
+import PaymentFailed from "./pages/PaymentFailed";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -35,6 +36,7 @@ function App() {
           <Route path="/trails/:id" element={<TrailDetail />} />
           <Route path="/homestays/:id" element={<HomestayDetail />} />
           <Route path="/payment/success" element={<PaymentSuccess />} />
+          <Route path="/payment/failed" element={<PaymentFailed />} />
 
           {/* Auth pages */}
           <Route path="/login" element={<Login />} />
