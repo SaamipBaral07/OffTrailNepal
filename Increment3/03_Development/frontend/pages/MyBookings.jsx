@@ -12,6 +12,10 @@ import {
   Mountain,
   Compass,
   Package,
+  Star,
+  FileText,
+  Download,
+  ExternalLink,
 } from "lucide-react";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
@@ -20,6 +24,7 @@ import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import { useAuth } from "../context/AuthContext";
 import { getToken } from "../tokenStore";
 import api from "../api";
+import { downloadInvoicePdfFile, formatInvoiceDate, formatMoney } from "../utils/invoicePdf";
 
 const formatDate = (value) =>
   new Date(value).toLocaleDateString("en-US", {
@@ -27,6 +32,13 @@ const formatDate = (value) =>
     month: "short",
     day: "numeric",
   });
+
+const hasCheckoutPassed = (dateValue) => {
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return false;
+  const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
+  return Date.now() > endOfDay.getTime();
+};
 
 const MyBookings = () => {
   const navigate = useNavigate();
@@ -39,6 +51,20 @@ const MyBookings = () => {
   const [refundingBookingId, setRefundingBookingId] = useState(null);
   const [refundingGuideBookingId, setRefundingGuideBookingId] = useState(null);
   const [activeTab, setActiveTab] = useState("homestay");
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [reviewDraft, setReviewDraft] = useState({
+    bookingId: null,
+    reviewType: "homestay",
+    listingName: "",
+    rating: 0,
+    comment: "",
+  });
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [invoiceLoadingKey, setInvoiceLoadingKey] = useState("");
+  const [invoiceDownloading, setInvoiceDownloading] = useState(false);
+  const [invoiceData, setInvoiceData] = useState(null);
   const {
     handleLogout,
     handleStayLoggedIn,
@@ -148,6 +174,91 @@ const MyBookings = () => {
       showNotice(err.response?.data?.message || "Failed to request guide refund", "error");
     } finally {
       setRefundingGuideBookingId(null);
+    }
+  };
+
+  const openReviewModal = (booking, reviewType) => {
+    const type = reviewType === "guide" ? "guide" : "homestay";
+    const listingName = type === "guide"
+      ? String(booking.guide_name || booking.service_title || "Guide Package")
+      : String(booking.homestay_name || "Homestay");
+
+    setHoverRating(0);
+    setReviewDraft({
+      bookingId: booking.booking_id,
+      reviewType: type,
+      listingName,
+      rating: Number(booking.review_rating || 0),
+      comment: String(booking.review_comment || ""),
+    });
+    setReviewModalOpen(true);
+  };
+
+  const closeReviewModal = () => {
+    if (submittingReview) return;
+    setReviewModalOpen(false);
+    setHoverRating(0);
+  };
+
+  const submitBookingReview = async () => {
+    if (!reviewDraft.bookingId) return;
+    if (!reviewDraft.rating || reviewDraft.rating < 1 || reviewDraft.rating > 5) {
+      showNotice("Please pick a star rating from 1 to 5", "error");
+      return;
+    }
+
+    setSubmittingReview(true);
+    try {
+      const endpoint = reviewDraft.reviewType === "guide"
+        ? `/api/guide-bookings/${reviewDraft.bookingId}/review`
+        : `/api/bookings/${reviewDraft.bookingId}/review`;
+
+      const res = await api.post(endpoint, {
+        rating: reviewDraft.rating,
+        comment: String(reviewDraft.comment || "").trim(),
+      });
+      showNotice(res.data?.message || "Review submitted successfully");
+      setReviewModalOpen(false);
+      setHoverRating(0);
+      await fetchBookings();
+    } catch (err) {
+      showNotice(err.response?.data?.message || "Failed to submit review", "error");
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  const openInvoiceModal = async (bookingType, bookingId) => {
+    const normalizedType = bookingType === "guide_package" ? "guide_package" : "homestay";
+    const requestKey = `${normalizedType}:${bookingId}`;
+
+    setInvoiceLoadingKey(requestKey);
+    try {
+      const res = await api.get(`/api/invoices/${normalizedType}/${bookingId}`);
+      setInvoiceData(res.data?.invoice || null);
+      setInvoiceModalOpen(true);
+    } catch (err) {
+      showNotice(err.response?.data?.message || "Unable to load invoice", "error");
+    } finally {
+      setInvoiceLoadingKey("");
+    }
+  };
+
+  const closeInvoiceModal = () => {
+    if (invoiceDownloading) return;
+    setInvoiceModalOpen(false);
+  };
+
+  const downloadInvoicePdf = async () => {
+    if (!invoiceData) return;
+    setInvoiceDownloading(true);
+    try {
+      await downloadInvoicePdfFile(invoiceData);
+      showNotice("Invoice downloaded successfully");
+    } catch (_error) {
+      showNotice("Unable to export invoice as PDF", "error");
+    } finally {
+      setInvoiceDownloading(false);
     }
   };
 
@@ -281,6 +392,8 @@ const MyBookings = () => {
               const isRefundRequested = bookingStatus === "refund_requested" || paymentStatus === "refund_requested";
               const isRefunded = bookingStatus === "refunded" || paymentStatus === "refunded";
               const isPaid = paymentStatus === "success" || isRefundRequested || isRefunded;
+              const hasReview = Boolean(booking.review_id);
+              const canReview = Boolean(booking.can_review) || (!hasReview && bookingStatus === "confirmed" && hasCheckoutPassed(booking.check_out_date));
               return (
                 <article
                   key={booking.booking_id}
@@ -320,8 +433,59 @@ const MyBookings = () => {
                     )}
                   </div>
 
+                  {isPaid && (
+                    <button
+                      type="button"
+                      onClick={() => openInvoiceModal("homestay", booking.booking_id)}
+                      disabled={invoiceLoadingKey === `homestay:${booking.booking_id}`}
+                      className="mt-3 inline-flex items-center gap-2 rounded-xl border border-navy/20 bg-navy/5 px-3.5 py-2 text-xs font-bold text-navy hover:bg-navy/10 disabled:opacity-60"
+                    >
+                      {invoiceLoadingKey === `homestay:${booking.booking_id}` ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <FileText className="h-3.5 w-3.5" />
+                      )}
+                      View Invoice
+                    </button>
+                  )}
+
                   {booking.special_requests && (
                     <p className="mt-3 text-xs text-gray-500">Special request: {booking.special_requests}</p>
+                  )}
+
+                  {hasReview && (
+                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/60 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">Your Review</p>
+                      <div className="mt-2 inline-flex items-center gap-1">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <Star
+                            key={star}
+                            className={`h-4 w-4 ${star <= Number(booking.review_rating || 0) ? "text-amber-500 fill-amber-500" : "text-gray-300 fill-transparent"}`}
+                          />
+                        ))}
+                        <span className="ml-1 text-xs font-semibold text-amber-700">
+                          {Number(booking.review_rating || 0)} out of 5
+                        </span>
+                      </div>
+                      {booking.review_comment && (
+                        <p className="mt-2 text-sm text-gray-700">{booking.review_comment}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {canReview && (
+                    <div className="mt-4 rounded-2xl border border-gold/30 bg-gold-pale/50 p-3">
+                      <p className="text-sm font-semibold text-charcoal">How was your stay at {booking.homestay_name}?</p>
+                      <p className="text-xs text-gray-600 mt-1">Checkout completed. Share your rating so other travelers can decide confidently.</p>
+                      <button
+                        type="button"
+                        onClick={() => openReviewModal(booking, "homestay")}
+                        className="mt-2 inline-flex items-center gap-2 rounded-xl bg-gold px-3.5 py-2 text-xs font-bold text-white hover:bg-gold-dark transition"
+                      >
+                        <Star className="h-3.5 w-3.5 fill-current" />
+                        Leave a Review
+                      </button>
+                    </div>
                   )}
 
                   {!isCancelled && !isRefundRequested && !isRefunded && isPaid && (
@@ -394,6 +558,8 @@ const MyBookings = () => {
                     const bookingStatus = String(booking.status || "").toLowerCase();
                     const paymentStatus = String(booking.payment_status || "").toLowerCase();
                     const refundStatus = String(booking.refund_status || "").toLowerCase();
+                    const hasGuideReview = Boolean(booking.review_id);
+                    const canGuideReview = Boolean(booking.can_review) || (!hasGuideReview && bookingStatus === "confirmed" && hasCheckoutPassed(booking.end_date));
                     const isPending = bookingStatus === "pending";
                     const isConfirmed = bookingStatus === "confirmed";
                     const isRejected = bookingStatus === "rejected";
@@ -470,8 +636,59 @@ const MyBookings = () => {
                           )}
                         </div>
 
+                        {(paymentStatus === "success" || paymentStatus === "refund_requested" || paymentStatus === "refunded") && (
+                          <button
+                            type="button"
+                            onClick={() => openInvoiceModal("guide_package", booking.booking_id)}
+                            disabled={invoiceLoadingKey === `guide_package:${booking.booking_id}`}
+                            className="mt-3 inline-flex items-center gap-2 rounded-xl border border-navy/20 bg-navy/5 px-3.5 py-2 text-xs font-bold text-navy hover:bg-navy/10 disabled:opacity-60"
+                          >
+                            {invoiceLoadingKey === `guide_package:${booking.booking_id}` ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <FileText className="h-3.5 w-3.5" />
+                            )}
+                            View Invoice
+                          </button>
+                        )}
+
                         {booking.special_requests && (
                           <p className="mt-3 text-xs text-gray-500">Special request: {booking.special_requests}</p>
+                        )}
+
+                        {hasGuideReview && (
+                          <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50/60 p-3">
+                            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">Your Guide Review</p>
+                            <div className="mt-2 inline-flex items-center gap-1">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <Star
+                                  key={star}
+                                  className={`h-4 w-4 ${star <= Number(booking.review_rating || 0) ? "text-amber-500 fill-amber-500" : "text-gray-300 fill-transparent"}`}
+                                />
+                              ))}
+                              <span className="ml-1 text-xs font-semibold text-blue-700">
+                                {Number(booking.review_rating || 0)} out of 5
+                              </span>
+                            </div>
+                            {booking.review_comment && (
+                              <p className="mt-2 text-sm text-gray-700">{booking.review_comment}</p>
+                            )}
+                          </div>
+                        )}
+
+                        {canGuideReview && (
+                          <div className="mt-4 rounded-2xl border border-blue-300 bg-blue-50/60 p-3">
+                            <p className="text-sm font-semibold text-charcoal">How was your trek with {booking.guide_name}?</p>
+                            <p className="text-xs text-gray-600 mt-1">Trek completed. Share your rating to help other travelers choose confidently.</p>
+                            <button
+                              type="button"
+                              onClick={() => openReviewModal(booking, "guide")}
+                              className="mt-2 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-blue-700 transition"
+                            >
+                              <Star className="h-3.5 w-3.5 fill-current" />
+                              Leave a Review
+                            </button>
+                          </div>
                         )}
 
                         {!isCancelled && !isRejected && !isExpired && !isRefundRequested && !isRefundProcessing && !isRefunded && isConfirmed && paymentStatus === "success" && (
@@ -499,6 +716,199 @@ const MyBookings = () => {
           </section>
         )}
       </main>
+
+      {invoiceModalOpen && invoiceData && (
+        <div className="fixed inset-0 z-[118] bg-black/45 backdrop-blur-sm p-4 flex items-center justify-center">
+          <div className="w-full max-w-3xl rounded-3xl overflow-hidden border border-navy/20 bg-white shadow-[0_24px_60px_rgba(12,35,64,0.25)]">
+            <div className="bg-gradient-to-r from-[#0C2340] via-[#163A5F] to-[#0C2340] px-6 py-5 text-white">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-14 w-14 rounded-full overflow-hidden border border-gold/40 bg-white/90 p-1">
+                    <img
+                      src={invoiceData.issuer?.logo_path || "/offtrail-latest.png"}
+                      alt="OffTrail Nepal"
+                      className="h-full w-full rounded-full object-cover"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-gold/90 font-semibold">Official Invoice</p>
+                    <h3 className="text-2xl font-heading font-bold leading-tight">{invoiceData.issuer?.name || "OffTrail Nepal"}</h3>
+                    <p className="text-sm text-white/70">{invoiceData.issuer?.location || "Pokhara, Nepal"}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs uppercase tracking-[0.16em] text-white/70">Invoice Number</p>
+                  <p className="text-lg font-semibold text-gold/95">{invoiceData.invoice_number}</p>
+                  <p className="text-xs text-white/70 mt-1">Issued on {formatInvoiceDate(invoiceData.issued_at)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Billed To</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-800">{invoiceData.snapshot?.billing_name || "-"}</p>
+                  <p className="text-sm text-slate-600 mt-1">{invoiceData.snapshot?.billing_email || "-"}</p>
+                  <p className="text-sm text-slate-600">{invoiceData.snapshot?.billing_phone || "-"}</p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Booking Summary</p>
+                  <p className="mt-2 text-sm font-semibold text-slate-800">{invoiceData.snapshot?.listing_name || "-"}</p>
+                  <p className="text-sm text-slate-600 mt-1">{invoiceData.snapshot?.listing_location || "-"}</p>
+                  <p className="text-xs text-slate-500 mt-2">Booking Code: {invoiceData.snapshot?.booking_code || "-"}</p>
+                  <p className="text-xs text-slate-500 mt-1 capitalize">Booking Type: {invoiceData.booking_type === "guide_package" ? "Guide Package" : "Homestay"}</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="grid grid-cols-2 bg-slate-100 px-4 py-2 text-xs font-bold uppercase tracking-[0.14em] text-slate-600">
+                  <p>Description</p>
+                  <p className="text-right">Amount</p>
+                </div>
+                <div className="space-y-0">
+                  <div className="grid grid-cols-2 px-4 py-3 text-sm border-t border-slate-100">
+                    <p className="text-slate-700">
+                      {invoiceData.booking_type === "guide_package"
+                        ? `${invoiceData.snapshot?.listing_name || "Guide package"} (${invoiceData.snapshot?.participants_count || 0} participants)`
+                        : `${invoiceData.snapshot?.listing_name || "Homestay stay"} (${invoiceData.snapshot?.rooms_booked || 0} rooms)`}
+                    </p>
+                    <p className="text-right font-semibold text-slate-800">{formatMoney(invoiceData.subtotal_amount)}</p>
+                  </div>
+                  <div className="grid grid-cols-2 px-4 py-3 text-sm border-t border-slate-100">
+                    <p className="text-slate-700">Tax</p>
+                    <p className="text-right text-slate-700">{formatMoney(invoiceData.tax_amount)}</p>
+                  </div>
+                  <div className="grid grid-cols-2 px-4 py-3 text-sm border-t border-slate-100">
+                    <p className="text-slate-700">Service Charge</p>
+                    <p className="text-right text-slate-700">{formatMoney(invoiceData.service_charge)}</p>
+                  </div>
+                  <div className="grid grid-cols-2 px-4 py-3 text-base border-t border-slate-200 bg-slate-50/60">
+                    <p className="font-bold text-slate-900">Total Paid</p>
+                    <p className="text-right font-bold text-slate-900">{formatMoney(invoiceData.total_amount)}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800">
+                <p className="font-semibold">Payment Method: {String(invoiceData.payment_method || "unknown").toUpperCase()}</p>
+                <p className="mt-1">Payment Status: <span className="font-semibold uppercase">{invoiceData.payment_status || "unknown"}</span></p>
+                <p className="mt-1">Transaction Reference: <span className="font-semibold">{invoiceData.payment_reference || "-"}</span></p>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-200 px-6 py-4 bg-slate-50/70 flex flex-wrap items-center justify-end gap-2">
+              <Link
+                to={`/invoice/${invoiceData.booking_type}/${invoiceData.booking_id}`}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Open Full Page
+              </Link>
+              <button
+                type="button"
+                onClick={closeInvoiceModal}
+                disabled={invoiceDownloading}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={downloadInvoicePdf}
+                disabled={invoiceDownloading}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-gold to-[#D4A43A] px-4 py-2 text-sm font-bold text-navy disabled:opacity-60"
+              >
+                {invoiceDownloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Download PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reviewModalOpen && (
+        <div className="fixed inset-0 z-[120] bg-black/45 backdrop-blur-sm p-4 flex items-center justify-center">
+          <div className="w-full max-w-xl rounded-3xl border border-gold/20 bg-white p-6 shadow-[0_24px_60px_rgba(12,35,64,0.25)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-gold-dark font-semibold">{reviewDraft.reviewType === "guide" ? "Guide Review" : "Homestay Review"}</p>
+                <h3 className="text-xl font-bold text-charcoal mt-1">{reviewDraft.reviewType === "guide" ? "Rate your guide experience" : "Rate your stay"}</h3>
+                <p className="text-sm text-gray-600 mt-1">{reviewDraft.listingName}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeReviewModal}
+                disabled={submittingReview}
+                className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5">
+              <p className="text-sm font-semibold text-charcoal mb-2">Select rating</p>
+              <div className="flex items-center gap-1.5">
+                {[1, 2, 3, 4, 5].map((star) => {
+                  const active = star <= (hoverRating || reviewDraft.rating);
+                  return (
+                    <button
+                      key={star}
+                      type="button"
+                      onMouseEnter={() => setHoverRating(star)}
+                      onMouseLeave={() => setHoverRating(0)}
+                      onClick={() => setReviewDraft((prev) => ({ ...prev, rating: star }))}
+                      className="rounded-lg p-1 transition-transform hover:scale-110"
+                      aria-label={`Rate ${star} out of 5`}
+                    >
+                      <Star className={`h-9 w-9 ${active ? "text-amber-500 fill-amber-500" : "text-gray-300 fill-transparent"}`} />
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-sm font-semibold text-amber-700">
+                {(hoverRating || reviewDraft.rating || 0)} out of 5
+              </p>
+            </div>
+
+            <div className="mt-4">
+              <label className="text-sm font-semibold text-charcoal">Write a review</label>
+              <textarea
+                value={reviewDraft.comment}
+                onChange={(e) => setReviewDraft((prev) => ({ ...prev, comment: e.target.value }))}
+                rows={4}
+                maxLength={1500}
+                placeholder={reviewDraft.reviewType === "guide"
+                  ? "Tell others about safety, pacing, communication, route knowledge, and overall guide support..."
+                  : "Tell others about cleanliness, host support, food, comfort, and location..."}
+                className="mt-1.5 w-full rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+              />
+              <p className="mt-1 text-[11px] text-gray-400 text-right">{String(reviewDraft.comment || "").length}/1500</p>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeReviewModal}
+                disabled={submittingReview}
+                className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitBookingReview}
+                disabled={submittingReview || !reviewDraft.rating}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-gold to-[#D4A43A] px-4 py-2 text-sm font-bold text-navy disabled:opacity-60"
+              >
+                {submittingReview && <Loader2 className="h-4 w-4 animate-spin" />}
+                Submit Review
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Footer />
       <LogoutModal isOpen={showLogoutModal} onConfirm={handleLogout} onCancel={handleStayLoggedIn} />

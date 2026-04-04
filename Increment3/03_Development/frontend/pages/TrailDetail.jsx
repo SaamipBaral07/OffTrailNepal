@@ -265,6 +265,8 @@ const HomestayCard = ({
     : typeof homestay.amenities === "string"
       ? homestay.amenities.split(",").map((a) => a.trim()).filter(Boolean)
       : [];
+  const avgRating = Number(homestay.avg_rating || 0);
+  const totalReviews = Number(homestay.total_reviews || 0);
   const isListLayout = layout === "list";
 
   return (
@@ -329,6 +331,11 @@ const HomestayCard = ({
               {distanceKm.toFixed(2)} km from trail
             </span>
           )}
+
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border bg-amber-50 text-amber-700 border-amber-200">
+            <Star className={`h-3 w-3 ${totalReviews > 0 ? "fill-amber-500 text-amber-500" : "text-amber-300"}`} />
+            {totalReviews > 0 ? `${avgRating.toFixed(1)} (${totalReviews})` : "No reviews"}
+          </span>
 
           <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full border bg-violet-50 text-violet-700 border-violet-200">
             <Users className="h-3 w-3" />
@@ -456,6 +463,9 @@ const DifficultyBar = ({ level }) => {
 ───────────────────────────────────────────── */
 const GuideServiceCard = ({ service, index, user, onBookPackage }) => {
   const isTourist = user?.user_type === "tourist";
+  const avgRating = Number(service.avg_rating || 0);
+  const totalReviews = Number(service.total_reviews || 0);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -469,6 +479,10 @@ const GuideServiceCard = ({ service, index, user, onBookPackage }) => {
           {service.guide_name.charAt(0)}
         </div>
         <h4 className="font-bold text-charcoal text-center mb-1">{service.guide_name}</h4>
+        <div className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 mb-3">
+          <Star className={`h-3 w-3 ${totalReviews > 0 ? "fill-amber-500 text-amber-500" : "text-amber-300"}`} />
+          {totalReviews > 0 ? `${avgRating.toFixed(1)} / 5 (${totalReviews})` : "No reviews yet"}
+        </div>
         
         <div className="flex flex-wrap justify-center gap-2 text-[11px] font-semibold">
           <span className="flex items-center gap-1 bg-white border border-gray-200 px-2 py-1 rounded-full text-gray-500">
@@ -538,6 +552,9 @@ const AwardBadge = ({ level }) => {
    BASE GUIDE CARD
 ───────────────────────────────────────────── */
 const BaseGuideCard = ({ guide, index }) => {
+  const avgRating = Number(guide.avg_rating || 0);
+  const totalReviews = Number(guide.total_reviews || 0);
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.98 }}
@@ -554,6 +571,10 @@ const BaseGuideCard = ({ guide, index }) => {
           <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
             <span className="flex items-center gap-1"><Briefcase className="h-3 w-3 text-gold" /> {guide.experience_years} yrs exp</span>
             <span className="flex items-center gap-1"><Award className="h-3 w-3 text-gold" /> <AwardBadge level={guide.experience_level} /></span>
+          </div>
+          <div className="mt-2 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+            <Star className={`h-3 w-3 ${totalReviews > 0 ? "fill-amber-500 text-amber-500" : "text-amber-300"}`} />
+            {totalReviews > 0 ? `${avgRating.toFixed(1)} / 5 (${totalReviews})` : "No reviews yet"}
           </div>
         </div>
       </div>

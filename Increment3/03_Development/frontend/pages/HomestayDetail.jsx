@@ -391,6 +391,9 @@ const HomestayDetail = () => {
   const todayIso = new Date().toISOString().slice(0, 10);
 
   const amenityCards = amenities.map((item) => ({ ...getAmenityMeta(item), raw: item }));
+  const reviewRows = Array.isArray(homestay.reviews) ? homestay.reviews : [];
+  const avgRating = Number(homestay.reviews_stats?.avg_rating || 0);
+  const totalReviews = Number(homestay.reviews_stats?.total_reviews || reviewRows.length || 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-cream via-[#f9f7f3] to-stone/40 font-body">
@@ -435,6 +438,10 @@ const HomestayDetail = () => {
               </span>
               <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold shadow-sm ${isSoldOut ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
                 {isSoldOut ? "All rooms booked" : `${availableRooms}/${totalRooms} rooms available`}
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-amber-200 bg-amber-50 text-amber-700 text-xs font-bold shadow-sm">
+                <Star className={`h-3.5 w-3.5 ${totalReviews > 0 ? "fill-amber-500 text-amber-500" : "text-amber-300"}`} />
+                {totalReviews > 0 ? `${avgRating.toFixed(1)} / 5 (${totalReviews})` : "No reviews yet"}
               </span>
             </div>
           </div>
@@ -512,6 +519,10 @@ const HomestayDetail = () => {
               <div className="space-y-3 text-sm text-gray-600">
                 <p className="flex items-center gap-2"><Users className="h-4 w-4 text-navy" /> Capacity: {homestay.capacity} guests</p>
                 <p className="flex items-center gap-2"><BedDouble className="h-4 w-4 text-alpine" /> Total rooms: {totalRooms}</p>
+                <p className="flex items-center gap-2">
+                  <Star className="h-4 w-4 text-amber-500 fill-amber-500" />
+                  Guest rating: {totalReviews > 0 ? `${avgRating.toFixed(1)} out of 5 (${totalReviews} review${totalReviews === 1 ? "" : "s"})` : "No ratings yet"}
+                </p>
               </div>
 
               <div className="mt-5 flex flex-wrap gap-2">
@@ -676,6 +687,50 @@ const HomestayDetail = () => {
               </motion.div>
             )}
           </aside>
+        </motion.section>
+
+        <motion.section
+          variants={itemVariants}
+          whileHover={{ y: -2 }}
+          transition={{ duration: MOTION_DURATION, ease: MOTION_CURVE }}
+          className="mt-8 rounded-3xl border border-navy/10 bg-white p-4 sm:p-6 shadow-[0_10px_24px_rgba(12,35,64,0.06)]"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-navy/70">Guest Reviews</p>
+              <p className="text-sm text-gray-600 mt-1">Ratings from tourists who already completed their stay.</p>
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm font-bold text-amber-700">
+              <Star className="h-4 w-4 fill-amber-500 text-amber-500" />
+              {totalReviews > 0 ? `${avgRating.toFixed(1)} / 5` : "No rating yet"}
+            </div>
+          </div>
+
+          {reviewRows.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-5 text-sm text-gray-500">
+              This homestay has not received reviews yet.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {reviewRows.map((review) => (
+                <div key={review.review_id} className="rounded-2xl border border-gray-100 bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-charcoal">{review.reviewer_name || "Tourist"}</p>
+                    <div className="inline-flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          className={`h-4 w-4 ${star <= Number(review.rating || 0) ? "text-amber-500 fill-amber-500" : "text-gray-300 fill-transparent"}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  {review.comment && <p className="mt-2 text-sm text-gray-700">{review.comment}</p>}
+                  <p className="mt-2 text-xs text-gray-400">{new Date(review.created_at).toLocaleDateString()}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </motion.section>
 
         {googleMapSrc && (

@@ -19,6 +19,9 @@ const PaymentSuccess = () => {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionRecord, setSessionRecord] = useState(null);
   const [sessionError, setSessionError] = useState("");
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceRecord, setInvoiceRecord] = useState(null);
+  const [invoiceError, setInvoiceError] = useState("");
 
   useEffect(() => {
     const loadSession = async () => {
@@ -54,6 +57,29 @@ const PaymentSuccess = () => {
   const isConfirmedSuccess =
     paymentQueryStatus === "success" && (isSuccessBySession || (!sessionToken && !isFailedByQuery));
   const showFailedState = isFailedByQuery || isFailedBySession || (paymentQueryStatus === "success" && sessionToken && !sessionLoading && !isSuccessBySession);
+  const invoiceBookingType = bookingType === "guide_package" ? "guide_package" : "homestay";
+
+  useEffect(() => {
+    const generateInvoice = async () => {
+      if (!user || user.user_type !== "tourist") return;
+      if (!isConfirmedSuccess || !sessionRecord?.booking_id) return;
+
+      setInvoiceLoading(true);
+      setInvoiceError("");
+      try {
+        const res = await api.get(`/api/invoices/${invoiceBookingType}/${sessionRecord.booking_id}`);
+        setInvoiceRecord(res.data?.invoice || null);
+      } catch (err) {
+        setInvoiceError(err.response?.data?.message || "Could not generate invoice yet.");
+      } finally {
+        setInvoiceLoading(false);
+      }
+    };
+
+    if (!loading && !sessionLoading) {
+      generateInvoice();
+    }
+  }, [loading, sessionLoading, isConfirmedSuccess, sessionRecord?.booking_id, invoiceBookingType, user]);
 
   const amountText = useMemo(() => {
     const amountValue = Number(sessionRecord?.total_amount ?? sessionRecord?.amount ?? 0);
@@ -129,6 +155,9 @@ const PaymentSuccess = () => {
             {sessionRecord?.transaction_uuid && (
               <p className="text-sm text-gray-700">Transaction: <span className="font-mono text-xs">{sessionRecord.transaction_uuid}</span></p>
             )}
+            {invoiceRecord?.invoice_number && (
+              <p className="text-sm text-gray-700">Invoice: <span className="font-semibold">{invoiceRecord.invoice_number}</span></p>
+            )}
             {(paymentFailureReason || isFailedBySession) && (
               <p className="text-sm text-red-700">
                 Reason: <span className="font-semibold">{paymentFailureReason || resolvedPaymentStatus || "payment_failed"}</span>
@@ -147,7 +176,28 @@ const PaymentSuccess = () => {
             <p className="mt-4 text-sm text-red-600">{sessionError}</p>
           )}
 
+          {!showFailedState && invoiceLoading && (
+            <div className="mt-4 inline-flex items-center gap-2 text-sm text-gray-500">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Preparing your invoice...
+            </div>
+          )}
+
+          {!showFailedState && invoiceError && (
+            <p className="mt-4 text-sm text-red-600">{invoiceError}</p>
+          )}
+
           <div className="mt-7 flex flex-wrap gap-3">
+            {!showFailedState && invoiceRecord?.invoice_number && (
+              <Link
+                to={`/invoice/${invoiceRecord.booking_type}/${invoiceRecord.booking_id}`}
+                className="inline-flex items-center gap-2 rounded-xl border border-navy/20 bg-navy/5 px-4 py-2.5 text-sm font-semibold text-navy hover:bg-navy/10"
+              >
+                <ReceiptText className="h-4 w-4" />
+                Open Invoice Page
+              </Link>
+            )}
+
             {!showFailedState && (
               <Link
                 to="/my-bookings"

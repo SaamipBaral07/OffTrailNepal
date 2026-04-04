@@ -1087,6 +1087,12 @@ const HostDashboard = () => {
     rejected: homestays.filter((h) => h.verified_status === "rejected").length,
     bookings: bookings.filter((b) => b.status === "confirmed").length,
   };
+  const hostReviews = bookings
+    .filter((booking) => Boolean(booking.review_id))
+    .sort((a, b) => new Date(b.review_created_at || 0).getTime() - new Date(a.review_created_at || 0).getTime());
+  const hostAverageRating = hostReviews.length
+    ? (hostReviews.reduce((sum, item) => sum + Number(item.review_rating || 0), 0) / hostReviews.length)
+    : 0;
 
   if (isLoading) {
     return (
@@ -1166,6 +1172,14 @@ const HostDashboard = () => {
           >
             <CalendarDays className="h-5 w-5" /> Booking Requests
             {bookings.length > 0 && <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-bold bg-gold/20 text-gold">{bookings.length}</span>}
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollToSection("guest-reviews")}
+            className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-300 text-white/70 hover:bg-white/5 hover:text-white"
+          >
+            <Star className="h-5 w-5" /> Guest Reviews
+            {hostReviews.length > 0 && <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-bold bg-gold/20 text-gold">{hostReviews.length}</span>}
           </button>
           <div className="pt-4 mt-4 border-t border-white/5">
             <Link to="/host-profile" className="w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl text-sm font-semibold transition-all duration-300 text-white/70 hover:bg-white/5 hover:text-white">
@@ -1379,6 +1393,12 @@ const HostDashboard = () => {
                         <span className="text-emerald-600 text-xs mr-0.5">NPR</span>
                         {Number(booking.total_price || 0).toLocaleString()}
                       </p>
+                      {booking.review_id && (
+                        <p className="mt-1 text-[11px] font-bold text-amber-700 inline-flex items-center gap-1">
+                          <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
+                          {Number(booking.review_rating || 0)} / 5
+                        </p>
+                      )}
                     </div>
                     
                     <span className={`inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border ${
@@ -1393,6 +1413,46 @@ const HostDashboard = () => {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        <div id="guest-reviews" className="mt-10 mb-4 pt-4 scroll-mt-20">
+          <h2 className="text-xl font-bold text-gray-900">Guest Reviews</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Feedback from tourists after checkout. Average rating: {hostReviews.length > 0 ? `${hostAverageRating.toFixed(1)} / 5` : "No ratings yet"}
+          </p>
+        </div>
+
+        {hostReviews.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-500">
+            No reviews yet. Tourists can submit ratings after their checkout date.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {hostReviews.map((reviewBooking) => (
+              <div key={`review-${reviewBooking.review_id}`} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">{reviewBooking.tourist_name}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{reviewBooking.homestay_name}</p>
+                  </div>
+                  <div className="inline-flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((value) => (
+                      <Star
+                        key={value}
+                        className={`h-4 w-4 ${value <= Number(reviewBooking.review_rating || 0) ? "fill-amber-500 text-amber-500" : "text-gray-300 fill-transparent"}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+                {reviewBooking.review_comment && (
+                  <p className="mt-3 text-sm text-gray-700 leading-relaxed">{reviewBooking.review_comment}</p>
+                )}
+                <p className="mt-3 text-xs text-gray-400">
+                  {reviewBooking.review_created_at ? new Date(reviewBooking.review_created_at).toLocaleDateString() : ""}
+                </p>
+              </div>
+            ))}
           </div>
         )}
       </main>

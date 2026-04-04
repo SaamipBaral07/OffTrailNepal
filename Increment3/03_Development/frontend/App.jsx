@@ -20,6 +20,7 @@ import GuideDashboard from "./pages/GuideDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentFailed from "./pages/PaymentFailed";
+import InvoicePage from "./pages/InvoicePage";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -63,6 +64,15 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["tourist"]}>
                 <MyBookings />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/invoice/:bookingType/:bookingId"
+            element={
+              <ProtectedRoute allowedRoles={["tourist"]}>
+                <InvoicePage />
               </ProtectedRoute>
             }
           />
