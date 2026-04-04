@@ -1406,6 +1406,110 @@ export const getGuidePaymentSessionStatus = async (req, res) => {
   }
 };
 
+export const submitGuideReview = async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    await processExpiredPendingGuideBookings();
+
+    const touristId = req.user.user_id;
+    const bookingId = Number.parseInt(req.params.bookingId, 10);
+    const rating = Number.parseInt(req.body?.rating, 10);
+    const comment = String(req.body?.comment || "").trim();
+
+    if (!Number.isInteger(bookingId) || bookingId <= 0) {
+      return res.status(400).json({ message: "Invalid booking id" });
+    }
+
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: "rating must be an integer between 1 and 5" });
+    }
+
+    if (comment.length > 1500) {
+      return res.status(400).json({ message: "comment must be 1500 characters or less" });
+    }
+
+    await client.query("BEGIN");
+
+    const bookingResult = await client.query(
+      `SELECT b.booking_id, b.guide_id, b.tourist_id, b.status, b.end_date,
+              g.full_name AS guide_name,
+              r.review_id
+       FROM guide_package_bookings b
+       JOIN guides g ON g.guide_id = b.guide_id
+       LEFT JOIN guide_reviews r ON r.booking_id = b.booking_id
+       WHERE b.booking_id = $1
+       FOR UPDATE OF b`,
+      [bookingId]
+    );
+
+    if (!bookingResult.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Guide booking not found" });
+    }
+
+    const booking = bookingResult.rows[0];
+
+    if (booking.tourist_id !== touristId) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ message: "You can only review your own guide booking" });
+    }
+
+    if (booking.status !== "confirmed") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ message: "Only confirmed guide bookings can be reviewed" });
+    }
+
+    if (booking.review_id) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ message: "You have already reviewed this guide booking" });
+    }
+
+    const endParsed = parseDateOnly(booking.end_date, "end_date");
+    if (endParsed.error) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Booking end date is invalid" });
+    }
+
+    const todayUtc = new Date();
+    todayUtc.setUTCHours(0, 0, 0, 0);
+    if (todayUtc <= endParsed.value) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        message: "Review can be submitted only after trek end date has passed",
+      });
+    }
+
+    const reviewResult = await client.query(
+      `INSERT INTO guide_reviews
+        (guide_id, user_id, booking_id, rating, comment)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING review_id, guide_id, booking_id, rating, comment, created_at`,
+      [
+        booking.guide_id,
+        touristId,
+        bookingId,
+        rating,
+        comment || null,
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    return res.status(201).json({
+      message: "Thank you! Your guide review has been submitted.",
+      review: reviewResult.rows[0],
+      guide_name: booking.guide_name,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error submitting guide review:", err);
+    return res.status(500).json({ message: "Server error submitting guide review" });
+  } finally {
+    client.release();
+  }
+};
+
 export const getMyGuideBookings = async (req, res) => {
   try {
     await processExpiredPendingGuideBookings();
@@ -1418,6 +1522,8 @@ export const getMyGuideBookings = async (req, res) => {
               gs.service_id, gs.title AS service_title,
               g.guide_id, g.full_name AS guide_name, g.phone AS guide_phone,
               t.trail_id, t.trail_name,
+              gr.review_id, gr.rating AS review_rating, gr.comment AS review_comment, gr.created_at AS review_created_at,
+              (b.status = 'confirmed' AND CURRENT_DATE > b.end_date AND gr.review_id IS NULL) AS can_review,
               ps.payment_status,
               CASE WHEN rf.refund_status = 'processed' THEN 'refunded' ELSE rf.refund_status END AS refund_status,
               rf.requested_amount AS refund_requested_amount,
@@ -1437,6 +1543,7 @@ export const getMyGuideBookings = async (req, res) => {
          LIMIT 1
        ) ps ON true
        LEFT JOIN guide_booking_refunds rf ON rf.booking_id = b.booking_id
+       LEFT JOIN guide_reviews gr ON gr.booking_id = b.booking_id
        WHERE b.tourist_id = $1
        ORDER BY b.created_at DESC`,
       [touristId]
@@ -1461,6 +1568,7 @@ export const getGuideProviderBookings = async (req, res) => {
               gs.service_id, gs.title AS service_title,
               t.trail_id, t.trail_name,
               tr.full_name AS tourist_name,
+              gr.review_id, gr.rating AS review_rating, gr.comment AS review_comment, gr.created_at AS review_created_at,
               ps.payment_status,
               CASE WHEN rf.refund_status = 'processed' THEN 'refunded' ELSE rf.refund_status END AS refund_status,
               rf.requested_amount AS refund_requested_amount,
@@ -1477,6 +1585,7 @@ export const getGuideProviderBookings = async (req, res) => {
          LIMIT 1
        ) ps ON true
        LEFT JOIN guide_booking_refunds rf ON rf.booking_id = b.booking_id
+       LEFT JOIN guide_reviews gr ON gr.booking_id = b.booking_id
        WHERE b.guide_id = $1
        ORDER BY b.created_at DESC`,
       [guideId]

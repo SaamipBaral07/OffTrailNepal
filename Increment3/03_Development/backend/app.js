@@ -9,6 +9,7 @@ import homestayRoutes from "./routes/homestayRoutes.js";
 import guideRoutes from "./routes/guideRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import guideBookingRoutes from "./routes/guideBookingRoutes.js";
+import invoiceRoutes from "./routes/invoiceRoutes.js";
 import { csrfProtection } from "./middleware/csrfMiddleware.js";
 import { refreshTokenLimiter, authLimiter } from "./middleware/rateLimitMiddleware.js";
 import { fileURLToPath } from "url";
@@ -52,6 +53,7 @@ app.use("/api/homestays", homestayRoutes);
 app.use("/api/guides", guideRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/guide-bookings", guideBookingRoutes);
+app.use("/api/invoices", invoiceRoutes);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname=path.dirname(__filename);

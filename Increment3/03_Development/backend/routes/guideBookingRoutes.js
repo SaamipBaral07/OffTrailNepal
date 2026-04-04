@@ -11,6 +11,7 @@ import {
   getGuidePaymentSessionStatus,
   getMyGuideBookings,
   getGuideProviderBookings,
+  submitGuideReview,
   updateGuideBookingStatus,
   requestGuideBookingRefund,
   getAdminGuideBookingPayments,
@@ -55,6 +56,7 @@ router.get("/payment/session/:sessionToken", verifyToken, requireTourist, getGui
 
 router.get("/my", verifyToken, requireTourist, getMyGuideBookings);
 router.get("/guide", verifyToken, requireGuide, getGuideProviderBookings);
+router.post("/:bookingId/review", verifyToken, requireTourist, submitGuideReview);
 router.get("/:bookingId/timeline", verifyToken, getGuideBookingTimeline);
 router.patch("/:bookingId/status", verifyToken, requireGuide, updateGuideBookingStatus);
 router.post("/:bookingId/refund/request", verifyToken, requireTourist, requestGuideBookingRefund);

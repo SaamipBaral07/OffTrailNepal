@@ -860,6 +860,28 @@ export const getPublicHomestayById = async (req, res) => {
     );
     homestay.images = imagesResult.rows;
 
+    const reviewStatsResult = await pool.query(
+      `SELECT ROUND(AVG(rating)::numeric, 1) AS avg_rating,
+              COUNT(*)::int AS total_reviews
+       FROM homestay_reviews
+       WHERE homestay_id = $1`,
+      [homestayId]
+    );
+
+    const reviewsResult = await pool.query(
+      `SELECT r.review_id, r.rating, r.comment, r.created_at,
+              t.full_name AS reviewer_name
+       FROM homestay_reviews r
+       JOIN tourists t ON t.tourist_id = r.tourist_id
+       WHERE r.homestay_id = $1
+       ORDER BY r.created_at DESC
+       LIMIT 50`,
+      [homestayId]
+    );
+
+    homestay.reviews_stats = reviewStatsResult.rows[0] || { avg_rating: null, total_reviews: 0 };
+    homestay.reviews = reviewsResult.rows;
+
     res.status(200).json({ homestay });
   } catch (err) {
     console.error("Error fetching public homestay detail:", err);
@@ -874,14 +896,22 @@ export const getPublicHomestaysByTrail = async (req, res) => {
   try {
     const { trailId } = req.params;
     const result = await pool.query(
-      `SELECT homestay_id, name, location, price_per_night, capacity,
-              description, contact_phone, latitude, longitude, is_active,
-              amenities, total_rooms, available_rooms, google_map_iframe_link
-       FROM homestays
-       WHERE trail_id = $1
-         AND verified_status = 'approved'
-         AND is_active = true
-       ORDER BY price_per_night ASC`,
+      `SELECT h.homestay_id, h.name, h.location, h.price_per_night, h.capacity,
+              h.description, h.contact_phone, h.latitude, h.longitude, h.is_active,
+              h.amenities, h.total_rooms, h.available_rooms, h.google_map_iframe_link,
+              COALESCE(rs.avg_rating, 0) AS avg_rating,
+              COALESCE(rs.total_reviews, 0) AS total_reviews
+       FROM homestays h
+       LEFT JOIN LATERAL (
+         SELECT ROUND(AVG(r.rating)::numeric, 1) AS avg_rating,
+                COUNT(*)::int AS total_reviews
+         FROM homestay_reviews r
+         WHERE r.homestay_id = h.homestay_id
+       ) rs ON TRUE
+       WHERE h.trail_id = $1
+         AND h.verified_status = 'approved'
+         AND h.is_active = true
+       ORDER BY h.price_per_night ASC`,
       [trailId]
     );
     const homestays = result.rows;

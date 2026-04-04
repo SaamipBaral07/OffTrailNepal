@@ -14,6 +14,7 @@ import {
   getMyBookings,
   getHostBookings,
   cancelTouristBooking,
+  submitHomestayReview,
   requestBookingRefund,
   reviewBookingRefund,
 } from "../controllers/bookingController.js";
@@ -57,6 +58,7 @@ router.post("/payment/verify", verifyToken, requireTourist, verifyEsewaPaymentAn
 router.get("/payment/session/:sessionToken", verifyToken, requireTourist, getPaymentSessionStatus);
 router.get("/my", verifyToken, requireTourist, getMyBookings);
 router.patch("/:bookingId/cancel", verifyToken, requireTourist, cancelTouristBooking);
+router.post("/:bookingId/review", verifyToken, requireTourist, submitHomestayReview);
 router.post("/:bookingId/refund/request", verifyToken, requireTourist, requestBookingRefund);
 
 router.get("/host", verifyToken, requireHost, getHostBookings);

@@ -243,12 +243,20 @@ export const getPublicServicesByTrail = async (req, res) => {
          g.phone        AS guide_phone,
          g.experience_years,
          g.license_no,
-         gt.experience_level
+         gt.experience_level,
+         COALESCE(gr.avg_rating, 0) AS avg_rating,
+         COALESCE(gr.total_reviews, 0) AS total_reviews
        FROM guide_services gs
        JOIN guides g         ON gs.guide_id  = g.guide_id
        JOIN guide_trails gt  ON gs.guide_id  = gt.guide_id
                             AND gs.trail_id  = gt.trail_id
-      JOIN guide_verifications gv ON gs.guide_id = gv.guide_id
+       JOIN guide_verifications gv ON gs.guide_id = gv.guide_id
+       LEFT JOIN LATERAL (
+         SELECT ROUND(AVG(r.rating)::numeric, 1) AS avg_rating,
+                COUNT(*)::int AS total_reviews
+         FROM guide_reviews r
+         WHERE r.guide_id = g.guide_id
+       ) gr ON true
        WHERE gs.trail_id = $1
          AND gs.is_active = true
          AND gt.is_active = true

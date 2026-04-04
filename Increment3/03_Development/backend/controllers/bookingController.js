@@ -1599,6 +1599,109 @@ export const getAdminBookingPayments = async (req, res) => {
   }
 };
 
+export const submitHomestayReview = async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const touristId = req.user.user_id;
+    const bookingId = Number.parseInt(req.params.bookingId, 10);
+    const rating = Number.parseInt(req.body?.rating, 10);
+    const comment = String(req.body?.comment || "").trim();
+
+    if (!Number.isInteger(bookingId) || bookingId <= 0) {
+      return res.status(400).json({ message: "Invalid booking id" });
+    }
+
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: "rating must be an integer between 1 and 5" });
+    }
+
+    if (comment.length > 1500) {
+      return res.status(400).json({ message: "comment must be 1500 characters or less" });
+    }
+
+    await client.query("BEGIN");
+
+    const bookingResult = await client.query(
+      `SELECT b.booking_id, b.tourist_id, b.homestay_id, b.host_id, b.status, b.check_out_date,
+              h.name AS homestay_name,
+              r.review_id
+       FROM homestay_bookings b
+       JOIN homestays h ON h.homestay_id = b.homestay_id
+       LEFT JOIN homestay_reviews r ON r.booking_id = b.booking_id
+       WHERE b.booking_id = $1
+       FOR UPDATE OF b`,
+      [bookingId]
+    );
+
+    if (!bookingResult.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Booking not found" });
+    }
+
+    const booking = bookingResult.rows[0];
+
+    if (booking.tourist_id !== touristId) {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ message: "You can only review your own booking" });
+    }
+
+    if (booking.status !== "confirmed") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ message: "Only confirmed stays can be reviewed" });
+    }
+
+    if (booking.review_id) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ message: "You have already reviewed this booking" });
+    }
+
+    const checkOutParsed = parseDateOnly(booking.check_out_date, "check_out_date");
+    if (checkOutParsed.error) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: "Booking check-out date is invalid" });
+    }
+
+    const todayUtc = new Date();
+    todayUtc.setUTCHours(0, 0, 0, 0);
+    if (todayUtc <= checkOutParsed.value) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        message: "Review can be submitted only after checkout date has passed",
+      });
+    }
+
+    const reviewResult = await client.query(
+      `INSERT INTO homestay_reviews
+        (homestay_id, host_id, tourist_id, booking_id, rating, comment)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING review_id, homestay_id, booking_id, rating, comment, created_at`,
+      [
+        booking.homestay_id,
+        booking.host_id,
+        touristId,
+        bookingId,
+        rating,
+        comment || null,
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    return res.status(201).json({
+      message: "Thank you! Your homestay review has been submitted.",
+      review: reviewResult.rows[0],
+      homestay_name: booking.homestay_name,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error submitting homestay review:", err);
+    return res.status(500).json({ message: "Server error submitting review" });
+  } finally {
+    client.release();
+  }
+};
+
 export const getMyBookings = async (req, res) => {
   try {
     const touristId = req.user.user_id;
@@ -1609,7 +1712,9 @@ export const getMyBookings = async (req, res) => {
               COALESCE(p.payment_status, ps.payment_status) AS payment_status,
               COALESCE(p.transaction_reference, ps.payment_ref_id) AS payment_ref_id,
               ps.transaction_uuid, p.payment_method, p.amount AS paid_amount,
-              r.refund_status, r.requested_amount AS refund_requested_amount, r.requested_at AS refund_requested_at
+              r.refund_status, r.requested_amount AS refund_requested_amount, r.requested_at AS refund_requested_at,
+              hr.review_id, hr.rating AS review_rating, hr.comment AS review_comment, hr.created_at AS review_created_at,
+              (b.status = 'confirmed' AND CURRENT_DATE > b.check_out_date AND hr.review_id IS NULL) AS can_review
        FROM homestay_bookings b
        JOIN homestays h ON b.homestay_id = h.homestay_id
        JOIN trekking_trails t ON h.trail_id = t.trail_id
@@ -1622,6 +1727,7 @@ export const getMyBookings = async (req, res) => {
        ) ps ON TRUE
        LEFT JOIN payments p ON p.booking_id = b.booking_id
        LEFT JOIN booking_refunds r ON r.booking_id = b.booking_id
+       LEFT JOIN homestay_reviews hr ON hr.booking_id = b.booking_id
        WHERE b.tourist_id = $1
        ORDER BY b.created_at DESC`,
       [touristId]
@@ -1645,7 +1751,8 @@ export const getHostBookings = async (req, res) => {
               COALESCE(p.payment_status, ps.payment_status) AS payment_status,
               COALESCE(p.transaction_reference, ps.payment_ref_id) AS payment_ref_id,
               ps.transaction_uuid, p.payment_method,
-              r.refund_status, r.requested_amount AS refund_requested_amount
+              r.refund_status, r.requested_amount AS refund_requested_amount,
+              hr.review_id, hr.rating AS review_rating, hr.comment AS review_comment, hr.created_at AS review_created_at
        FROM homestay_bookings b
        JOIN homestays h ON b.homestay_id = h.homestay_id
        JOIN trekking_trails tr ON h.trail_id = tr.trail_id
@@ -1659,6 +1766,7 @@ export const getHostBookings = async (req, res) => {
        ) ps ON TRUE
        LEFT JOIN payments p ON p.booking_id = b.booking_id
        LEFT JOIN booking_refunds r ON r.booking_id = b.booking_id
+       LEFT JOIN homestay_reviews hr ON hr.booking_id = b.booking_id
        WHERE b.host_id = $1
        ORDER BY b.created_at DESC`,
       [hostId]

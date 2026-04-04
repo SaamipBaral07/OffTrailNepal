@@ -261,10 +261,18 @@ export const getGuidesByTrail = async (req, res) => {
 
     const result = await pool.query(
       `SELECT gt.id, gt.experience_level,
-              g.guide_id, g.full_name, g.phone, g.experience_years, g.license_no
+              g.guide_id, g.full_name, g.phone, g.experience_years, g.license_no,
+              COALESCE(gr.avg_rating, 0) AS avg_rating,
+              COALESCE(gr.total_reviews, 0) AS total_reviews
        FROM guide_trails gt
        JOIN guides g ON gt.guide_id = g.guide_id
        JOIN guide_verifications gv ON gv.guide_id = g.guide_id
+       LEFT JOIN LATERAL (
+         SELECT ROUND(AVG(r.rating)::numeric, 1) AS avg_rating,
+                COUNT(*)::int AS total_reviews
+         FROM guide_reviews r
+         WHERE r.guide_id = g.guide_id
+       ) gr ON true
        WHERE gt.trail_id = $1
          AND gt.is_active = true
          AND gv.verification_status = 'approved'
