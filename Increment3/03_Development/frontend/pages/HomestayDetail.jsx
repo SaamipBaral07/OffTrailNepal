@@ -117,6 +117,239 @@ const extractGoogleMapSrc = (rawValue) => {
   }
 };
 
+const HomestayBookingModal = ({
+  isOpen,
+  onClose,
+  onSubmit,
+  bookingForm,
+  handleBookingField,
+  bookingFeedback,
+  bookingSubmitting,
+  paymentVerifying,
+  paymentMethod,
+  setPaymentMethod,
+  isSoldOut,
+  availableRooms,
+  todayIso,
+  user,
+}) => {
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const nonTouristUser = user && user.user_type !== "tourist";
+  const disableSubmit = isSoldOut || bookingSubmitting || paymentVerifying || nonTouristUser;
+  const paymentOptions = [
+    {
+      key: "esewa",
+      label: "eSewa",
+      description: "Pay in NPR",
+      logo: "/images/esewa.png",
+    },
+    {
+      key: "stripe",
+      label: "Stripe",
+      description: "Card payment (USD)",
+      logo: "/images/stripe.png",
+    },
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-[90] bg-gradient-to-b from-black/55 via-black/50 to-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5"
+      onClick={() => {
+        if (bookingSubmitting || paymentVerifying) return;
+        onClose();
+      }}
+    >
+      <div
+        className="w-full max-w-2xl max-h-[90vh] rounded-3xl border border-white/15 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.4)] overflow-hidden flex flex-col"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 p-5 sm:p-6 border-b border-gold/20 bg-gradient-to-r from-navy via-navy-light to-navy-light/80">
+          <div>
+            <h3 className="text-xl sm:text-2xl font-bold text-white">Book This Homestay</h3>
+            <p className="text-xs sm:text-sm text-gold/90 mt-1">
+              Your room is confirmed only after successful payment.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={bookingSubmitting || paymentVerifying}
+            className="p-2 hover:bg-white/20 rounded-xl transition disabled:opacity-60"
+          >
+            <span className="text-lg text-white">×</span>
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} className="flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 py-5 space-y-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-700 mb-2">Payment Method</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {paymentOptions.map((option) => {
+                  const isActive = paymentMethod === option.key;
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => setPaymentMethod(option.key)}
+                      className={`rounded-2xl border px-3 py-3 text-left transition-all ${isActive ? "border-gold bg-gradient-to-r from-gold-pale to-amber-50 shadow-sm" : "border-stone-200 bg-white hover:border-gold/40 hover:bg-stone-50"}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={option.logo}
+                          alt={`${option.label} logo`}
+                          className="h-8 w-14 object-contain"
+                        />
+                        <div>
+                          <p className={`text-sm font-bold ${isActive ? "text-gold-dark" : "text-gray-700"}`}>{option.label}</p>
+                          <p className="text-xs text-gray-500">{option.description}</p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="text-xs font-semibold text-gray-600">
+                Check-in Date
+                <input
+                  type="date"
+                  min={todayIso}
+                  value={bookingForm.check_in_date}
+                  onChange={(e) => handleBookingField("check_in_date", e.target.value)}
+                  required
+                  className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                />
+              </label>
+
+              <label className="text-xs font-semibold text-gray-600">
+                Check-out Date
+                <input
+                  type="date"
+                  min={bookingForm.check_in_date || todayIso}
+                  value={bookingForm.check_out_date}
+                  onChange={(e) => handleBookingField("check_out_date", e.target.value)}
+                  required
+                  className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                />
+              </label>
+
+              <label className="text-xs font-semibold text-gray-600">
+                Rooms Needed
+                <input
+                  type="number"
+                  min="1"
+                  max={Math.max(1, availableRooms)}
+                  value={bookingForm.rooms_booked}
+                  onChange={(e) => handleBookingField("rooms_booked", e.target.value)}
+                  required
+                  className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                />
+              </label>
+
+              <label className="text-xs font-semibold text-gray-600">
+                Guests Count
+                <input
+                  type="number"
+                  min="1"
+                  value={bookingForm.guests_count}
+                  onChange={(e) => handleBookingField("guests_count", e.target.value)}
+                  required
+                  className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                />
+              </label>
+            </div>
+
+            <label className="block text-xs font-semibold text-gray-600">
+              Contact Phone
+              <input
+                type="text"
+                value={bookingForm.contact_phone}
+                onChange={(e) => handleBookingField("contact_phone", e.target.value)}
+                placeholder="Optional phone for host confirmation"
+                className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+              />
+            </label>
+
+            <label className="block text-xs font-semibold text-gray-600">
+              Special Request
+              <div className="relative mt-1">
+                <MessageSquare className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-300" />
+                <textarea
+                  value={bookingForm.special_requests}
+                  onChange={(e) => handleBookingField("special_requests", e.target.value)}
+                  rows={3}
+                  placeholder="Arrival notes, food preference, etc."
+                  className="w-full rounded-xl border border-gray-200 bg-white pl-9 pr-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                />
+              </div>
+            </label>
+
+            {bookingFeedback && (
+              <p className={`text-sm font-medium ${bookingFeedback.type === "success" ? "text-emerald-700" : "text-red-600"}`}>
+                {bookingFeedback.message}
+              </p>
+            )}
+
+            {!user && (
+              <p className="text-xs text-gray-500">
+                Login is required. We will redirect you to sign in when you proceed.
+              </p>
+            )}
+
+            {nonTouristUser && (
+              <p className="text-xs text-red-600">
+                Only tourist accounts can book homestay rooms.
+              </p>
+            )}
+          </div>
+
+          <div className="border-t border-stone-200 px-5 sm:px-6 py-4 bg-white/90">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={bookingSubmitting || paymentVerifying}
+                className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={disableSubmit}
+                className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${isSoldOut ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gradient-to-r from-gold to-[#D4A43A] text-navy shadow-md hover:shadow-lg hover:-translate-y-0.5"}`}
+              >
+                {(bookingSubmitting || paymentVerifying) && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isSoldOut
+                  ? "Fully Booked"
+                  : bookingSubmitting
+                    ? `Redirecting to ${paymentMethod === "stripe" ? "Stripe" : "eSewa"}...`
+                    : paymentVerifying
+                      ? "Verifying Payment..."
+                      : `Pay with ${paymentMethod === "stripe" ? "Stripe" : "eSewa"} & Book`}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 const HomestayDetail = () => {
   const { id } = useParams();
   const location = useLocation();
@@ -143,6 +376,7 @@ const HomestayDetail = () => {
   const [paymentVerifying, setPaymentVerifying] = useState(false);
   const [bookingFeedback, setBookingFeedback] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState("esewa");
+  const [showBookingModal, setShowBookingModal] = useState(false);
   const lastProcessedSessionRef = useRef(null);
 
   const loadHomestay = useCallback(async () => {
@@ -394,6 +628,7 @@ const HomestayDetail = () => {
   const reviewRows = Array.isArray(homestay.reviews) ? homestay.reviews : [];
   const avgRating = Number(homestay.reviews_stats?.avg_rating || 0);
   const totalReviews = Number(homestay.reviews_stats?.total_reviews || reviewRows.length || 0);
+  const isNonTouristUser = Boolean(user && user.user_type !== "tourist");
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-cream via-[#f9f7f3] to-stone/40 font-body">
@@ -535,116 +770,47 @@ const HomestayDetail = () => {
               </div>
             </motion.div>
 
-            <motion.form
+            <motion.div
               variants={itemVariants}
               whileHover={{ y: -2 }}
               transition={{ duration: MOTION_DURATION, ease: MOTION_CURVE }}
               className="rounded-3xl border border-gold/25 bg-gradient-to-br from-white via-[#fffdf8] to-gold-pale/40 p-6 shadow-[0_10px_24px_rgba(12,35,64,0.06)]"
-              onSubmit={handleBookHomestay}
             >
               <div className="flex items-center justify-between gap-3 mb-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-navy/70">Book This Homestay</p>
-                  <p className="text-sm text-gray-500 mt-1">Booking requires successful in-app payment before confirmation.</p>
+                  <p className="text-sm text-gray-500 mt-1">Smarter checkout with a focused booking modal and secure payment handoff.</p>
                 </div>
                 <CalendarDays className="h-5 w-5 text-gold" />
               </div>
 
-              <div className="mb-3">
-                <p className="text-xs font-semibold text-gray-600 mb-1.5">Payment Method</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("esewa")}
-                    className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${paymentMethod === "esewa" ? "border-gold bg-gold-pale text-gold-dark" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
-                  >
-                    eSewa
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod("stripe")}
-                    className={`rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${paymentMethod === "stripe" ? "border-gold bg-gold-pale text-gold-dark" : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"}`}
-                  >
-                    Stripe (USD)
-                  </button>
-                </div>
+              <div className="rounded-2xl border border-gold/25 bg-white/90 p-3.5">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-dark">Current Payment Method</p>
+                <p className="mt-1 text-sm font-semibold text-charcoal">
+                  {paymentMethod === "stripe" ? "Stripe (USD)" : "eSewa (NPR)"}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  You can change this inside the booking modal before paying.
+                </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className="text-xs font-semibold text-gray-600">
-                  Check-in Date
-                  <input
-                    type="date"
-                    min={todayIso}
-                    value={bookingForm.check_in_date}
-                    onChange={(e) => handleBookingField("check_in_date", e.target.value)}
-                    required
-                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
-                  />
-                </label>
-
-                <label className="text-xs font-semibold text-gray-600">
-                  Check-out Date
-                  <input
-                    type="date"
-                    min={bookingForm.check_in_date || todayIso}
-                    value={bookingForm.check_out_date}
-                    onChange={(e) => handleBookingField("check_out_date", e.target.value)}
-                    required
-                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
-                  />
-                </label>
-
-                <label className="text-xs font-semibold text-gray-600">
-                  Rooms Needed
-                  <input
-                    type="number"
-                    min="1"
-                    max={Math.max(1, availableRooms)}
-                    value={bookingForm.rooms_booked}
-                    onChange={(e) => handleBookingField("rooms_booked", e.target.value)}
-                    required
-                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
-                  />
-                </label>
-
-                <label className="text-xs font-semibold text-gray-600">
-                  Guests Count
-                  <input
-                    type="number"
-                    min="1"
-                    value={bookingForm.guests_count}
-                    onChange={(e) => handleBookingField("guests_count", e.target.value)}
-                    required
-                    className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
-                  />
-                </label>
-              </div>
-
-              <label className="mt-3 block text-xs font-semibold text-gray-600">
-                Contact Phone
-                <input
-                  type="text"
-                  value={bookingForm.contact_phone}
-                  onChange={(e) => handleBookingField("contact_phone", e.target.value)}
-                  placeholder="Optional phone for host confirmation"
-                  className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
-                />
-              </label>
-
-              <label className="mt-3 block text-xs font-semibold text-gray-600">
-                Special Request
-                <div className="relative mt-1">
-                  <MessageSquare className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-300" />
-                  <textarea
-                    value={bookingForm.special_requests}
-                    onChange={(e) => handleBookingField("special_requests", e.target.value)}
-                    rows={3}
-                    placeholder="Arrival notes, food preference, etc."
-                    className="w-full rounded-xl border border-gray-200 bg-white pl-9 pr-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
-                  />
-                </div>
-              </label>
+              <button
+                type="button"
+                onClick={() => setShowBookingModal(true)}
+                disabled={isSoldOut || bookingSubmitting || paymentVerifying || isNonTouristUser}
+                className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${isSoldOut || isNonTouristUser ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gradient-to-r from-gold to-[#D4A43A] text-navy shadow-md hover:shadow-lg hover:-translate-y-0.5"}`}
+              >
+                {(bookingSubmitting || paymentVerifying) && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isSoldOut
+                  ? "Fully Booked"
+                  : isNonTouristUser
+                    ? "Only Tourists Can Book"
+                    : bookingSubmitting
+                      ? `Redirecting to ${paymentMethod === "stripe" ? "Stripe" : "eSewa"}...`
+                      : paymentVerifying
+                        ? "Verifying Payment..."
+                        : "Open Booking Modal"}
+              </button>
 
               {bookingFeedback && (
                 <p className={`mt-3 text-sm font-medium ${bookingFeedback.type === "success" ? "text-emerald-700" : "text-red-600"}`}>
@@ -652,21 +818,18 @@ const HomestayDetail = () => {
                 </p>
               )}
 
-              <button
-                type="submit"
-                disabled={isSoldOut || bookingSubmitting || paymentVerifying || user?.user_type === "host" || user?.user_type === "guide" || user?.user_type === "admin"}
-                className={`mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${isSoldOut ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-gradient-to-r from-gold to-[#D4A43A] text-navy shadow-md hover:shadow-lg hover:-translate-y-0.5"}`}
-              >
-                {(bookingSubmitting || paymentVerifying) && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isSoldOut ? "Fully Booked" : bookingSubmitting ? `Redirecting to ${paymentMethod === "stripe" ? "Stripe" : "eSewa"}...` : paymentVerifying ? "Verifying Payment..." : `Pay with ${paymentMethod === "stripe" ? "Stripe" : "eSewa"} & Book`}
-              </button>
+              {isNonTouristUser && (
+                <p className="mt-2 text-xs text-red-600">
+                  Only tourist accounts can book homestay rooms.
+                </p>
+              )}
 
               {!user && (
                 <p className="mt-2 text-xs text-gray-500">
                   Please login as a tourist account to make a booking.
                 </p>
               )}
-            </motion.form>
+            </motion.div>
 
             {amenityCards.length > 0 && (
               <motion.div
@@ -772,6 +935,23 @@ const HomestayDetail = () => {
       </motion.main>
 
       <Footer />
+
+      <HomestayBookingModal
+        isOpen={showBookingModal}
+        onClose={() => setShowBookingModal(false)}
+        onSubmit={handleBookHomestay}
+        bookingForm={bookingForm}
+        handleBookingField={handleBookingField}
+        bookingFeedback={bookingFeedback}
+        bookingSubmitting={bookingSubmitting}
+        paymentVerifying={paymentVerifying}
+        paymentMethod={paymentMethod}
+        setPaymentMethod={setPaymentMethod}
+        isSoldOut={isSoldOut}
+        availableRooms={availableRooms}
+        todayIso={todayIso}
+        user={user}
+      />
 
       <LogoutModal
         isOpen={showLogoutModal}

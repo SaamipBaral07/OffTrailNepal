@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Menu,
@@ -10,22 +10,25 @@ import {
   Settings,
   Compass,
   CalendarCheck,
+  MessageCircle,
 } from "lucide-react";
 
-const navLinks = [
-  { name: "Home", href: "#home" },
-  { name: "Destinations", href: "#destinations" },
-  { name: "Why Us", href: "#features" },
-  { name: "How It Works", href: "#how-it-works" },
-  { name: "Testimonials", href: "#testimonials" },
+const primaryLinks = [
+  { name: "Home", to: "/" },
+  { name: "Trails", to: "/trails" },
+  { name: "Homestays", to: "/homestays" },
 ];
 
 export const Header = ({ user, onLogoutClick }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [activeSection, setActiveSection] = useState("home");
   const dropdownRef = useRef(null);
+  const isHomeRoute = location.pathname === "/";
+  const isTrailsRoute = location.pathname.startsWith("/trails");
+  const isHomestaysRoute = location.pathname.startsWith("/homestays");
   const profileImageUrl = user?.profile_image_path
     ? (String(user.profile_image_path).startsWith("http")
       ? user.profile_image_path
@@ -39,25 +42,6 @@ export const Header = ({ user, onLogoutClick }) => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  /* ── Active section detection ── */
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setActiveSection(entry.target.id);
-          }
-        });
-      },
-      { rootMargin: "-40% 0px -55% 0px" }
-    );
-    navLinks.forEach((link) => {
-      const el = document.querySelector(link.href);
-      if (el) observer.observe(el);
-    });
-    return () => observer.disconnect();
-  }, []);
-
   /* ── Close dropdown on outside click ── */
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -68,9 +52,12 @@ export const Header = ({ user, onLogoutClick }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const scrollToSection = (href) => {
-    const el = document.querySelector(href);
-    if (el) el.scrollIntoView({ behavior: "smooth" });
+  const goToPrimaryLink = (to) => {
+    if (to === "/" && location.pathname === "/") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } else {
+      navigate(to);
+    }
     setMobileMenuOpen(false);
   };
 
@@ -160,40 +147,65 @@ export const Header = ({ user, onLogoutClick }) => {
               </div>
             </Link>
 
-            {/* ── Desktop Nav (center pill) ── */}
-            <div className="hidden lg:flex items-center">
-              <div className="flex items-center gap-0.5 bg-white/[0.05] rounded-full px-1.5 py-1 border border-white/[0.06]">
-                {navLinks.map((link) => {
-                  const isActive = activeSection === link.href.replace("#", "");
-                  return (
-                    <button
-                      key={link.name}
-                      onClick={() => scrollToSection(link.href)}
-                      className={`relative px-4 py-2 text-[12px] font-semibold uppercase tracking-wider rounded-full transition-all duration-300 ${
-                        isActive
-                          ? "text-navy"
-                          : "text-white/60 hover:text-white"
-                      }`}
-                    >
-                      {isActive && (
-                        <motion.span
-                          layoutId="activeNavPill"
-                          transition={{
-                            type: "spring",
-                            stiffness: 400,
-                            damping: 30,
-                          }}
-                          className="absolute inset-0 rounded-full"
-                          style={{
-                            background:
-                              "linear-gradient(135deg, #C8932A, #E0B04A)",
-                          }}
-                        />
-                      )}
-                      <span className="relative z-10">{link.name}</span>
-                    </button>
-                  );
-                })}
+            {/* ── Desktop Nav: Single Row (center) ── */}
+            <div className="hidden lg:flex items-center absolute left-1/2 -translate-x-1/2">
+              <div className="flex items-center gap-2 rounded-full bg-white/[0.05] px-1.5 py-1 border border-white/[0.06] backdrop-blur-xl">
+                <div className="flex items-center rounded-full transition-all duration-300">
+                  <button
+                    onClick={() => goToPrimaryLink("/")}
+                    className={`relative px-4 py-2 text-[12px] font-semibold uppercase tracking-wider rounded-full transition-all duration-300 ${isHomeRoute ? "text-navy" : "text-white/70 hover:text-white hover:bg-white/10"}`}
+                  >
+                    {isHomeRoute && (
+                      <motion.span
+                        layoutId="activeNavPill"
+                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                        className="absolute inset-0 rounded-full"
+                        style={{
+                          background: "linear-gradient(135deg, #C8932A, #E0B04A)",
+                        }}
+                      />
+                    )}
+                    <span className="relative z-10">HOME</span>
+                  </button>
+                </div>
+
+                <span className="text-white/25 text-xs font-semibold px-1">•</span>
+
+                <button
+                  onClick={() => goToPrimaryLink("/trails")}
+                  className={`relative px-4 py-2 text-[12px] font-semibold uppercase tracking-wider rounded-full transition-all duration-300 ${isTrailsRoute ? "text-navy" : "text-white/70 hover:text-white"}`}
+                >
+                  {isTrailsRoute && (
+                    <motion.span
+                      layoutId="primaryPagePill"
+                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                      className="absolute inset-0 rounded-full"
+                      style={{
+                        background: "linear-gradient(135deg, #C8932A, #E0B04A)",
+                      }}
+                    />
+                  )}
+                  <span className="relative z-10">TRAILS</span>
+                </button>
+
+                <span className="text-white/25 text-xs font-semibold px-1">•</span>
+
+                <button
+                  onClick={() => goToPrimaryLink("/homestays")}
+                  className={`relative px-4 py-2 text-[12px] font-semibold uppercase tracking-wider rounded-full transition-all duration-300 ${isHomestaysRoute ? "text-navy" : "text-white/70 hover:text-white"}`}
+                >
+                  {isHomestaysRoute && (
+                    <motion.span
+                      layoutId="primaryPagePill"
+                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                      className="absolute inset-0 rounded-full"
+                      style={{
+                        background: "linear-gradient(135deg, #C8932A, #E0B04A)",
+                      }}
+                    />
+                  )}
+                  <span className="relative z-10">HOMESTAYS</span>
+                </button>
               </div>
             </div>
 
@@ -309,6 +321,16 @@ export const Header = ({ user, onLogoutClick }) => {
                               My Bookings
                             </Link>
                           )}
+                          {(user.user_type === "tourist" || user.user_type === "guide") && (
+                            <Link
+                              to="/chats"
+                              onClick={() => setDropdownOpen(false)}
+                              className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors"
+                            >
+                              <MessageCircle className="h-4 w-4 text-gray-400" />
+                              Chats
+                            </Link>
+                          )}
                           {user.user_type === "tourist" ? (
                             <Link
                               to="/my-settings"
@@ -409,15 +431,18 @@ export const Header = ({ user, onLogoutClick }) => {
               className="lg:hidden max-w-7xl mx-auto mt-2 rounded-2xl bg-navy/95 backdrop-blur-2xl border border-white/[0.08] shadow-2xl shadow-navy/40 overflow-hidden"
             >
               <div className="px-4 py-5 space-y-1">
-                {navLinks.map((link, i) => {
-                  const isActive = activeSection === link.href.replace("#", "");
+                {primaryLinks.map((link, i) => {
+                  const isActive =
+                    link.to === "/"
+                      ? location.pathname === "/"
+                      : location.pathname.startsWith(link.to);
                   return (
                     <motion.button
                       key={link.name}
                       initial={{ opacity: 0, x: -24 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.06, ease: "easeOut" }}
-                      onClick={() => scrollToSection(link.href)}
+                      onClick={() => goToPrimaryLink(link.to)}
                       className={`block w-full text-left px-4 py-3 rounded-xl transition-all duration-300 font-medium text-[15px] ${
                         isActive
                           ? "bg-gold/15 text-gold"
@@ -428,6 +453,24 @@ export const Header = ({ user, onLogoutClick }) => {
                     </motion.button>
                   );
                 })}
+
+                {user && (user.user_type === "tourist" || user.user_type === "guide") && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.2 }}
+                    className="pt-3 mt-2 border-t border-white/10"
+                  >
+                    <Link
+                      to="/chats"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="w-full flex items-center gap-2 px-4 py-3 rounded-xl bg-gold/15 text-gold font-semibold hover:bg-gold/20 transition-all"
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      Chats
+                    </Link>
+                  </motion.div>
+                )}
                 {!user && (
                   <motion.div
                     initial={{ opacity: 0 }}

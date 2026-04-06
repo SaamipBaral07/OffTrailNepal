@@ -532,10 +532,10 @@ const LandingPage = () => {
             viewport={{ once: true, margin: "-80px" }}
           >
             <SectionHeader
-              badge="Top Destinations"
+              badge="Offbeat Destinations"
               badgeColor="gold"
-              title="Popular Treks in Nepal"
-              subtitle="Hand-picked trails that showcase Nepal's most breathtaking landscapes and cultural heritage."
+              title="Hidden Trails Across Nepal"
+              subtitle="Hand-picked remote routes, lesser-known valleys, and culturally rich paths far from the crowded mainstream circuits."
             />
           </motion.div>
 

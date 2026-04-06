@@ -12,6 +12,7 @@ import {
   Calendar,
   Route,
   Timer,
+  Clock,
   Download,
   Briefcase,
   Phone,
@@ -43,6 +44,69 @@ const MOTION_CURVE = [0.22, 1, 0.36, 1];
 const MOTION_DURATION = 0.32;
 const MOTION_STAGGER = 0.07;
 const MOTION_STAGGER_TIGHT = 0.05;
+const GUIDE_MIN_ADVANCE_DAYS = Math.max(
+  1,
+  Number.parseInt(process.env.REACT_APP_GUIDE_MIN_ADVANCE_DAYS || "2", 10) || 2
+);
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const toDateKey = (value) => {
+  if (!value) return null;
+  if (typeof value === "string" && DATE_KEY_RE.test(value.trim())) {
+    return value.trim();
+  }
+
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  const yyyy = parsed.getUTCFullYear();
+  const mm = String(parsed.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(parsed.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const addDaysToDateKey = (dateKey, days) => {
+  const normalized = toDateKey(dateKey);
+  if (!normalized) return null;
+
+  const [year, month, day] = normalized.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + Number(days || 0));
+  return toDateKey(date);
+};
+
+const getMinimumGuideStartDateKey = () => {
+  const today = toDateKey(new Date());
+  return addDaysToDateKey(today, GUIDE_MIN_ADVANCE_DAYS);
+};
+
+const buildDateRangeKeys = (startDateKey, endDateKey) => {
+  const start = toDateKey(startDateKey);
+  const end = toDateKey(endDateKey);
+  if (!start || !end || end < start) return [];
+
+  const keys = [];
+  let cursor = start;
+  while (cursor <= end) {
+    keys.push(cursor);
+    cursor = addDaysToDateKey(cursor, 1);
+    if (!cursor) break;
+  }
+  return keys;
+};
+
+const getBookingTotalDays = (startDateKey, endDateKey) => {
+  const start = toDateKey(startDateKey);
+  const end = toDateKey(endDateKey);
+  if (!start || !end || end <= start) return 0;
+
+  const [startYear, startMonth, startDay] = start.split("-").map(Number);
+  const [endYear, endMonth, endDay] = end.split("-").map(Number);
+  const startUtc = Date.UTC(startYear, startMonth - 1, startDay);
+  const endUtc = Date.UTC(endYear, endMonth - 1, endDay);
+  const msInDay = 24 * 60 * 60 * 1000;
+  return Math.ceil((endUtc - startUtc) / msInDay);
+};
 
 const difficultyConfig = {
   Easy: {
@@ -465,6 +529,17 @@ const GuideServiceCard = ({ service, index, user, onBookPackage }) => {
   const isTourist = user?.user_type === "tourist";
   const avgRating = Number(service.avg_rating || 0);
   const totalReviews = Number(service.total_reviews || 0);
+  const minBookingDays = Math.max(1, Number(service.min_booking_days || 1));
+  const unavailableDateCount = new Set(
+    [
+      ...(Array.isArray(service.booked_dates) ? service.booked_dates : []),
+      ...(Array.isArray(service.manual_unavailable_dates)
+        ? service.manual_unavailable_dates
+        : []),
+    ]
+      .map((value) => toDateKey(value))
+      .filter(Boolean)
+  ).size;
 
   return (
     <motion.div
@@ -512,9 +587,21 @@ const GuideServiceCard = ({ service, index, user, onBookPackage }) => {
         </p>
 
         <div className="mt-auto flex items-center justify-between pt-4 border-t border-gray-50">
-          <div className="flex items-center gap-2 text-xs text-gray-500 font-medium">
-            <Users className="h-4 w-4 text-emerald-500" />
-            Max Group: {service.max_group_size} pax
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-xs text-gray-500 font-medium">
+              <Users className="h-4 w-4 text-emerald-500" />
+              Max Group: {service.max_group_size} pax
+            </div>
+            {unavailableDateCount > 0 && (
+              <div className="flex items-center gap-1.5 text-[11px] text-rose-600 font-semibold">
+                <Calendar className="h-3.5 w-3.5" />
+                Busy on {unavailableDateCount} upcoming day{unavailableDateCount === 1 ? "" : "s"}
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 text-[11px] text-amber-700 font-semibold">
+              <Clock className="h-3.5 w-3.5" />
+              Minimum booking: {minBookingDays} day{minBookingDays === 1 ? "" : "s"}
+            </div>
           </div>
           
           <div className="flex items-center gap-2">
@@ -616,123 +703,293 @@ const GuidePackageBookingModal = ({
     }
   }, [isOpen, service?.service_id]);
 
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
+
+  const serviceMinBookingDays = useMemo(
+    () => Math.max(1, Number(service?.min_booking_days || 1)),
+    [service?.min_booking_days]
+  );
+
+  const minimumStartDateKey = useMemo(() => getMinimumGuideStartDateKey(), []);
+
+  const blockedDateKeys = useMemo(() => {
+    const bookedDates = Array.isArray(service?.booked_dates) ? service.booked_dates : [];
+    const manualUnavailableDates = Array.isArray(service?.manual_unavailable_dates)
+      ? service.manual_unavailable_dates
+      : [];
+
+    return Array.from(
+      new Set(
+        [...bookedDates, ...manualUnavailableDates]
+          .map((value) => toDateKey(value))
+          .filter(Boolean)
+      )
+    ).sort();
+  }, [service?.booked_dates, service?.manual_unavailable_dates]);
+
+  const blockedDateSet = useMemo(() => new Set(blockedDateKeys), [blockedDateKeys]);
+
+  const minimumEndDateKey = useMemo(() => {
+    if (form.start_date) return addDaysToDateKey(form.start_date, serviceMinBookingDays) || "";
+    return addDaysToDateKey(minimumStartDateKey, serviceMinBookingDays) || "";
+  }, [form.start_date, minimumStartDateKey, serviceMinBookingDays]);
+
+  const bookingTotalDays = useMemo(
+    () => getBookingTotalDays(form.start_date, form.end_date),
+    [form.start_date, form.end_date]
+  );
+
+  const blockedDatesInSelection = useMemo(() => {
+    if (!form.start_date || !form.end_date) return [];
+    return buildDateRangeKeys(form.start_date, form.end_date).filter((dateKey) =>
+      blockedDateSet.has(dateKey)
+    );
+  }, [form.start_date, form.end_date, blockedDateSet]);
+
+  const startDateTooSoon = Boolean(form.start_date) && form.start_date < minimumStartDateKey;
+  const endDateInvalid = Boolean(form.start_date && form.end_date) && form.end_date <= form.start_date;
+  const minimumDurationNotMet =
+    Boolean(form.start_date && form.end_date) && bookingTotalDays < serviceMinBookingDays;
+
+  const availabilityValidationMessage = startDateTooSoon
+    ? `Please choose a start date on or after ${minimumStartDateKey}.`
+    : endDateInvalid
+      ? "End date must be after start date."
+      : minimumDurationNotMet
+        ? `This package requires at least ${serviceMinBookingDays} booking day(s).`
+      : blockedDatesInSelection.length > 0
+        ? `Guide is unavailable on ${blockedDatesInSelection[0]}. Please choose a different date range.`
+        : "";
+
   if (!isOpen || !service) return null;
 
+  const paymentOptions = [
+    {
+      key: "esewa",
+      label: "eSewa",
+      description: "Pay in NPR",
+      logo: "/images/esewa.png",
+    },
+    {
+      key: "stripe",
+      label: "Stripe",
+      description: "Card payment (USD)",
+      logo: "/images/stripe.png",
+    },
+  ];
+
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl">
-        <div className="flex items-center justify-between p-6 border-b border-gray-100">
+    <div
+      className="fixed inset-0 z-[80] bg-gradient-to-b from-black/55 via-black/50 to-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5"
+      onClick={() => {
+        if (submitting) return;
+        onClose();
+      }}
+    >
+      <div
+        className="w-full max-w-3xl max-h-[90vh] rounded-3xl border border-white/15 bg-white shadow-[0_30px_90px_rgba(15,23,42,0.4)] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 p-5 sm:p-6 border-b border-gold/20 bg-gradient-to-r from-navy via-navy-light to-navy-light/80">
           <div>
-            <h3 className="text-xl font-bold text-charcoal">Book Guide Package</h3>
-            <p className="text-xs text-gray-500 mt-1">{service.title} · {service.guide_name}</p>
+            <h3 className="text-xl sm:text-2xl font-bold text-white">Book Guide Package</h3>
+            <p className="text-xs sm:text-sm text-gold/90 mt-1">{service.title} · {service.guide_name}</p>
           </div>
-          <button type="button" onClick={onClose} className="p-2 hover:bg-gray-100 rounded-xl transition">
-            <span className="text-lg text-gray-500">×</span>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="p-2 hover:bg-white/20 rounded-xl transition disabled:opacity-60"
+          >
+            <span className="text-lg text-white">×</span>
           </button>
         </div>
 
         <form
           onSubmit={(e) => {
             e.preventDefault();
+
+            if (availabilityValidationMessage) {
+              window.alert(availabilityValidationMessage);
+              return;
+            }
+
             onSubmit({ ...form, service_id: service.service_id });
           }}
-          className="p-6 space-y-4"
+          className="flex-1 min-h-0 flex flex-col"
         >
-          <div className="grid grid-cols-2 gap-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 py-5 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Date</label>
+                <input
+                  type="date"
+                  required
+                  min={minimumStartDateKey}
+                  value={form.start_date}
+                  onChange={(e) => {
+                    const nextStartDate = e.target.value;
+                    setForm((prev) => ({
+                      ...prev,
+                      start_date: nextStartDate,
+                      end_date:
+                        prev.end_date && nextStartDate && prev.end_date <= nextStartDate
+                          ? ""
+                          : prev.end_date,
+                    }));
+                  }}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Date</label>
+                <input
+                  type="date"
+                  required
+                  min={minimumEndDateKey}
+                  value={form.end_date}
+                  onChange={(e) => setForm((prev) => ({ ...prev, end_date: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Participants</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={service.max_group_size || 1}
+                  required
+                  value={form.participants_count}
+                  onChange={(e) => setForm((prev) => ({ ...prev, participants_count: e.target.value }))}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">Max {service.max_group_size} people</p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Contact Phone</label>
+                <input
+                  type="text"
+                  value={form.contact_phone}
+                  onChange={(e) => setForm((prev) => ({ ...prev, contact_phone: e.target.value }))}
+                  placeholder="+977-98XXXXXXXX"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
+                />
+              </div>
+            </div>
+
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Date</label>
-              <input
-                type="date"
-                required
-                value={form.start_date}
-                onChange={(e) => setForm((prev) => ({ ...prev, start_date: e.target.value }))}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Special Requests</label>
+              <textarea
+                rows={3}
+                value={form.special_requests}
+                onChange={(e) => setForm((prev) => ({ ...prev, special_requests: e.target.value }))}
+                placeholder="Fitness level, dietary needs, pace preference, permits, etc."
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl resize-none"
               />
             </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3.5">
+              <p className="text-xs font-semibold text-amber-900">Guide availability policy</p>
+              <p className="text-[11px] text-amber-800 mt-1">
+                Book at least {GUIDE_MIN_ADVANCE_DAYS} day{GUIDE_MIN_ADVANCE_DAYS === 1 ? "" : "s"} in advance.
+                Earliest start date: <span className="font-bold">{minimumStartDateKey}</span>.
+              </p>
+              <p className="text-[11px] text-amber-800 mt-1">
+                This package requires a minimum duration of <span className="font-bold">{serviceMinBookingDays} day{serviceMinBookingDays === 1 ? "" : "s"}</span>.
+              </p>
+              {blockedDateKeys.length > 0 ? (
+                <>
+                  <p className="text-[11px] text-amber-800 mt-2">
+                    This guide is currently unavailable on {blockedDateKeys.length} upcoming day
+                    {blockedDateKeys.length === 1 ? "" : "s"}.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                    {blockedDateKeys.slice(0, 24).map((dateKey) => (
+                      <span
+                        key={dateKey}
+                        className="inline-flex items-center rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-800"
+                      >
+                        {dateKey}
+                      </span>
+                    ))}
+                    {blockedDateKeys.length > 24 && (
+                      <span className="inline-flex items-center rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                        +{blockedDateKeys.length - 24} more
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-[11px] text-amber-800 mt-2">
+                  No unavailable dates are currently marked by this guide.
+                </p>
+              )}
+            </div>
+
+            {availabilityValidationMessage && (
+              <p className="text-xs font-semibold text-red-600">{availabilityValidationMessage}</p>
+            )}
+
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Date</label>
-              <input
-                type="date"
-                required
-                value={form.end_date}
-                onChange={(e) => setForm((prev) => ({ ...prev, end_date: e.target.value }))}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
-              />
+              <p className="text-sm font-semibold text-gray-700 mb-2">Payment Method</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {paymentOptions.map((option) => {
+                  const isActive = paymentMethod === option.key;
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => setPaymentMethod(option.key)}
+                      className={`rounded-2xl border px-3 py-3 text-left transition-all ${isActive ? "border-gold bg-gradient-to-r from-gold-pale to-amber-50 shadow-sm" : "border-stone-200 bg-white hover:border-gold/40 hover:bg-stone-50"}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={option.logo}
+                          alt={`${option.label} logo`}
+                          className="h-8 w-14 object-contain"
+                        />
+                        <div>
+                          <p className={`text-sm font-bold ${isActive ? "text-gold-dark" : "text-gray-700"}`}>{option.label}</p>
+                          <p className="text-xs text-gray-500">{option.description}</p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Participants</label>
-              <input
-                type="number"
-                min="1"
-                max={service.max_group_size || 1}
-                required
-                value={form.participants_count}
-                onChange={(e) => setForm((prev) => ({ ...prev, participants_count: e.target.value }))}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
-              />
-              <p className="text-[11px] text-gray-400 mt-1">Max {service.max_group_size} people</p>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Contact Phone</label>
-              <input
-                type="text"
-                value={form.contact_phone}
-                onChange={(e) => setForm((prev) => ({ ...prev, contact_phone: e.target.value }))}
-                placeholder="+977-98XXXXXXXX"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5">Special Requests</label>
-            <textarea
-              rows={3}
-              value={form.special_requests}
-              onChange={(e) => setForm((prev) => ({ ...prev, special_requests: e.target.value }))}
-              placeholder="Fitness level, dietary needs, pace preference, permits, etc."
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl resize-none"
-            />
-          </div>
-
-          <div>
-            <p className="text-sm font-semibold text-gray-700 mb-1.5">Payment Method</p>
-            <div className="grid grid-cols-2 gap-3">
+          <div className="border-t border-stone-200 px-5 sm:px-6 py-4 bg-white/90">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button
                 type="button"
-                onClick={() => setPaymentMethod("esewa")}
-                className={`px-4 py-2.5 border rounded-xl text-sm font-semibold ${paymentMethod === "esewa" ? "border-gold bg-gold-pale text-gold-dark" : "border-gray-200 text-gray-600"}`}
+                onClick={onClose}
+                disabled={submitting}
+                className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-gray-700 font-semibold disabled:opacity-70"
               >
-                eSewa
+                Cancel
               </button>
               <button
-                type="button"
-                onClick={() => setPaymentMethod("stripe")}
-                className={`px-4 py-2.5 border rounded-xl text-sm font-semibold ${paymentMethod === "stripe" ? "border-gold bg-gold-pale text-gold-dark" : "border-gray-200 text-gray-600"}`}
+                type="submit"
+                disabled={submitting || Boolean(availabilityValidationMessage)}
+                className="flex-1 px-4 py-2.5 bg-charcoal text-white rounded-xl font-semibold hover:bg-black disabled:opacity-70"
               >
-                Stripe
+                {submitting ? `Redirecting to ${paymentMethod === "stripe" ? "Stripe" : "eSewa"}...` : `Pay with ${paymentMethod === "stripe" ? "Stripe" : "eSewa"}`}
               </button>
             </div>
-          </div>
-
-          <div className="flex gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-gray-700 font-semibold"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="flex-1 px-4 py-2.5 bg-charcoal text-white rounded-xl font-semibold hover:bg-black disabled:opacity-70"
-            >
-              {submitting ? "Redirecting..." : "Proceed to Payment"}
-            </button>
           </div>
         </form>
       </div>

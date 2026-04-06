@@ -32,9 +32,11 @@ import {
   AlertTriangle,
   Upload,
   XCircle,
+  MessageCircle,
 } from "lucide-react";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
+import GuideBookingChatModal from "../components/GuideBookingChatModal";
 import { useAuth } from "../context/AuthContext";
 import { getToken } from "../tokenStore";
 
@@ -182,6 +184,8 @@ const GuideDashboard = () => {
   const [availabilityNotice, setAvailabilityNotice] = useState(null);
   const [updatingAvailabilityDate, setUpdatingAvailabilityDate] = useState(null);
   const [selectedAvailabilityDateKey, setSelectedAvailabilityDateKey] = useState(null);
+  const [chatModalOpen, setChatModalOpen] = useState(false);
+  const [activeChatBooking, setActiveChatBooking] = useState(null);
 
   const profileImageUrl = user?.profile_image_path
     ? (String(user.profile_image_path).startsWith("http")
@@ -233,6 +237,17 @@ const GuideDashboard = () => {
   ]
     .sort((a, b) => a.dateKey.localeCompare(b.dateKey))
     .slice(0, 45);
+
+  const pendingGuideBookings = guideBookings.filter(
+    (booking) => String(booking.status || "").toLowerCase() === "pending"
+  ).length;
+  const sidebarTabs = [
+    { id: "trails", label: "My Trails", icon: Mountain, count: myTrails.length },
+    { id: "services", label: "My Services", icon: Package, count: services.length },
+    { id: "bookings", label: "Bookings", icon: Users, count: pendingGuideBookings || guideBookings.length || null },
+    { id: "availability", label: "Availability", icon: Calendar, count: upcomingStatusRows.length || null },
+    { id: "reviews", label: "Reviews", icon: Star, count: reviews.length || null },
+  ];
 
   useEffect(() => {
     if (!availabilityNotice) return;
@@ -433,6 +448,16 @@ const GuideDashboard = () => {
     }
   };
 
+  const openGuideBookingChat = (booking) => {
+    setActiveChatBooking(booking);
+    setChatModalOpen(true);
+  };
+
+  const closeGuideBookingChat = () => {
+    setChatModalOpen(false);
+    setActiveChatBooking(null);
+  };
+
   // --- AVAILABILITY ---
   const handleAvailabilityDaySelect = (date) => {
     if (!date) return;
@@ -512,10 +537,13 @@ const GuideDashboard = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#f4f2ee] via-[#faf8f4] to-[#f2efe8] flex">
       {/* Sidebar */}
-      <aside className="hidden lg:flex flex-col w-72 bg-gradient-to-b from-navy to-navy-dark text-white border-r border-navy-light/40 fixed inset-y-0 shadow-[0_12px_28px_rgba(8,26,47,0.35)]">
-        <div className="px-6 py-5 border-b border-white/10 flex items-center gap-3">
-          <div className="relative w-10 h-10 rounded-full overflow-hidden">
-            <div className="absolute inset-0 rounded-full bg-gradient-to-br from-gold/40 via-gold/20 to-gold/40 p-[2px]">
+      <aside className="hidden lg:flex fixed inset-y-0 w-72 flex-col overflow-hidden border-r border-white/10 bg-[radial-gradient(circle_at_top,_rgba(212,163,74,0.12),transparent_44%),linear-gradient(180deg,#0f335d_0%,#092747_42%,#061a33_100%)] text-white shadow-[0_20px_40px_rgba(2,10,23,0.45)]">
+        <div className="pointer-events-none absolute -left-10 top-16 h-44 w-44 rounded-full bg-gold/20 blur-3xl" />
+        <div className="pointer-events-none absolute right-0 top-1/3 h-36 w-36 rounded-full bg-blue-300/10 blur-3xl" />
+
+        <div className="relative z-10 px-6 py-6 border-b border-white/10 flex items-center gap-3">
+          <div className="relative h-11 w-11 rounded-full overflow-hidden">
+            <div className="absolute inset-0 rounded-full bg-gradient-to-br from-gold/70 via-gold/35 to-gold/70 p-[2px]">
               <div className="h-full w-full rounded-full bg-white p-0.5">
                 <img
                   src="/offtrail-latest.png"
@@ -526,60 +554,101 @@ const GuideDashboard = () => {
             </div>
           </div>
           <div>
-            <p className="text-white font-bold text-sm leading-none">OffTrailNepal</p>
-            <p className="text-gold/80 text-xs mt-0.5 uppercase tracking-wide">Guide Console</p>
+            <p className="text-white font-bold text-[18px] leading-none tracking-tight">OffTrailNepal</p>
+            <p className="text-gold/85 text-[11px] mt-1 uppercase tracking-[0.18em] font-semibold">Guide Console</p>
           </div>
         </div>
 
-        <nav className="flex-1 px-3 py-5 space-y-1">
-          <p className="px-3 mb-2 text-xs font-semibold text-gold/70 uppercase tracking-widest">Management</p>
-          {[
-            { id: "trails", label: "My Trails", icon: Mountain },
-            { id: "services", label: "My Services", icon: Package },
-            { id: "bookings", label: "Bookings", icon: Users },
-            { id: "availability", label: "Availability", icon: Calendar },
-            { id: "reviews", label: "Reviews", icon: Star }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${activeTab === tab.id
-                  ? "bg-gold text-navy font-semibold shadow-[0_8px_18px_rgba(200,147,42,0.35)]"
-                  : "text-white/80 hover:bg-white/10 hover:text-white"
-                }`}
-            >
-              <tab.icon className="h-4 w-4" />
-              {tab.label}
-            </button>
-          ))}
+        <nav className="relative z-10 flex-1 px-4 py-6">
+          <p className="px-3 mb-3 text-[11px] font-bold text-gold/75 uppercase tracking-[0.16em]">Management</p>
+          <div className="space-y-1.5">
+            {sidebarTabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`group relative w-full overflow-hidden rounded-2xl px-3 py-2.5 text-sm transition-all duration-300 ${
+                    isActive
+                      ? "bg-gradient-to-r from-gold via-[#d4a34a] to-[#b8842c] text-navy shadow-[0_10px_22px_rgba(212,163,74,0.42)]"
+                      : "text-white/85 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`inline-flex h-8 w-8 items-center justify-center rounded-xl border ${
+                      isActive
+                        ? "border-navy/20 bg-white/30 text-navy"
+                        : "border-white/20 bg-white/5 text-white/85 group-hover:border-white/35"
+                    }`}>
+                      <tab.icon className="h-4 w-4" />
+                    </span>
+                    <span className="font-semibold">{tab.label}</span>
+                    {tab.count ? (
+                      <span className={`ml-auto inline-flex min-w-[1.45rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                        isActive ? "bg-navy/20 text-navy" : "bg-white/15 text-white"
+                      }`}>
+                        {tab.count}
+                      </span>
+                    ) : null}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </nav>
 
-        <div className="px-4 py-4 border-t border-white/10 bg-navy-dark/40">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center text-navy font-bold text-sm">
-              {profileImageUrl ? (
-                <img src={profileImageUrl} alt={user?.full_name || "Guide"} className="h-full w-full object-cover" />
-              ) : (
-                <span>{user?.full_name?.charAt(0) || "G"}</span>
-              )}
-            </div>
-            <div className="min-w-0">
-              <p className="text-white text-sm font-semibold truncate">{user?.full_name}</p>
-              <p className="text-white/60 text-xs">Trekking Guide</p>
+        <div className="relative z-10 border-t border-white/10 bg-black/20 px-4 py-4 backdrop-blur-sm">
+          <div className="mb-3 rounded-2xl border border-white/15 bg-white/5 p-3">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full overflow-hidden bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center text-navy font-bold text-sm ring-2 ring-gold/25">
+                {profileImageUrl ? (
+                  <img src={profileImageUrl} alt={user?.full_name || "Guide"} className="h-full w-full object-cover" />
+                ) : (
+                  <span>{user?.full_name?.charAt(0) || "G"}</span>
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-white">{user?.full_name}</p>
+                <p className="text-[11px] text-white/65 uppercase tracking-wide">Trekking Guide</p>
+              </div>
             </div>
           </div>
-          <Link
-            to="/guide-profile"
-            className="w-full mb-2 flex items-center justify-center gap-2 px-4 py-2 bg-gold/15 hover:bg-gold/25 border border-gold/40 text-gold-100 rounded-xl text-sm font-medium transition-colors"
-          >
-            My Profile
-          </Link>
-          <button
-            onClick={() => setShowLogoutModal(true)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-500/15 hover:bg-red-500/25 border border-red-300/30 text-red-100 rounded-xl text-sm font-medium transition-colors"
-          >
-            <LogOut className="h-4 w-4" /> Sign Out
-          </button>
+
+          <div className="rounded-2xl border border-white/15 bg-white/[0.04] p-2">
+            <Link
+              to="/guide-profile"
+              className="group flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-semibold text-white/90 transition hover:bg-white/8"
+            >
+              <span className="inline-flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-gold/85" />
+                My Profile
+              </span>
+              <span className="text-[10px] uppercase tracking-wide text-white/45 transition group-hover:text-gold/85">Open</span>
+            </Link>
+
+            <Link
+              to="/chats"
+              className="group mt-1 flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-semibold text-white/90 transition hover:bg-white/8"
+            >
+              <span className="inline-flex items-center gap-2">
+                <MessageCircle className="h-4 w-4 text-blue-200" />
+                Chats
+              </span>
+              <span className="text-[10px] uppercase tracking-wide text-white/45 transition group-hover:text-blue-200">Open</span>
+            </Link>
+
+            <button
+              onClick={() => setShowLogoutModal(true)}
+              className="group mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm font-semibold text-red-100 transition hover:bg-red-500/12"
+            >
+              <span className="inline-flex items-center gap-2">
+                <LogOut className="h-4 w-4" />
+                Sign Out
+              </span>
+              <span className="text-[10px] uppercase tracking-wide text-red-100/60 transition group-hover:text-red-100">Exit</span>
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -594,6 +663,13 @@ const GuideDashboard = () => {
               <Home className="h-3.5 w-3.5" />
               Back to Home
             </button>
+            <Link
+              to="/chats"
+              className="mb-2 ml-2 hidden sm:inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              Chats
+            </Link>
             <h1 className="text-charcoal font-bold text-xl tracking-tight capitalize">
               {activeTab === 'trails' ? 'My Trail Assignments' : activeTab}
             </h1>
@@ -602,6 +678,7 @@ const GuideDashboard = () => {
 
           <div className="lg:hidden flex gap-2">
             {[
+              { id: "chats", icon: MessageCircle },
               { id: "trails", icon: Mountain },
               { id: "services", icon: Package },
               { id: "bookings", icon: Users },
@@ -610,7 +687,13 @@ const GuideDashboard = () => {
             ].map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  if (tab.id === "chats") {
+                    navigate("/chats");
+                    return;
+                  }
+                  setActiveTab(tab.id);
+                }}
                 className={`p-2 rounded-xl transition active:scale-95 ${activeTab === tab.id ? "bg-navy/10 text-navy" : "text-gray-400 hover:bg-white"}`}
               >
                 <tab.icon className="h-5 w-5" />
@@ -819,6 +902,9 @@ const GuideDashboard = () => {
                             </div>
                             <div className="flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-navy/5 px-2.5 py-1 rounded-lg border border-navy/10">
                               <Users className="h-3.5 w-3.5" /> Up to {s.max_group_size}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs font-medium text-gray-600 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                              <Clock className="h-3.5 w-3.5" /> Min {Math.max(1, Number(s.min_booking_days || 1))} day{Math.max(1, Number(s.min_booking_days || 1)) === 1 ? "" : "s"}
                             </div>
                           </div>
 
@@ -1096,10 +1182,12 @@ const GuideDashboard = () => {
                   <div className="space-y-3">
                     {guideBookings.map((booking) => {
                       const bookingStatus = String(booking.status || "").toLowerCase();
+                      const paymentStatus = String(booking.payment_status || "").toLowerCase();
                       const refundStatus = String(booking.refund_status || "").toLowerCase();
                       const isPending = bookingStatus === "pending";
                       const isConfirmed = bookingStatus === "confirmed";
                       const isLocked = ["refund_requested", "refunded", "rejected", "expired"].includes(bookingStatus) || ["processing", "refunded"].includes(refundStatus);
+                      const canChat = ["success", "refund_requested", "refunded"].includes(paymentStatus) && !["rejected", "expired"].includes(bookingStatus);
 
                       return (
                         <div key={booking.booking_id} className="rounded-2xl border border-navy/10 bg-white p-4 shadow-[0_8px_20px_rgba(12,35,64,0.05)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(12,35,64,0.12)]">
@@ -1175,6 +1263,19 @@ const GuideDashboard = () => {
                                   Cancel
                                 </button>
                               )}
+                            </div>
+                          )}
+
+                          {canChat && (
+                            <div className="mt-3">
+                              <button
+                                type="button"
+                                onClick={() => openGuideBookingChat(booking)}
+                                className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-100 active:scale-[0.98]"
+                              >
+                                <MessageCircle className="h-3.5 w-3.5" />
+                                Chat With Tourist
+                              </button>
                             </div>
                           )}
                         </div>
@@ -1262,6 +1363,13 @@ const GuideDashboard = () => {
         />
       )}
 
+      <GuideBookingChatModal
+        isOpen={chatModalOpen}
+        onClose={closeGuideBookingChat}
+        booking={activeChatBooking}
+        currentRole="guide"
+      />
+
       <LogoutModal isOpen={showLogoutModal} onConfirm={handleLogout} onCancel={handleStayLoggedIn} />
     </div>
   );
@@ -1323,6 +1431,7 @@ const ServiceForm = ({ myTrails, onSubmit, onCancel, initialData, isSubmitting }
     description: initialData?.description || "",
     price_per_day: initialData?.price_per_day || "",
     max_group_size: initialData?.max_group_size || 1,
+    min_booking_days: initialData?.min_booking_days || 1,
   });
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
@@ -1350,7 +1459,7 @@ const ServiceForm = ({ myTrails, onSubmit, onCancel, initialData, isSubmitting }
             <input type="text" name="title" value={form.title} onChange={handleChange} required placeholder="e.g. Photography Trek" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-navy/40" />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Daily Price (NPR)</label>
               <input type="number" name="price_per_day" value={form.price_per_day} onChange={handleChange} required className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-navy/40" />
@@ -1358,6 +1467,10 @@ const ServiceForm = ({ myTrails, onSubmit, onCancel, initialData, isSubmitting }
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">Max Group Size</label>
               <input type="number" name="max_group_size" value={form.max_group_size} onChange={handleChange} required min="1" max="15" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-navy/40" />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1.5">Minimum Booking Days</label>
+              <input type="number" name="min_booking_days" value={form.min_booking_days} onChange={handleChange} required min="1" max="60" className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-navy/40" />
             </div>
           </div>
 

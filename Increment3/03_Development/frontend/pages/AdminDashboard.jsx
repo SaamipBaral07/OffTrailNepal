@@ -127,6 +127,11 @@ const AdminDashboard = () => {
     gatewayRefundReference: "",
     error: "",
   });
+  const [paymentDetailsModal, setPaymentDetailsModal] = useState({
+    open: false,
+    record: null,
+    bookingType: "homestay",
+  });
 
   useEffect(() => {
     if (loading) return;
@@ -212,6 +217,22 @@ const AdminDashboard = () => {
       note: "",
       gatewayRefundReference: "",
       error: "",
+    });
+  };
+
+  const openPaymentDetailsModal = (record, bookingType = "homestay") => {
+    setPaymentDetailsModal({
+      open: true,
+      record,
+      bookingType,
+    });
+  };
+
+  const closePaymentDetailsModal = () => {
+    setPaymentDetailsModal({
+      open: false,
+      record: null,
+      bookingType: "homestay",
     });
   };
 
@@ -343,6 +364,34 @@ const AdminDashboard = () => {
       </div>
     );
 
+  const normalizeRefundStatus = (record) => {
+    const paymentStatus = String(record?.payment_status || "").trim().toLowerCase();
+    return String(
+      record?.refund_status ||
+        (paymentStatus === "refund_requested"
+          ? "requested"
+          : paymentStatus === "refunded"
+            ? "processed"
+            : "")
+    )
+      .trim()
+      .toLowerCase();
+  };
+
+  const formatDateTime = (value) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleString();
+  };
+
+  const compactReference = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "-";
+    if (raw.length <= 26) return raw;
+    return `${raw.slice(0, 12)}...${raw.slice(-10)}`;
+  };
+
   // Homestay Metrics
   const pendingHomestays = homestaysAdmin.filter((h) => h.verified_status === "pending").length;
   const approvedHomestays = homestaysAdmin.filter((h) => h.verified_status === "approved").length;
@@ -353,16 +402,26 @@ const AdminDashboard = () => {
   const approvedGuides = guidesAdmin.filter((g) => g.verification_status === "approved").length;
   const rejectedGuides = guidesAdmin.filter((g) => g.verification_status === "rejected").length;
 
-  // Payment Metrics
-  const allPaymentRecords = [...paymentRecords, ...guidePaymentRecords];
-  const successfulPayments = allPaymentRecords.filter(record => String(record.payment_status || "").trim().toLowerCase() === "success").length;
-  const pendingRefunds = allPaymentRecords.filter(record => {
-    const paymentStatus = String(record.payment_status || "").trim().toLowerCase();
-    const computedRefundStatus = String(record.refund_status || (paymentStatus === "refund_requested" ? "requested" : paymentStatus === "refunded" ? "processed" : "")).trim().toLowerCase();
-    return computedRefundStatus === "requested";
-  }).length;
-  const totalRevenue = allPaymentRecords
-    .filter(record => String(record.payment_status || "").trim().toLowerCase() === "success")
+  // Homestay Payment Metrics
+  const homestaySuccessfulPayments = paymentRecords.filter(
+    (record) => String(record.payment_status || "").trim().toLowerCase() === "success"
+  ).length;
+  const homestayPendingRefunds = paymentRecords.filter((record) =>
+    ["requested", "processing"].includes(normalizeRefundStatus(record))
+  ).length;
+  const homestayRevenue = paymentRecords
+    .filter((record) => String(record.payment_status || "").trim().toLowerCase() === "success")
+    .reduce((sum, record) => sum + Number(record.total_amount || 0), 0);
+
+  // Guide Payment Metrics
+  const guideSuccessfulPayments = guidePaymentRecords.filter(
+    (record) => String(record.payment_status || "").trim().toLowerCase() === "success"
+  ).length;
+  const guidePendingRefunds = guidePaymentRecords.filter((record) =>
+    ["requested", "processing"].includes(normalizeRefundStatus(record))
+  ).length;
+  const guideRevenue = guidePaymentRecords
+    .filter((record) => String(record.payment_status || "").trim().toLowerCase() === "success")
     .reduce((sum, record) => sum + Number(record.total_amount || 0), 0);
 
   return (
@@ -395,7 +454,8 @@ const AdminDashboard = () => {
             { id: "trails", icon: Mountain, label: "Trekking Trails", count: trails.length },
             { id: "homestays", icon: Home, label: "Homestay Approvals", count: pendingHomestays > 0 ? pendingHomestays : null, countType: "alert" },
             { id: "guides", icon: Compass, label: "Guides Management" },
-            { id: "payments", icon: CreditCard, label: "Booking Payments" },
+            { id: "homestay-payments", icon: CreditCard, label: "Homestay Payments", count: homestayPendingRefunds > 0 ? homestayPendingRefunds : null, countType: "alert" },
+            { id: "guide-payments", icon: Briefcase, label: "Guide Payments", count: guidePendingRefunds > 0 ? guidePendingRefunds : null, countType: "alert" },
           ].map((item) => (
             <button
               key={item.id}
@@ -458,7 +518,8 @@ const AdminDashboard = () => {
               {activeTab === "trails" && "Trail Management"}
               {activeTab === "homestays" && "Homestay Approvals"}
               {activeTab === "guides" && "Guides Management"}
-              {activeTab === "payments" && "Booking Payments"}
+              {activeTab === "homestay-payments" && "Homestay Booking Payments"}
+              {activeTab === "guide-payments" && "Guide Booking Payments"}
             </h1>
             <p className="text-gray-500 text-sm mt-1 font-medium">
               {new Date().toLocaleDateString("en-US", {
@@ -480,7 +541,8 @@ const AdminDashboard = () => {
                 { id: "trails", icon: Mountain },
                 { id: "homestays", icon: Home, count: pendingHomestays },
                 { id: "guides", icon: Compass },
-                { id: "payments", icon: CreditCard },
+                { id: "homestay-payments", icon: CreditCard, count: homestayPendingRefunds },
+                { id: "guide-payments", icon: Briefcase, count: guidePendingRefunds },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -537,13 +599,21 @@ const AdminDashboard = () => {
               </>
             )}
 
-            {activeTab === "payments" && (
+            {activeTab === "homestay-payments" && (
               <>
                 <StatCard icon={CreditCard} label="Payment Sessions" value={paymentRecords.length} accent="navy" delay={0.1} />
-                <StatCard icon={Compass} label="Guide Sessions" value={guidePaymentRecords.length} accent="alpine" delay={0.2} />
-                <StatCard icon={CheckCircle} label="Successful" value={successfulPayments} accent="alpine" delay={0.2} />
-                <StatCard icon={DollarSign} label="Total Volume" value={`Rs. ${totalRevenue.toLocaleString()}`} accent="gold" delay={0.3} />
-                <StatCard icon={TrendingUp} label="Refund Requests" value={pendingRefunds} accent="charcoal" delay={0.4} />
+                <StatCard icon={CheckCircle} label="Successful" value={homestaySuccessfulPayments} accent="alpine" delay={0.2} />
+                <StatCard icon={TrendingUp} label="Refund Queue" value={homestayPendingRefunds} accent="charcoal" delay={0.3} />
+                <StatCard icon={DollarSign} label="Settled Volume" value={`NPR ${homestayRevenue.toLocaleString()}`} accent="gold" delay={0.4} />
+              </>
+            )}
+
+            {activeTab === "guide-payments" && (
+              <>
+                <StatCard icon={Briefcase} label="Guide Sessions" value={guidePaymentRecords.length} accent="navy" delay={0.1} />
+                <StatCard icon={CheckCircle} label="Successful" value={guideSuccessfulPayments} accent="alpine" delay={0.2} />
+                <StatCard icon={TrendingUp} label="Refund Queue" value={guidePendingRefunds} accent="charcoal" delay={0.3} />
+                <StatCard icon={DollarSign} label="Settled Volume" value={`NPR ${guideRevenue.toLocaleString()}`} accent="gold" delay={0.4} />
               </>
             )}
           </div>
@@ -836,164 +906,153 @@ const AdminDashboard = () => {
             </div>
           )}
 
-          {activeTab === "payments" && (
+          {activeTab === "homestay-payments" && (
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-gray-100">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-lg bg-violet-50 border border-violet-100">
                     <CreditCard className="h-4 w-4 text-violet-500" />
                   </div>
                   <div>
-                    <h2 className="text-gray-900 font-semibold text-base">Booking Payments</h2>
-                    <p className="text-gray-400 text-xs">Monitor homestay and guide package payment sessions, statuses, and refunds</p>
+                    <h2 className="text-gray-900 font-semibold text-base">Homestay Booking Payments</h2>
+                    <p className="text-gray-400 text-xs">Track payment lifecycle, booking linkage, and refund review queue for homestays</p>
                   </div>
                 </div>
+                <button
+                  onClick={fetchAdminPayments}
+                  disabled={paymentsLoading}
+                  className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  {paymentsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+                  Refresh
+                </button>
               </div>
 
-              <div className="p-6">
+              <div className="p-6 space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Total Sessions</p>
+                    <p className="mt-1 text-2xl font-bold text-gray-900">{paymentRecords.length}</p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                    <p className="text-xs text-emerald-600 uppercase tracking-wide">Successful</p>
+                    <p className="mt-1 text-2xl font-bold text-emerald-700">{homestaySuccessfulPayments}</p>
+                  </div>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <p className="text-xs text-amber-700 uppercase tracking-wide">Refund Queue</p>
+                    <p className="mt-1 text-2xl font-bold text-amber-700">{homestayPendingRefunds}</p>
+                  </div>
+                  <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                    <p className="text-xs text-blue-600 uppercase tracking-wide">Settled Volume</p>
+                    <p className="mt-1 text-2xl font-bold text-blue-700">NPR {homestayRevenue.toLocaleString()}</p>
+                  </div>
+                </div>
+
                 {paymentsLoading ? (
                   <div className="flex items-center justify-center py-16">
                     <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
                   </div>
                 ) : paymentRecords.length === 0 ? (
-                  <div className="flex flex-col items-center py-20 gap-4">
-                    <div className="w-20 h-20 rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-center">
-                      <CreditCard className="h-10 w-10 text-gray-300" />
+                  <div className="flex flex-col items-center py-16 gap-4 rounded-2xl border border-dashed border-gray-200 bg-gray-50">
+                    <div className="w-16 h-16 rounded-2xl bg-white border border-gray-200 flex items-center justify-center">
+                      <CreditCard className="h-8 w-8 text-gray-300" />
                     </div>
                     <div className="text-center">
-                      <p className="text-gray-700 font-semibold text-lg">No payment records yet</p>
-                      <p className="text-gray-400 text-sm mt-1">Payment attempts will appear here after tourists start checkout.</p>
+                      <p className="text-gray-700 font-semibold">No homestay payment records yet</p>
+                      <p className="text-gray-400 text-sm mt-1">Records appear here after tourists initiate checkout.</p>
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {paymentRecords.map((record) => {
                       const paymentStatus = String(record.payment_status || "").trim().toLowerCase();
-                      const computedRefundStatus = String(
-                        record.refund_status ||
-                          (paymentStatus === "refund_requested"
-                            ? "requested"
-                            : paymentStatus === "refunded"
-                            ? "processed"
-                            : "")
-                      )
-                        .trim()
-                        .toLowerCase();
+                      const computedRefundStatus = normalizeRefundStatus(record);
                       const isRefundPending = ["requested", "processing"].includes(computedRefundStatus);
                       const isBusy = reviewingRefundBookingId === record.booking_id;
 
                       return (
-                        <div key={record.session_id} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
-                          {/* Decorative Left Border based on Payment status */}
-                          <div className={`absolute left-0 top-0 bottom-0 w-1.5 transition-colors ${
-                            paymentStatus === 'success' ? 'bg-emerald-500' :
-                            paymentStatus === 'failed' ? 'bg-red-500' :
-                            paymentStatus === 'refunded' ? 'bg-blue-500' : 'bg-amber-500'
-                          }`} />
-                          
-                          <div className="flex flex-col lg:flex-row justify-between gap-6 ml-2">
-                            {/* Block 1: Tourist & Identity */}
-                            <div className="flex-[2] min-w-0">
-                              <div className="flex items-center gap-4 mb-2">
-                                <div className="w-12 h-12 rounded-full bg-navy/5 flex items-center justify-center text-navy font-bold text-lg shadow-sm border border-navy/10">
-                                  {(record.tourist_name || "A")[0].toUpperCase()}
-                                </div>
-                                <div className="min-w-0">
-                                  <h3 className="font-bold text-gray-900 truncate text-base">{record.tourist_name}</h3>
-                                  <p className="text-sm text-gray-500 truncate flex items-center gap-1.5 mt-0.5">
-                                    <Mail className="h-3 w-3" /> {record.tourist_email}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="mt-4 pl-[4rem]">
-                                <p className="font-mono text-xs text-gray-600 bg-gray-50 inline-block px-2.5 py-1 rounded border border-gray-100 uppercase">
-                                  REF: {record.payment_ref_id || record.transaction_uuid}
-                                </p>
-                                <p className="text-[11px] font-medium text-gray-400 mt-2 flex items-center gap-1">
-                                    <Clock className="w-3.5 h-3.5" /> {new Date(record.payment_initiated_at).toLocaleString()}
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* Block 2: Destination & Booking */}
-                            <div className="flex-[2] py-2 lg:py-0 border-t lg:border-t-0 border-gray-100">
-                              <h4 className="text-sm font-bold text-navy flex items-center gap-2 mb-1.5">
-                                  <Home className="w-4 h-4 text-gold-dark" /> {record.homestay_name}
-                              </h4>
-                              <p className="text-xs font-medium text-gray-500 mb-4">Host: {record.host_name}</p>
-                              
-                              <div>
-                                {record.booking_code ? (
-                                  <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-100 text-blue-700 shadow-sm">
-                                      <span className="font-mono text-xs font-bold">{record.booking_code}</span>
-                                      <span className="w-1 h-1 rounded-full bg-blue-300" />
-                                      <span className="text-xs font-semibold capitalize tracking-wide">{record.booking_status}</span>
-                                  </div>
-                                ) : (
-                                  <span className="text-xs text-gray-400 italic flex items-center gap-1.5 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-                                    <XCircle className="w-3.5 h-3.5 text-gray-300"/> No Booking Created
+                        <div
+                          key={record.session_id}
+                          className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-all duration-200 hover:border-gray-300 hover:shadow-md"
+                        >
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="min-w-0 space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-bold text-gray-900">{record.tourist_name}</p>
+                                {record.booking_code && (
+                                  <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 font-mono text-[11px] font-semibold text-blue-700">
+                                    {record.booking_code}
                                   </span>
                                 )}
                               </div>
+                              <p className="text-xs text-gray-500">{record.tourist_email}</p>
+                              <div className="flex flex-wrap gap-2 text-xs">
+                                <span className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-gray-600">
+                                  Homestay: <span className="font-semibold text-gray-800">{record.homestay_name || "-"}</span>
+                                </span>
+                                <span className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-gray-600">
+                                  Host: <span className="font-semibold text-gray-800">{record.host_name || "-"}</span>
+                                </span>
+                              </div>
+                              <p className="font-mono text-[11px] text-gray-500">
+                                Ref: {compactReference(record.payment_ref_id || record.transaction_uuid)}
+                              </p>
                             </div>
 
-                            {/* Block 3: Payment & Amount */}
-                            <div className="flex-[1.5] flex flex-col justify-center border-t lg:border-t-0 lg:border-l border-gray-100 pt-3 lg:pt-0 lg:pl-6">
-                              <div className="mb-3">
-                                <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-1">
-                                  Amount ({record.payment_provider || "unknown"})
-                                </p>
-                                <p className="text-2xl font-bold text-gray-900 font-heading tracking-tight">
-                                  <span className="text-sm text-gray-400 mr-1 font-body">NPR</span>
-                                  {Number(record.total_amount || 0).toLocaleString()}
-                                </p>
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:min-w-[390px] lg:justify-end">
+                              <div className="text-sm sm:text-right">
+                                <p className="font-bold text-gray-900">NPR {Number(record.total_amount || 0).toLocaleString()}</p>
+                                <p className="mt-1 text-xs capitalize text-gray-500">{record.payment_provider || "unknown"}</p>
+                                <p className="mt-1 text-xs text-gray-500">{formatDateTime(record.payment_initiated_at)}</p>
                               </div>
-                              <div className="flex flex-wrap gap-2">
-                                  <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wider uppercase shadow-sm ${
-                                    paymentStatus === "success"
-                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                      : paymentStatus === "failed"
-                                      ? "bg-red-50 text-red-700 border border-red-200"
+
+                              <div className="flex flex-wrap gap-1.5 sm:max-w-[220px] sm:justify-end">
+                                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                  paymentStatus === "success"
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    : paymentStatus === "failed"
+                                      ? "border-red-200 bg-red-50 text-red-700"
                                       : paymentStatus === "refunded"
-                                      ? "bg-blue-50 text-blue-700 border border-blue-200"
-                                      : "bg-amber-50 text-amber-700 border border-amber-200"
+                                        ? "border-blue-200 bg-blue-50 text-blue-700"
+                                        : "border-amber-200 bg-amber-50 text-amber-700"
+                                }`}>
+                                  {paymentStatus || "unknown"}
+                                </span>
+                                {computedRefundStatus && (
+                                  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                    computedRefundStatus === "processed"
+                                      ? "border-blue-200 bg-blue-50 text-blue-700"
+                                      : computedRefundStatus === "rejected"
+                                        ? "border-red-200 bg-red-50 text-red-700"
+                                        : "border-amber-200 bg-amber-50 text-amber-700"
                                   }`}>
-                                    {paymentStatus || "unknown"}
+                                    Refund {computedRefundStatus}
                                   </span>
-
-                                  {computedRefundStatus && (
-                                     <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wider uppercase shadow-sm ${
-                                      computedRefundStatus === "processed"
-                                        ? "bg-blue-50 text-blue-700 border border-blue-200"
-                                        : computedRefundStatus === "rejected"
-                                        ? "bg-red-50 text-red-700 border border-red-200"
-                                        : "bg-amber-50 text-amber-500 border border-amber-200"
-                                    }`}>
-                                      Refund {computedRefundStatus}
-                                    </span>
-                                  )}
+                                )}
                               </div>
-                            </div>
 
-                            {/* Block 4: Actions */}
-                            <div className="flex flex-col items-center justify-center min-w-[140px] border-t lg:border-t-0 lg:border-l border-gray-100 pt-4 lg:pt-0 lg:pl-6">
-                              {isRefundPending ? (
+                              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                                 <button
-                                  disabled={isBusy}
-                                  onClick={() => openRefundReviewModal(record, "homestay")}
-                                  className="w-full flex flex-col items-center justify-center gap-1 rounded-xl bg-gradient-to-br from-gold to-gold-dark px-4 py-3 text-sm font-bold text-navy hover:shadow-lg focus:ring-2 focus:ring-gold focus:ring-offset-2 hover:scale-[1.02] disabled:opacity-60 disabled:hover:scale-100 transition-all font-body"
+                                  onClick={() => openPaymentDetailsModal(record, "homestay")}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
                                 >
-                                  <div className="flex items-center gap-1.5">
-                                    {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />}
-                                    {computedRefundStatus === "processing" ? "Finalize Refund" : "Review Refund"}
-                                  </div>
-                                  <span className="text-[10px] font-mono text-navy/70 uppercase">NPR {Number(record.refund_requested_amount).toLocaleString()}</span>
+                                  <Eye className="h-3.5 w-3.5" />
+                                  View More
                                 </button>
-                              ) : (
-                                <div className="text-center w-full px-2 py-4 bg-gray-50 rounded-xl border border-gray-100 border-dashed">
-                                  <span className="text-xs text-gray-400 font-medium tracking-wide">No Review<br/>Required</span>
-                                </div>
-                              )}
+
+                                {isRefundPending ? (
+                                  <button
+                                    disabled={isBusy}
+                                    onClick={() => openRefundReviewModal(record, "homestay")}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-br from-gold to-gold-dark px-3 py-1.5 text-xs font-bold text-navy hover:shadow-md disabled:opacity-60"
+                                  >
+                                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
+                                    {computedRefundStatus === "processing" ? "Finalize" : "Review Refund"}
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-gray-400">No action</span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1001,78 +1060,164 @@ const AdminDashboard = () => {
                     })}
                   </div>
                 )}
+              </div>
+            </div>
+          )}
 
-                <div className="mt-10 border-t border-gray-100 pt-8">
-                  <div className="flex items-center gap-3 mb-5">
-                    <div className="p-2 rounded-lg bg-blue-50 border border-blue-100">
-                      <Compass className="h-4 w-4 text-blue-500" />
+          {activeTab === "guide-payments" && (
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-blue-50 border border-blue-100">
+                    <Briefcase className="h-4 w-4 text-blue-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-gray-900 font-semibold text-base">Guide Package Booking Payments</h2>
+                    <p className="text-gray-400 text-xs">Operational view of guide package transactions, booking state, and refund decisions</p>
+                  </div>
+                </div>
+                <button
+                  onClick={fetchAdminGuidePayments}
+                  disabled={guidePaymentsLoading}
+                  className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  {guidePaymentsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+                  Refresh
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Total Sessions</p>
+                    <p className="mt-1 text-2xl font-bold text-gray-900">{guidePaymentRecords.length}</p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                    <p className="text-xs text-emerald-600 uppercase tracking-wide">Successful</p>
+                    <p className="mt-1 text-2xl font-bold text-emerald-700">{guideSuccessfulPayments}</p>
+                  </div>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <p className="text-xs text-amber-700 uppercase tracking-wide">Refund Queue</p>
+                    <p className="mt-1 text-2xl font-bold text-amber-700">{guidePendingRefunds}</p>
+                  </div>
+                  <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                    <p className="text-xs text-blue-600 uppercase tracking-wide">Settled Volume</p>
+                    <p className="mt-1 text-2xl font-bold text-blue-700">NPR {guideRevenue.toLocaleString()}</p>
+                  </div>
+                </div>
+
+                {guidePaymentsLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                  </div>
+                ) : guidePaymentRecords.length === 0 ? (
+                  <div className="flex flex-col items-center py-16 gap-4 rounded-2xl border border-dashed border-gray-200 bg-gray-50">
+                    <div className="w-16 h-16 rounded-2xl bg-white border border-gray-200 flex items-center justify-center">
+                      <Briefcase className="h-8 w-8 text-gray-300" />
                     </div>
-                    <div>
-                      <h3 className="text-gray-900 font-semibold text-base">Guide Package Payments</h3>
-                      <p className="text-gray-400 text-xs">Admin review queue for guide package refunds</p>
+                    <div className="text-center">
+                      <p className="text-gray-700 font-semibold">No guide payment records yet</p>
+                      <p className="text-gray-400 text-sm mt-1">Guide package payment sessions will appear here.</p>
                     </div>
                   </div>
+                ) : (
+                  <div className="space-y-3">
+                    {guidePaymentRecords.map((record) => {
+                      const paymentStatus = String(record.payment_status || "").trim().toLowerCase();
+                      const computedRefundStatus = normalizeRefundStatus(record);
+                      const isRefundPending = ["requested", "processing"].includes(computedRefundStatus);
+                      const isBusy = reviewingRefundBookingId === record.booking_id;
 
-                  {guidePaymentsLoading ? (
-                    <div className="flex items-center justify-center py-10">
-                      <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
-                    </div>
-                  ) : guidePaymentRecords.length === 0 ? (
-                    <div className="rounded-xl border border-gray-100 bg-gray-50 p-5 text-sm text-gray-500">
-                      No guide payment records yet.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {guidePaymentRecords.map((record) => {
-                        const paymentStatus = String(record.payment_status || "").trim().toLowerCase();
-                        const computedRefundStatus = String(
-                          record.refund_status ||
-                            (paymentStatus === "refund_requested"
-                              ? "requested"
-                              : paymentStatus === "refunded"
-                              ? "processed"
-                              : "")
-                        )
-                          .trim()
-                          .toLowerCase();
-                        const isRefundPending = ["requested", "processing"].includes(computedRefundStatus);
-                        const isBusy = reviewingRefundBookingId === record.booking_id;
-
-                        return (
-                          <div key={`guide-${record.session_id}`} className="rounded-xl border border-gray-200 p-4">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div>
-                                <p className="font-semibold text-gray-900">{record.service_title}</p>
-                                <p className="text-xs text-gray-500 mt-1">Tourist: {record.tourist_name} • Guide: {record.guide_name}</p>
-                                <p className="text-xs text-gray-500 mt-1">Ref: {record.payment_ref_id || record.transaction_uuid}</p>
+                      return (
+                        <div
+                          key={`guide-${record.session_id}`}
+                          className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-all duration-200 hover:border-gray-300 hover:shadow-md"
+                        >
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="min-w-0 space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-bold text-gray-900">{record.tourist_name}</p>
+                                {record.booking_code && (
+                                  <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 font-mono text-[11px] font-semibold text-blue-700">
+                                    {record.booking_code}
+                                  </span>
+                                )}
                               </div>
-                              <div className="text-right">
-                                <p className="text-sm font-semibold text-gray-900">NPR {Number(record.total_amount || 0).toLocaleString()}</p>
-                                <p className="text-[11px] text-gray-500 capitalize">{paymentStatus || "unknown"}</p>
+                              <p className="text-xs text-gray-500">{record.tourist_email}</p>
+                              <div className="flex flex-wrap gap-2 text-xs">
+                                <span className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-gray-600">
+                                  Service: <span className="font-semibold text-gray-800">{record.service_title || "-"}</span>
+                                </span>
+                                <span className="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-gray-600">
+                                  Guide: <span className="font-semibold text-gray-800">{record.guide_name || "-"}</span>
+                                </span>
+                              </div>
+                              <p className="font-mono text-[11px] text-gray-500">
+                                Ref: {compactReference(record.payment_ref_id || record.transaction_uuid)}
+                              </p>
+                            </div>
+
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:min-w-[390px] lg:justify-end">
+                              <div className="text-sm sm:text-right">
+                                <p className="font-bold text-gray-900">NPR {Number(record.total_amount || 0).toLocaleString()}</p>
+                                <p className="mt-1 text-xs capitalize text-gray-500">{record.payment_provider || "unknown"}</p>
+                                <p className="mt-1 text-xs text-gray-500">{formatDateTime(record.payment_initiated_at)}</p>
+                              </div>
+
+                              <div className="flex flex-wrap gap-1.5 sm:max-w-[220px] sm:justify-end">
+                                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                  paymentStatus === "success"
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    : paymentStatus === "failed"
+                                      ? "border-red-200 bg-red-50 text-red-700"
+                                      : paymentStatus === "refunded"
+                                        ? "border-blue-200 bg-blue-50 text-blue-700"
+                                        : "border-amber-200 bg-amber-50 text-amber-700"
+                                }`}>
+                                  {paymentStatus || "unknown"}
+                                </span>
                                 {computedRefundStatus && (
-                                  <p className="text-[11px] text-amber-600 capitalize">Refund {computedRefundStatus}</p>
+                                  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                                    computedRefundStatus === "processed"
+                                      ? "border-blue-200 bg-blue-50 text-blue-700"
+                                      : computedRefundStatus === "rejected"
+                                        ? "border-red-200 bg-red-50 text-red-700"
+                                        : "border-amber-200 bg-amber-50 text-amber-700"
+                                  }`}>
+                                    Refund {computedRefundStatus}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                                <button
+                                  onClick={() => openPaymentDetailsModal(record, "guide_package")}
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                  View More
+                                </button>
+
+                                {isRefundPending ? (
+                                  <button
+                                    disabled={isBusy}
+                                    onClick={() => openRefundReviewModal(record, "guide_package")}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-br from-gold to-gold-dark px-3 py-1.5 text-xs font-bold text-navy hover:shadow-md disabled:opacity-60"
+                                  >
+                                    {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
+                                    {computedRefundStatus === "processing" ? "Finalize" : "Review Refund"}
+                                  </button>
+                                ) : (
+                                  <span className="text-xs text-gray-400">No action</span>
                                 )}
                               </div>
                             </div>
-
-                            {isRefundPending && (
-                              <div className="mt-3 flex justify-end">
-                                <button
-                                  disabled={isBusy}
-                                  onClick={() => openRefundReviewModal(record, "guide_package")}
-                                  className="inline-flex items-center gap-1 rounded-lg border border-gold/40 bg-gold/10 px-3 py-1.5 text-xs font-semibold text-navy hover:bg-gold/20 disabled:opacity-60"
-                                >
-                                  {isBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
-                                  {computedRefundStatus === "processing" ? "Finalize Refund" : "Review Refund"}
-                                </button>
-                              </div>
-                            )}
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1228,6 +1373,140 @@ const AdminDashboard = () => {
               >
                 {Boolean(reviewingRefundBookingId) && <Loader2 className="h-4 w-4 animate-spin" />}
                 Process
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {paymentDetailsModal.open && paymentDetailsModal.record && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/40" onClick={closePaymentDetailsModal} />
+          <div className="relative w-full max-w-3xl rounded-2xl border border-gray-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Payment Details</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Booking {paymentDetailsModal.record.booking_code || `#${paymentDetailsModal.record.booking_id}`}
+                </p>
+              </div>
+              <button
+                onClick={closePaymentDetailsModal}
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] overflow-y-auto px-6 py-5">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Tourist</p>
+                  <p className="mt-1 text-sm font-semibold text-gray-800">{paymentDetailsModal.record.tourist_name || "-"}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Tourist Email</p>
+                  <p className="mt-1 break-all text-sm font-semibold text-gray-800">{paymentDetailsModal.record.tourist_email || "-"}</p>
+                </div>
+
+                {paymentDetailsModal.bookingType === "guide_package" ? (
+                  <>
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Service</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-800">{paymentDetailsModal.record.service_title || "-"}</p>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Guide</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-800">{paymentDetailsModal.record.guide_name || "-"}</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Homestay</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-800">{paymentDetailsModal.record.homestay_name || "-"}</p>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Host</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-800">{paymentDetailsModal.record.host_name || "-"}</p>
+                    </div>
+                  </>
+                )}
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Booking Status</p>
+                  <p className="mt-1 text-sm font-semibold capitalize text-gray-800">{paymentDetailsModal.record.booking_status || "-"}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Amount</p>
+                  <p className="mt-1 text-sm font-semibold text-gray-800">
+                    NPR {Number(paymentDetailsModal.record.total_amount || 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Payment Status</p>
+                  <p className="mt-1 text-sm font-semibold capitalize text-gray-800">{paymentDetailsModal.record.payment_status || "-"}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Refund Status</p>
+                  <p className="mt-1 text-sm font-semibold capitalize text-gray-800">{normalizeRefundStatus(paymentDetailsModal.record) || "none"}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Provider</p>
+                  <p className="mt-1 text-sm font-semibold capitalize text-gray-800">{paymentDetailsModal.record.payment_provider || "-"}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Initiated At</p>
+                  <p className="mt-1 text-sm font-semibold text-gray-800">{formatDateTime(paymentDetailsModal.record.payment_initiated_at)}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 sm:col-span-2">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Payment Reference</p>
+                  <p className="mt-1 break-all font-mono text-xs font-semibold text-gray-800">
+                    {paymentDetailsModal.record.payment_ref_id || "-"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 sm:col-span-2">
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500">Transaction UUID</p>
+                  <p className="mt-1 break-all font-mono text-xs font-semibold text-gray-800">
+                    {paymentDetailsModal.record.transaction_uuid || "-"}
+                  </p>
+                </div>
+                {paymentDetailsModal.record.refund_reference && (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 sm:col-span-2">
+                    <p className="text-[11px] uppercase tracking-wide text-gray-500">Refund Reference</p>
+                    <p className="mt-1 break-all font-mono text-xs font-semibold text-gray-800">
+                      {paymentDetailsModal.record.refund_reference}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-gray-100 px-6 py-4">
+              {(() => {
+                const computedRefundStatus = normalizeRefundStatus(paymentDetailsModal.record);
+                const isRefundPending = ["requested", "processing"].includes(computedRefundStatus);
+                if (!isRefundPending) return null;
+
+                return (
+                  <button
+                    onClick={() => {
+                      openRefundReviewModal(paymentDetailsModal.record, paymentDetailsModal.bookingType);
+                      closePaymentDetailsModal();
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-br from-gold to-gold-dark px-3 py-2 text-xs font-bold text-navy hover:shadow-md"
+                  >
+                    <Shield className="h-3.5 w-3.5" />
+                    {computedRefundStatus === "processing" ? "Finalize Refund" : "Review Refund"}
+                  </button>
+                );
+              })()}
+
+              <button
+                onClick={closePaymentDetailsModal}
+                className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                Close
               </button>
             </div>
           </div>

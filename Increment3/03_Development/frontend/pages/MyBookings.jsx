@@ -16,10 +16,12 @@ import {
   FileText,
   Download,
   ExternalLink,
+  MessageCircle,
 } from "lucide-react";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import LogoutModal from "../components/LogoutModal";
+import GuideBookingChatModal from "../components/GuideBookingChatModal";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import { useAuth } from "../context/AuthContext";
 import { getToken } from "../tokenStore";
@@ -65,6 +67,8 @@ const MyBookings = () => {
   const [invoiceLoadingKey, setInvoiceLoadingKey] = useState("");
   const [invoiceDownloading, setInvoiceDownloading] = useState(false);
   const [invoiceData, setInvoiceData] = useState(null);
+  const [chatModalOpen, setChatModalOpen] = useState(false);
+  const [activeChatBooking, setActiveChatBooking] = useState(null);
   const {
     handleLogout,
     handleStayLoggedIn,
@@ -260,6 +264,16 @@ const MyBookings = () => {
     } finally {
       setInvoiceDownloading(false);
     }
+  };
+
+  const openGuideBookingChat = (booking) => {
+    setActiveChatBooking(booking);
+    setChatModalOpen(true);
+  };
+
+  const closeGuideBookingChat = () => {
+    setChatModalOpen(false);
+    setActiveChatBooking(null);
   };
 
   if (loading || loadingBookings) {
@@ -569,6 +583,7 @@ const MyBookings = () => {
                     const isRefunded = bookingStatus === "refunded" || paymentStatus === "refunded";
                     const isRefundProcessing = refundStatus === "processing";
                     const isRefundRejected = refundStatus === "rejected";
+                    const canUseChat = ["success", "refund_requested", "refunded"].includes(paymentStatus) && !["rejected", "expired"].includes(bookingStatus);
 
                     const statusClass = isRefunded
                       ? "border-blue-200 bg-blue-50 text-blue-700"
@@ -637,19 +652,32 @@ const MyBookings = () => {
                         </div>
 
                         {(paymentStatus === "success" || paymentStatus === "refund_requested" || paymentStatus === "refunded") && (
-                          <button
-                            type="button"
-                            onClick={() => openInvoiceModal("guide_package", booking.booking_id)}
-                            disabled={invoiceLoadingKey === `guide_package:${booking.booking_id}`}
-                            className="mt-3 inline-flex items-center gap-2 rounded-xl border border-navy/20 bg-navy/5 px-3.5 py-2 text-xs font-bold text-navy hover:bg-navy/10 disabled:opacity-60"
-                          >
-                            {invoiceLoadingKey === `guide_package:${booking.booking_id}` ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <FileText className="h-3.5 w-3.5" />
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openInvoiceModal("guide_package", booking.booking_id)}
+                              disabled={invoiceLoadingKey === `guide_package:${booking.booking_id}`}
+                              className="inline-flex items-center gap-2 rounded-xl border border-navy/20 bg-navy/5 px-3.5 py-2 text-xs font-bold text-navy hover:bg-navy/10 disabled:opacity-60"
+                            >
+                              {invoiceLoadingKey === `guide_package:${booking.booking_id}` ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <FileText className="h-3.5 w-3.5" />
+                              )}
+                              View Invoice
+                            </button>
+
+                            {canUseChat && (
+                              <button
+                                type="button"
+                                onClick={() => openGuideBookingChat(booking)}
+                                className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"
+                              >
+                                <MessageCircle className="h-3.5 w-3.5" />
+                                Chat With Guide
+                              </button>
                             )}
-                            View Invoice
-                          </button>
+                          </div>
                         )}
 
                         {booking.special_requests && (
@@ -909,6 +937,13 @@ const MyBookings = () => {
           </div>
         </div>
       )}
+
+      <GuideBookingChatModal
+        isOpen={chatModalOpen}
+        onClose={closeGuideBookingChat}
+        booking={activeChatBooking}
+        currentRole="tourist"
+      />
 
       <Footer />
       <LogoutModal isOpen={showLogoutModal} onConfirm={handleLogout} onCancel={handleStayLoggedIn} />

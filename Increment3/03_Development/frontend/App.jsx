@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 
 import LandingPage from "./pages/LandingPage";
+import TrailsPage from "./pages/TrailsPage";
+import HomestaysPage from "./pages/HomestaysPage";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import VerifyEmail from "./pages/VerifyEmail";
@@ -21,6 +23,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentFailed from "./pages/PaymentFailed";
 import InvoicePage from "./pages/InvoicePage";
+import Chats from "./pages/Chats";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -32,6 +35,8 @@ function App() {
 
           {/* Landing Page - visible to all users */}
           <Route path="/" element={<LandingPage />} />
+          <Route path="/trails" element={<TrailsPage />} />
+          <Route path="/homestays" element={<HomestaysPage />} />
 
           {/* Trail Detail - public */}
           <Route path="/trails/:id" element={<TrailDetail />} />
@@ -73,6 +78,15 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["tourist"]}>
                 <InvoicePage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/chats"
+            element={
+              <ProtectedRoute allowedRoles={["tourist", "guide"]}>
+                <Chats />
               </ProtectedRoute>
             }
           />

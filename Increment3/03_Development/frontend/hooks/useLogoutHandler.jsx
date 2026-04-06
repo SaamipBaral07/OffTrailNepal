@@ -7,7 +7,7 @@ import { getCsrfToken } from "../tokenStore";
 export const useLogoutHandler = () => {
   const navigate = useNavigate();
   const { clearAuth } = useAuth();
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [showLogoutModal, setShowLogoutModalState] = useState(false);
   const modalTriggeredRef = useRef(false); // ensures only first back shows modal
   const showLogoutModalRef = useRef(false); // track if modal is currently open
 
@@ -15,6 +15,14 @@ export const useLogoutHandler = () => {
   useEffect(() => {
     showLogoutModalRef.current = showLogoutModal;
   }, [showLogoutModal]);
+
+  // Accept both setter-style calls (true/false) and button handlers (event arg).
+  const setShowLogoutModal = (value = true) => {
+    const nextVisible = typeof value === "boolean" ? value : true;
+    setShowLogoutModalState(nextVisible);
+    showLogoutModalRef.current = nextVisible;
+    modalTriggeredRef.current = nextVisible;
+  };
 
   const doLogout = () => {
     // Cookie sent automatically; server revokes it from DB and clears it
@@ -31,15 +39,12 @@ export const useLogoutHandler = () => {
   const handleLogout = () => {
     doLogout();
     setShowLogoutModal(false);
-    modalTriggeredRef.current = false;
-    showLogoutModalRef.current = false;
     navigate("/", { replace: true });
   };
 
   // Handle canceling logout (staying logged in) - resets modal trigger
   const handleStayLoggedIn = () => {
     setShowLogoutModal(false);
-    modalTriggeredRef.current = false;
     // Re-lock the history state after closing the modal
     window.history.pushState({ isDashboard: true }, "", window.location.pathname);
   };
@@ -47,7 +52,6 @@ export const useLogoutHandler = () => {
   // Handle opening logout modal (from button click)
   const openLogoutModal = () => {
     setShowLogoutModal(true);
-    modalTriggeredRef.current = true;
   };
 
   // Prevent back button navigation - block navigation entirely and show modal once
@@ -70,8 +74,6 @@ export const useLogoutHandler = () => {
 
         // Update refs
         setShowLogoutModal(false);
-        modalTriggeredRef.current = false;
-        showLogoutModalRef.current = false;
 
         // Navigate after clearing auth
         navigate("/", { replace: true });
@@ -80,7 +82,6 @@ export const useLogoutHandler = () => {
 
       if (!modalTriggeredRef.current) {
         // First back click: show modal
-        modalTriggeredRef.current = true;
         setShowLogoutModal(true);
       }
     };
@@ -96,6 +97,7 @@ export const useLogoutHandler = () => {
     handleLogout,
     handleStayLoggedIn,
     showLogoutModal,
-    setShowLogoutModal: openLogoutModal
+    setShowLogoutModal,
+    openLogoutModal,
   };
 };
