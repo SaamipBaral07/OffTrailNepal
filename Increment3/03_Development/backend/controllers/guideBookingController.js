@@ -13,6 +13,11 @@ const GUIDE_APPROVAL_WINDOW_HOURS = Number(process.env.GUIDE_APPROVAL_WINDOW_HOU
 const GUIDE_REFUND_FULL_HOURS = Number(process.env.GUIDE_REFUND_FULL_HOURS || 72);
 const GUIDE_REFUND_PARTIAL_HOURS = Number(process.env.GUIDE_REFUND_PARTIAL_HOURS || 24);
 const GUIDE_REFUND_PARTIAL_RATE = Number(process.env.GUIDE_REFUND_PARTIAL_RATE || 0.5);
+const GUIDE_MIN_ADVANCE_DAYS = Math.max(
+  1,
+  Number.parseInt(process.env.GUIDE_MIN_ADVANCE_DAYS || "2", 10) || 2
+);
+const ACTIVE_GUIDE_BOOKING_STATUSES = ["pending", "confirmed"];
 
 const stripeClient = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 
@@ -380,6 +385,71 @@ const toDateOnly = (date) => {
   return `${year}-${month}-${day}`;
 };
 
+const getTodayUtcDateOnly = () => {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  return today;
+};
+
+const getEarliestGuideStartDate = () => {
+  const earliest = getTodayUtcDateOnly();
+  earliest.setUTCDate(earliest.getUTCDate() + GUIDE_MIN_ADVANCE_DAYS);
+  return earliest;
+};
+
+const getLeadTimeValidationMessage = () => {
+  const earliest = getEarliestGuideStartDate();
+  return `Guide bookings must be made at least ${GUIDE_MIN_ADVANCE_DAYS} day(s) in advance. Earliest start_date is ${toDateOnly(earliest)}.`;
+};
+
+const findGuideDateConflict = async ({ client, guideId, startDate, endDate }) => {
+  const startDateKey = toDateOnly(startDate);
+  const endDateKey = toDateOnly(endDate);
+
+  const overlapResult = await client.query(
+    `SELECT b.booking_id,
+            to_char(b.start_date::date, 'YYYY-MM-DD') AS booked_start_date,
+            to_char(b.end_date::date, 'YYYY-MM-DD') AS booked_end_date
+     FROM guide_package_bookings b
+     WHERE b.guide_id = $1
+       AND b.status = ANY($2::text[])
+       AND daterange(b.start_date::date, b.end_date::date, '[]')
+           && daterange($3::date, $4::date, '[]')
+     ORDER BY b.created_at ASC
+     LIMIT 1`,
+    [guideId, ACTIVE_GUIDE_BOOKING_STATUSES, startDateKey, endDateKey]
+  );
+
+  if (overlapResult.rows.length > 0) {
+    const overlap = overlapResult.rows[0];
+    return {
+      code: "GUIDE_DATE_OVERLAP",
+      message: `Guide is already booked for ${overlap.booked_start_date} to ${overlap.booked_end_date}. Please choose another date range.`,
+    };
+  }
+
+  const unavailableResult = await client.query(
+    `SELECT to_char(ga.available_date::date, 'YYYY-MM-DD') AS unavailable_date
+     FROM guide_availability ga
+     WHERE ga.guide_id = $1
+       AND ga.is_available = false
+       AND ga.available_date BETWEEN $2::date AND $3::date
+     ORDER BY ga.available_date ASC
+     LIMIT 1`,
+    [guideId, startDateKey, endDateKey]
+  );
+
+  if (unavailableResult.rows.length > 0) {
+    const unavailable = unavailableResult.rows[0];
+    return {
+      code: "GUIDE_DATE_UNAVAILABLE",
+      message: `Guide marked ${unavailable.unavailable_date} as unavailable. Please choose another date range.`,
+    };
+  }
+
+  return null;
+};
+
 const createEsewaSignature = ({ totalAmount, transactionUuid, productCode }) => {
   const message = `total_amount=${totalAmount},transaction_uuid=${transactionUuid},product_code=${productCode}`;
   return crypto.createHmac("sha256", ESEWA_SECRET_KEY).update(message).digest("base64");
@@ -481,7 +551,7 @@ const validateGuidePackageDraft = async ({
   participantsCount,
 }) => {
   const result = await client.query(
-    `SELECT gs.service_id, gs.guide_id, gs.trail_id, gs.title, gs.price_per_day, gs.max_group_size,
+    `SELECT gs.service_id, gs.guide_id, gs.trail_id, gs.title, gs.price_per_day, gs.max_group_size, gs.min_booking_days,
             g.full_name AS guide_name, g.phone AS guide_phone
      FROM guide_services gs
      JOIN guides g ON gs.guide_id = g.guide_id
@@ -512,6 +582,39 @@ const validateGuidePackageDraft = async ({
     return { error: "end_date must be after start_date", status: 400 };
   }
 
+  const minBookingDays = Math.max(1, Number.parseInt(service.min_booking_days, 10) || 1);
+  if (totalDays < minBookingDays) {
+    return {
+      error: `This package requires a minimum booking of ${minBookingDays} day(s). Please choose a longer date range.`,
+      status: 400,
+      code: "GUIDE_MIN_PACKAGE_DAYS_NOT_MET",
+    };
+  }
+
+  const earliestGuideStartDate = getEarliestGuideStartDate();
+  if (startDate < earliestGuideStartDate) {
+    return {
+      error: getLeadTimeValidationMessage(),
+      status: 400,
+      code: "GUIDE_MIN_ADVANCE_NOT_MET",
+    };
+  }
+
+  const dateConflict = await findGuideDateConflict({
+    client,
+    guideId: service.guide_id,
+    startDate,
+    endDate,
+  });
+
+  if (dateConflict) {
+    return {
+      error: dateConflict.message,
+      status: 409,
+      code: dateConflict.code,
+    };
+  }
+
   const amount = toMoney(Number(service.price_per_day) * totalDays);
 
   return {
@@ -535,6 +638,15 @@ const createGuideBookingFromPaymentSession = async ({ client, session, touristId
 
   if (startDateParsed.error || endDateParsed.error) {
     return { error: "Invalid booking dates in payment session", status: 400 };
+  }
+
+  const guideLockResult = await client.query(
+    `SELECT guide_id FROM guides WHERE guide_id = $1 FOR UPDATE`,
+    [session.guide_id]
+  );
+
+  if (!guideLockResult.rows.length) {
+    return { error: "Guide is not available for booking", status: 404 };
   }
 
   const draft = await validateGuidePackageDraft({
@@ -630,13 +742,6 @@ export const initiateGuideEsewaPayment = async (req, res) => {
 
     if (firstError) {
       return res.status(400).json({ message: firstError });
-    }
-
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-
-    if (startParsed.value < today) {
-      return res.status(400).json({ message: "start_date cannot be in the past" });
     }
 
     if (endParsed.value <= startParsed.value) {
@@ -781,13 +886,6 @@ export const initiateGuideStripePayment = async (req, res) => {
 
     if (firstError) {
       return res.status(400).json({ message: firstError });
-    }
-
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-
-    if (startParsed.value < today) {
-      return res.status(400).json({ message: "start_date cannot be in the past" });
     }
 
     if (endParsed.value <= startParsed.value) {

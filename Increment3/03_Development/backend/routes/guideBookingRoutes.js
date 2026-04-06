@@ -18,6 +18,12 @@ import {
   reviewGuideBookingRefund,
   getGuideBookingTimeline,
 } from "../controllers/guideBookingController.js";
+import {
+  getMyGuideBookingChats,
+  getGuideBookingChatMessagesController,
+  postGuideBookingChatMessageController,
+  markGuideBookingChatReadController,
+} from "../controllers/guideBookingChatController.js";
 
 const router = express.Router();
 
@@ -42,6 +48,13 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+const requireTouristOrGuide = (req, res, next) => {
+  if (req.user.user_type !== "tourist" && req.user.user_type !== "guide") {
+    return res.status(403).json({ message: "Tourist or guide access only" });
+  }
+  next();
+};
+
 router.get("/payment/esewa/success", handleGuideEsewaSuccessCallback);
 router.get("/payment/esewa/failure", handleGuideEsewaFailureCallback);
 router.post("/payment/esewa/success", handleGuideEsewaSuccessCallback);
@@ -56,6 +69,10 @@ router.get("/payment/session/:sessionToken", verifyToken, requireTourist, getGui
 
 router.get("/my", verifyToken, requireTourist, getMyGuideBookings);
 router.get("/guide", verifyToken, requireGuide, getGuideProviderBookings);
+router.get("/chats/my", verifyToken, requireTouristOrGuide, getMyGuideBookingChats);
+router.get("/chats/:bookingId/messages", verifyToken, requireTouristOrGuide, getGuideBookingChatMessagesController);
+router.post("/chats/:bookingId/messages", verifyToken, requireTouristOrGuide, postGuideBookingChatMessageController);
+router.post("/chats/:bookingId/read", verifyToken, requireTouristOrGuide, markGuideBookingChatReadController);
 router.post("/:bookingId/review", verifyToken, requireTourist, submitGuideReview);
 router.get("/:bookingId/timeline", verifyToken, getGuideBookingTimeline);
 router.patch("/:bookingId/status", verifyToken, requireGuide, updateGuideBookingStatus);

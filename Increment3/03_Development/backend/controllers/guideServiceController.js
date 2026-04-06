@@ -1,5 +1,14 @@
 import pool from "../config/db.js";
 
+const ACTIVE_GUIDE_BOOKING_STATUSES = ["pending", "confirmed"];
+
+const parsePositiveInt = (value, fallback = null) => {
+  if (value === undefined || value === null || value === "") return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+};
+
 /* =========================
    CREATE SERVICE
    POST /api/guides/services
@@ -7,7 +16,7 @@ import pool from "../config/db.js";
 export const createService = async (req, res) => {
   try {
     const guideId = req.user.user_id;
-    const { trail_id, title, price_per_day, max_group_size, description } = req.body;
+    const { trail_id, title, price_per_day, max_group_size, min_booking_days, description } = req.body;
 
     const verificationCheck = await pool.query(
       `SELECT verification_status
@@ -29,6 +38,16 @@ export const createService = async (req, res) => {
       });
     }
 
+    const parsedMaxGroupSize = parsePositiveInt(max_group_size, 1);
+    if (!parsedMaxGroupSize) {
+      return res.status(400).json({ message: "max_group_size must be a positive integer" });
+    }
+
+    const parsedMinBookingDays = parsePositiveInt(min_booking_days, 1);
+    if (!parsedMinBookingDays) {
+      return res.status(400).json({ message: "min_booking_days must be a positive integer" });
+    }
+
     // Verify guide is actively assigned to this trail
     const assignmentCheck = await pool.query(
       `SELECT id FROM guide_trails
@@ -45,15 +64,16 @@ export const createService = async (req, res) => {
     // Insert service
     const result = await pool.query(
       `INSERT INTO guide_services
-         (guide_id, trail_id, title, price_per_day, max_group_size, description)
-       VALUES ($1, $2, $3, $4, $5, $6)
+         (guide_id, trail_id, title, price_per_day, max_group_size, min_booking_days, description)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
         guideId,
         trail_id,
         title.trim(),
         parseFloat(price_per_day),
-        max_group_size ? parseInt(max_group_size) : 1,
+        parsedMaxGroupSize,
+        parsedMinBookingDays,
         description || null,
       ]
     );
@@ -109,7 +129,17 @@ export const updateService = async (req, res) => {
   try {
     const { id } = req.params;
     const guideId = req.user.user_id;
-    const { title, price_per_day, max_group_size, description, is_active } = req.body;
+    const { title, price_per_day, max_group_size, min_booking_days, description, is_active } = req.body;
+
+    const parsedMaxGroupSize = parsePositiveInt(max_group_size, undefined);
+    if (max_group_size !== undefined && !parsedMaxGroupSize) {
+      return res.status(400).json({ message: "max_group_size must be a positive integer" });
+    }
+
+    const parsedMinBookingDays = parsePositiveInt(min_booking_days, undefined);
+    if (min_booking_days !== undefined && !parsedMinBookingDays) {
+      return res.status(400).json({ message: "min_booking_days must be a positive integer" });
+    }
 
     // Check ownership
     const ownership = await pool.query(
@@ -126,14 +156,16 @@ export const updateService = async (req, res) => {
         title         = COALESCE($1, title),
         price_per_day = COALESCE($2, price_per_day),
         max_group_size= COALESCE($3, max_group_size),
-        description   = COALESCE($4, description),
-        is_active     = COALESCE($5, is_active),
+        min_booking_days = COALESCE($4, min_booking_days),
+        description   = COALESCE($5, description),
+        is_active     = COALESCE($6, is_active),
         updated_at    = CURRENT_TIMESTAMP
-       WHERE service_id = $6 AND guide_id = $7`,
+       WHERE service_id = $7 AND guide_id = $8`,
       [
         title ? title.trim() : null,
         price_per_day ? parseFloat(price_per_day) : null,
-        max_group_size ? parseInt(max_group_size) : null,
+        parsedMaxGroupSize,
+        parsedMinBookingDays,
         description !== undefined ? (description || null) : null,
         typeof is_active === "boolean" ? is_active : null,
         id,
@@ -236,6 +268,7 @@ export const getPublicServicesByTrail = async (req, res) => {
          gs.title,
          gs.price_per_day,
          gs.max_group_size,
+        gs.min_booking_days,
          gs.description,
          gs.created_at,
          g.guide_id,
@@ -245,7 +278,9 @@ export const getPublicServicesByTrail = async (req, res) => {
          g.license_no,
          gt.experience_level,
          COALESCE(gr.avg_rating, 0) AS avg_rating,
-         COALESCE(gr.total_reviews, 0) AS total_reviews
+         COALESCE(gr.total_reviews, 0) AS total_reviews,
+         COALESCE(ga.manual_unavailable_dates, ARRAY[]::text[]) AS manual_unavailable_dates,
+         COALESCE(gb.booked_dates, ARRAY[]::text[]) AS booked_dates
        FROM guide_services gs
        JOIN guides g         ON gs.guide_id  = g.guide_id
        JOIN guide_trails gt  ON gs.guide_id  = gt.guide_id
@@ -257,12 +292,37 @@ export const getPublicServicesByTrail = async (req, res) => {
          FROM guide_reviews r
          WHERE r.guide_id = g.guide_id
        ) gr ON true
+       LEFT JOIN LATERAL (
+         SELECT ARRAY(
+           SELECT DISTINCT to_char(ga2.available_date::date, 'YYYY-MM-DD')
+           FROM guide_availability ga2
+           WHERE ga2.guide_id = g.guide_id
+             AND ga2.is_available = false
+             AND ga2.available_date >= CURRENT_DATE
+           ORDER BY 1
+         ) AS manual_unavailable_dates
+       ) ga ON true
+       LEFT JOIN LATERAL (
+         SELECT ARRAY(
+           SELECT DISTINCT to_char(day_series::date, 'YYYY-MM-DD')
+           FROM guide_package_bookings b2
+           JOIN LATERAL generate_series(
+             b2.start_date::date,
+             b2.end_date::date,
+             interval '1 day'
+           ) AS day_series ON true
+           WHERE b2.guide_id = g.guide_id
+             AND b2.status = ANY($2::text[])
+             AND b2.end_date >= CURRENT_DATE
+           ORDER BY 1
+         ) AS booked_dates
+       ) gb ON true
        WHERE gs.trail_id = $1
          AND gs.is_active = true
          AND gt.is_active = true
          AND gv.verification_status = 'approved'
        ORDER BY gs.price_per_day ASC`,
-      [trailId]
+      [trailId, ACTIVE_GUIDE_BOOKING_STATUSES]
     );
 
     res.status(200).json({ services: result.rows });

@@ -827,6 +827,150 @@ export const updateHomestayAvailableRooms = async (req, res) => {
 };
 
 /* =========================
+   PUBLIC: GET APPROVED HOMESTAYS (ALL TRAILS)
+========================= */
+export const getPublicHomestays = async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    const region = String(req.query.region || "").trim();
+    const trailIdRaw = Number.parseInt(req.query.trailId, 10);
+    const trailId = Number.isInteger(trailIdRaw) && trailIdRaw > 0 ? trailIdRaw : null;
+    const maxPriceRaw = Number.parseFloat(req.query.maxPrice);
+    const maxPrice = Number.isFinite(maxPriceRaw) && maxPriceRaw > 0 ? maxPriceRaw : null;
+    const minRatingRaw = Number.parseFloat(req.query.minRating);
+    const minRating = Number.isFinite(minRatingRaw) && minRatingRaw >= 0 ? minRatingRaw : null;
+    const sort = String(req.query.sort || "recent").trim();
+
+    const whereClauses = ["h.verified_status = 'approved'", "h.is_active = true"];
+    const values = [];
+
+    if (q) {
+      values.push(`%${q}%`);
+      const idx = values.length;
+      whereClauses.push(`(
+        h.name ILIKE $${idx}
+        OR h.location ILIKE $${idx}
+        OR t.trail_name ILIKE $${idx}
+        OR t.region ILIKE $${idx}
+        OR h.description ILIKE $${idx}
+      )`);
+    }
+
+    if (region) {
+      values.push(region);
+      const idx = values.length;
+      whereClauses.push(`LOWER(t.region) = LOWER($${idx})`);
+    }
+
+    if (trailId) {
+      values.push(trailId);
+      const idx = values.length;
+      whereClauses.push(`h.trail_id = $${idx}`);
+    }
+
+    if (maxPrice !== null) {
+      values.push(maxPrice);
+      const idx = values.length;
+      whereClauses.push(`h.price_per_night <= $${idx}`);
+    }
+
+    if (minRating !== null) {
+      values.push(minRating);
+      const idx = values.length;
+      whereClauses.push(`COALESCE(rs.avg_rating, 0) >= $${idx}`);
+    }
+
+    const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
+    const sortMap = {
+      recent: "h.created_at DESC",
+      price_asc: "h.price_per_night ASC, h.created_at DESC",
+      price_desc: "h.price_per_night DESC, h.created_at DESC",
+      rating_desc: "COALESCE(rs.avg_rating, 0) DESC, rs.total_reviews DESC, h.created_at DESC",
+      rooms_desc: "h.available_rooms DESC, h.created_at DESC",
+      name_asc: "h.name ASC",
+    };
+    const orderSql = sortMap[sort] || sortMap.recent;
+
+    const result = await pool.query(
+      `SELECT h.homestay_id, h.trail_id, h.name, h.location, h.price_per_night, h.capacity,
+              h.description, h.latitude, h.longitude, h.amenities, h.total_rooms, h.available_rooms,
+              h.google_map_iframe_link, h.created_at,
+              t.trail_name, t.region,
+              COALESCE(rs.avg_rating, 0) AS avg_rating,
+              COALESCE(rs.total_reviews, 0) AS total_reviews
+       FROM homestays h
+       JOIN trekking_trails t ON t.trail_id = h.trail_id
+       LEFT JOIN LATERAL (
+         SELECT ROUND(AVG(r.rating)::numeric, 1) AS avg_rating,
+                COUNT(*)::int AS total_reviews
+         FROM homestay_reviews r
+         WHERE r.homestay_id = h.homestay_id
+       ) rs ON TRUE
+       ${whereSql}
+       ORDER BY ${orderSql}
+       LIMIT 300`,
+      values
+    );
+
+    const homestays = result.rows;
+
+    if (homestays.length > 0) {
+      const homestayIds = homestays.map((row) => row.homestay_id);
+      const imagesResult = await pool.query(
+        `SELECT image_id, homestay_id, image_path, is_primary
+         FROM homestay_images
+         WHERE homestay_id = ANY($1::int[])
+         ORDER BY homestay_id ASC, is_primary DESC, uploaded_at ASC`,
+        [homestayIds]
+      );
+
+      const imageMap = new Map();
+      for (const imageRow of imagesResult.rows) {
+        const key = imageRow.homestay_id;
+        if (!imageMap.has(key)) imageMap.set(key, []);
+        imageMap.get(key).push(imageRow);
+      }
+
+      for (const homestay of homestays) {
+        homestay.images = imageMap.get(homestay.homestay_id) || [];
+      }
+    }
+
+    const filtersResult = await pool.query(
+      `SELECT DISTINCT t.region, t.trail_id, t.trail_name
+       FROM homestays h
+       JOIN trekking_trails t ON t.trail_id = h.trail_id
+       WHERE h.verified_status = 'approved' AND h.is_active = true
+       ORDER BY t.region ASC, t.trail_name ASC`
+    );
+
+    const trailMap = new Map();
+    const regions = new Set();
+
+    for (const row of filtersResult.rows) {
+      if (row.region) regions.add(row.region);
+      trailMap.set(row.trail_id, {
+        trail_id: row.trail_id,
+        trail_name: row.trail_name,
+        region: row.region,
+      });
+    }
+
+    return res.status(200).json({
+      homestays,
+      filters: {
+        regions: Array.from(regions),
+        trails: Array.from(trailMap.values()),
+      },
+    });
+  } catch (err) {
+    console.error("Error fetching public homestays list:", err);
+    return res.status(500).json({ message: "Server error fetching homestays" });
+  }
+};
+
+/* =========================
    PUBLIC: GET HOMESTAY DETAIL BY ID
 ========================= */
 export const getPublicHomestayById = async (req, res) => {

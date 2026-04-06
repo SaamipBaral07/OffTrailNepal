@@ -17,6 +17,7 @@ import {
   updateHomestayAvailableRooms,
   getAllHomestaysForAdmin,
   updateHomestayStatus,
+  getPublicHomestays,
   getPublicHomestaysByTrail,
   getPublicHomestayById,
 } from "../controllers/homestayController.js";
@@ -78,6 +79,9 @@ const requireAdmin = (req, res, next) => {
 };
 
 /* ─── PUBLIC ROUTES (no auth) ─── */
+
+// Get all approved active homestays across trails
+router.get("/public", getPublicHomestays);
 
 // Get approved homestays for a specific trail (used on TrailDetail page)
 router.get("/public/trail/:trailId", getPublicHomestaysByTrail);
