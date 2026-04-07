@@ -12,12 +12,15 @@ import {
   ChevronRight,
   Loader2,
   X,
+  Heart,
 } from "lucide-react";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import { useAuth } from "../context/AuthContext";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
+import { useWishlist } from "../hooks/useWishlist";
+import WishlistToggleButton from "../components/wishlist/WishlistToggleButton";
 
 const API = "http://localhost:5000";
 
@@ -48,6 +51,7 @@ const TrailsPage = () => {
   const [sortBy, setSortBy] = useState("recent");
   const [availableRegions, setAvailableRegions] = useState([]);
   const [availableDifficulties, setAvailableDifficulties] = useState([]);
+  const { isTourist, isWishlisted, isUpdating, toggleWishlist } = useWishlist();
 
   useEffect(() => {
     if (authUser) setUser(authUser);
@@ -96,6 +100,17 @@ const TrailsPage = () => {
     setSelectedDifficulty("");
     setMaxDuration("");
     setSortBy("recent");
+  };
+
+  const handleToggleTrailWishlist = async (trailId) => {
+    const result = await toggleWishlist("trail", trailId);
+    if (!result.ok && result.reason === "login-required") {
+      navigate("/login", { replace: false });
+      return;
+    }
+    if (!result.ok && result.message) {
+      window.alert(result.message);
+    }
   };
 
   return (
@@ -226,8 +241,8 @@ const TrailsPage = () => {
                   transition={{ duration: 0.25 }}
                   className="group bg-white rounded-2xl overflow-hidden shadow-lg shadow-navy/5 border border-gray-100 hover:shadow-xl hover:border-gold/20 transition-all duration-500"
                 >
-                  <Link to={`/trails/${trail.trail_id}`}>
-                    <div className="relative h-52 overflow-hidden">
+                  <div className="relative h-52 overflow-hidden">
+                    <Link to={`/trails/${trail.trail_id}`}>
                       <img
                         src={imageUrl}
                         alt={trail.trail_name}
@@ -248,13 +263,36 @@ const TrailsPage = () => {
                           <span className="text-xs font-bold text-navy">{Number(trail.max_altitude).toLocaleString()}m</span>
                         </div>
                       )}
-                    </div>
-                  </Link>
+
+                      {isTourist && (
+                        <div className="absolute top-4 right-4 z-10">
+                          <WishlistToggleButton
+                            active={isWishlisted("trail", trail.trail_id)}
+                            loading={isUpdating("trail", trail.trail_id)}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              handleToggleTrailWishlist(trail.trail_id);
+                            }}
+                            className="h-9 w-9"
+                          />
+                        </div>
+                      )}
+                    </Link>
+                  </div>
 
                   <div className="p-5">
-                    <h3 className="text-lg font-bold text-charcoal mb-2 group-hover:text-navy transition-colors">
-                      {trail.trail_name}
-                    </h3>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-lg font-bold text-charcoal mb-2 group-hover:text-navy transition-colors">
+                        {trail.trail_name}
+                      </h3>
+                      {isTourist && isWishlisted("trail", trail.trail_id) && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                          <Heart className="h-3 w-3 fill-current" /> Saved
+                        </span>
+                      )}
+                    </div>
+
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-500 mb-4">
                       <span className="flex items-center gap-1.5">
                         <MapPin className="h-3.5 w-3.5 text-gold" />

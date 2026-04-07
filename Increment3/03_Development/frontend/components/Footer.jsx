@@ -24,6 +24,7 @@ const quickLinks = [
   { name: "Our Guides", href: "#features" },
   { name: "How It Works", href: "#how-it-works" },
   { name: "Testimonials", href: "#testimonials" },
+  { name: "Contact", href: "/contact" },
 ];
 
 const destinations = [
@@ -261,13 +262,23 @@ export const Footer = () => {
               <ul className="space-y-3">
                 {quickLinks.map((link) => (
                   <li key={link.name}>
-                    <button
-                      onClick={() => scrollToSection(link.href)}
-                      className="text-white/35 hover:text-gold text-sm transition-all duration-300 flex items-center gap-2 group hover:translate-x-1"
-                    >
-                      <ArrowRight className="h-3 w-3 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 text-gold" />
-                      {link.name}
-                    </button>
+                    {link.href.startsWith("#") ? (
+                      <button
+                        onClick={() => scrollToSection(link.href)}
+                        className="text-white/35 hover:text-gold text-sm transition-all duration-300 flex items-center gap-2 group hover:translate-x-1"
+                      >
+                        <ArrowRight className="h-3 w-3 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 text-gold" />
+                        {link.name}
+                      </button>
+                    ) : (
+                      <Link
+                        to={link.href}
+                        className="text-white/35 hover:text-gold text-sm transition-all duration-300 flex items-center gap-2 group hover:translate-x-1"
+                      >
+                        <ArrowRight className="h-3 w-3 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 text-gold" />
+                        {link.name}
+                      </Link>
+                    )}
                   </li>
                 ))}
                 <li>

@@ -4,6 +4,8 @@ import { AuthProvider } from "./context/AuthContext";
 import LandingPage from "./pages/LandingPage";
 import TrailsPage from "./pages/TrailsPage";
 import HomestaysPage from "./pages/HomestaysPage";
+import GuidesPage from "./pages/GuidesPage";
+import ContactUs from "./pages/ContactUs";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import VerifyEmail from "./pages/VerifyEmail";
@@ -14,12 +16,14 @@ import HomestayDetail from "./pages/HomestayDetail";
 import MyBookings from "./pages/MyBookings";
 import TouristProfile from "./pages/TouristProfile";
 import TouristSettings from "./pages/TouristSettings";
+import WishlistPage from "./pages/WishlistPage";
 import HostProfile from "./pages/HostProfile";
 import GuideProfile from "./pages/GuideProfile";
 
 import HostDashboard from "./pages/HostDashboard";
 import GuideDashboard from "./pages/GuideDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminProfile from "./pages/AdminProfile";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentFailed from "./pages/PaymentFailed";
 import InvoicePage from "./pages/InvoicePage";
@@ -37,6 +41,8 @@ function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/trails" element={<TrailsPage />} />
           <Route path="/homestays" element={<HomestaysPage />} />
+          <Route path="/guides" element={<GuidesPage />} />
+          <Route path="/contact" element={<ContactUs />} />
 
           {/* Trail Detail - public */}
           <Route path="/trails/:id" element={<TrailDetail />} />
@@ -110,6 +116,15 @@ function App() {
           />
 
           <Route
+            path="/wishlist"
+            element={
+              <ProtectedRoute allowedRoles={["tourist"]}>
+                <WishlistPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
             path="/host-profile"
             element={
               <ProtectedRoute allowedRoles={["host"]}>
@@ -143,6 +158,15 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin-profile"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminProfile />
               </ProtectedRoute>
             }
           />

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../api";
 import {
   LogOut,
@@ -22,7 +22,6 @@ import {
   Star,
   Compass,
   Briefcase,
-  BarChart3,
   TrendingUp,
   Users,
   Activity,
@@ -32,14 +31,17 @@ import {
   Eye,
   Mail,
   CreditCard,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
 import { useAuth } from "../context/AuthContext";
 import { getToken } from "../tokenStore";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 
 const API = "http://localhost:5000/api";
+const PAYMENTS_PAGE_SIZE = 8;
 
 /* ─────────────────────────────────────────
    STAT CARD (Premium Theme)
@@ -116,8 +118,56 @@ const AdminDashboard = () => {
   const [guidesLoading, setGuidesLoading] = useState(false);
   const [paymentRecords, setPaymentRecords] = useState([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [homestayPaymentsSummary, setHomestayPaymentsSummary] = useState({
+    total_sessions: 0,
+    successful_count: 0,
+    pending_refunds: 0,
+    settled_volume: 0,
+  });
+  const [homestayPaymentsPagination, setHomestayPaymentsPagination] = useState({
+    page: 1,
+    limit: PAYMENTS_PAGE_SIZE,
+    total_records: 0,
+    total_pages: 1,
+    has_prev: false,
+    has_next: false,
+  });
   const [guidePaymentRecords, setGuidePaymentRecords] = useState([]);
   const [guidePaymentsLoading, setGuidePaymentsLoading] = useState(false);
+  const [guidePaymentsSummary, setGuidePaymentsSummary] = useState({
+    total_sessions: 0,
+    successful_count: 0,
+    pending_refunds: 0,
+    settled_volume: 0,
+  });
+  const [guidePaymentsPagination, setGuidePaymentsPagination] = useState({
+    page: 1,
+    limit: PAYMENTS_PAGE_SIZE,
+    total_records: 0,
+    total_pages: 1,
+    has_prev: false,
+    has_next: false,
+  });
+  const [contactEnquiries, setContactEnquiries] = useState([]);
+  const [contactEnquiriesLoading, setContactEnquiriesLoading] = useState(false);
+  const [contactEnquiriesPagination, setContactEnquiriesPagination] = useState({
+    page: 1,
+    limit: 20,
+    total_records: 0,
+    total_pages: 1,
+    has_prev: false,
+    has_next: false,
+  });
+  const [contactEnquiriesSummary, setContactEnquiriesSummary] = useState({
+    total_records: 0,
+    last_24h: 0,
+    booking_related: 0,
+    replied_count: 0,
+    pending_reply_count: 0,
+  });
+  const [contactReplyDrafts, setContactReplyDrafts] = useState({});
+  const [submittingContactReplyId, setSubmittingContactReplyId] = useState(null);
+  const [contactReplyNotice, setContactReplyNotice] = useState(null);
   const [reviewingRefundBookingId, setReviewingRefundBookingId] = useState(null);
   const [refundActionNotice, setRefundActionNotice] = useState(null);
   const [refundReviewModal, setRefundReviewModal] = useState({
@@ -132,6 +182,39 @@ const AdminDashboard = () => {
     record: null,
     bookingType: "homestay",
   });
+
+  const derivePaymentSummaryFromRecords = useCallback((records) => {
+    const safeRecords = Array.isArray(records) ? records : [];
+
+    const totalSessions = safeRecords.length;
+    const successfulCount = safeRecords.filter(
+      (record) => String(record.payment_status || "").trim().toLowerCase() === "success"
+    ).length;
+
+    const pendingRefunds = safeRecords.filter((record) => {
+      const paymentStatus = String(record.payment_status || "").trim().toLowerCase();
+      const directRefundStatus = String(record.refund_status || "").trim().toLowerCase();
+      const normalizedRefundStatus =
+        directRefundStatus ||
+        (paymentStatus === "refund_requested"
+          ? "requested"
+          : paymentStatus === "refunded"
+            ? "processed"
+            : "");
+      return ["requested", "processing"].includes(normalizedRefundStatus);
+    }).length;
+
+    const settledVolume = safeRecords
+      .filter((record) => String(record.payment_status || "").trim().toLowerCase() === "success")
+      .reduce((sum, record) => sum + Number(record.total_amount || 0), 0);
+
+    return {
+      total_sessions: totalSessions,
+      successful_count: successfulCount,
+      pending_refunds: pendingRefunds,
+      settled_volume: settledVolume,
+    };
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -177,29 +260,277 @@ const AdminDashboard = () => {
     }
   }, []);
 
-  const fetchAdminPayments = useCallback(async () => {
+  const fetchAdminPayments = useCallback(async (requestedPage = 1) => {
     setPaymentsLoading(true);
     try {
-      const res = await api.get(`${API}/bookings/admin/payments`);
-      setPaymentRecords(res.data.records || []);
+      const res = await api.get(`${API}/bookings/admin/payments`, {
+        params: {
+          page: requestedPage,
+          limit: PAYMENTS_PAGE_SIZE,
+        },
+      });
+
+      const records = Array.isArray(res.data?.records) ? res.data.records : [];
+      const summary = res.data?.summary || null;
+      const pagination = res.data?.pagination || null;
+
+      const derivedSummary = derivePaymentSummaryFromRecords(records);
+      const summaryTotalFromServer = Number(
+        summary?.total_sessions ?? summary?.totalSessions ?? 0
+      );
+      const shouldFallbackSummary = !summary || (summaryTotalFromServer === 0 && records.length > 0);
+
+      const normalizedSummary = shouldFallbackSummary
+        ? derivedSummary
+        : {
+            total_sessions: Number(summary?.total_sessions ?? summary?.totalSessions ?? derivedSummary.total_sessions),
+            successful_count: Number(summary?.successful_count ?? summary?.successfulCount ?? derivedSummary.successful_count),
+            pending_refunds: Number(summary?.pending_refunds ?? summary?.pendingRefunds ?? derivedSummary.pending_refunds),
+            settled_volume: Number(summary?.settled_volume ?? summary?.settledVolume ?? derivedSummary.settled_volume),
+          };
+
+      const paginationTotalPages = Number(pagination?.total_pages ?? pagination?.totalPages ?? 0);
+      const hasServerPagination = pagination && Number.isInteger(paginationTotalPages) && paginationTotalPages > 0;
+
+      let normalizedRecords = records;
+      let page = 1;
+      let totalPages = 1;
+      let totalRecords = records.length;
+
+      if (hasServerPagination) {
+        page = Number(pagination?.page ?? requestedPage ?? 1);
+        totalPages = paginationTotalPages;
+        totalRecords = Number(pagination?.total_records ?? pagination?.totalRecords ?? records.length);
+      } else {
+        totalRecords = records.length;
+        totalPages = Math.max(1, Math.ceil(totalRecords / PAYMENTS_PAGE_SIZE));
+        page = Math.min(Math.max(1, Number(requestedPage || 1)), totalPages);
+        const start = (page - 1) * PAYMENTS_PAGE_SIZE;
+        normalizedRecords = records.slice(start, start + PAYMENTS_PAGE_SIZE);
+      }
+
+      setPaymentRecords(normalizedRecords);
+      setHomestayPaymentsSummary(normalizedSummary);
+      setHomestayPaymentsPagination({
+        page,
+        limit: Number(pagination?.limit ?? pagination?.pageSize ?? PAYMENTS_PAGE_SIZE),
+        total_records: totalRecords,
+        total_pages: totalPages,
+        has_prev: page > 1,
+        has_next: page < totalPages,
+      });
     } catch (err) {
       console.error("Error fetching admin payment records:", err);
+      setPaymentRecords([]);
+      setHomestayPaymentsSummary({
+        total_sessions: 0,
+        successful_count: 0,
+        pending_refunds: 0,
+        settled_volume: 0,
+      });
+      setHomestayPaymentsPagination((prev) => ({
+        ...prev,
+        total_records: 0,
+        total_pages: 1,
+        has_prev: false,
+        has_next: false,
+      }));
     } finally {
       setPaymentsLoading(false);
     }
-  }, []);
+  }, [derivePaymentSummaryFromRecords]);
 
-  const fetchAdminGuidePayments = useCallback(async () => {
+  const fetchAdminGuidePayments = useCallback(async (requestedPage = 1) => {
     setGuidePaymentsLoading(true);
     try {
-      const res = await api.get(`${API}/guide-bookings/admin/payments`);
-      setGuidePaymentRecords(res.data.records || []);
+      const res = await api.get(`${API}/guide-bookings/admin/payments`, {
+        params: {
+          page: requestedPage,
+          limit: PAYMENTS_PAGE_SIZE,
+        },
+      });
+
+      const records = Array.isArray(res.data?.records) ? res.data.records : [];
+      const summary = res.data?.summary || null;
+      const pagination = res.data?.pagination || null;
+
+      const derivedSummary = derivePaymentSummaryFromRecords(records);
+      const summaryTotalFromServer = Number(
+        summary?.total_sessions ?? summary?.totalSessions ?? 0
+      );
+      const shouldFallbackSummary = !summary || (summaryTotalFromServer === 0 && records.length > 0);
+
+      const normalizedSummary = shouldFallbackSummary
+        ? derivedSummary
+        : {
+            total_sessions: Number(summary?.total_sessions ?? summary?.totalSessions ?? derivedSummary.total_sessions),
+            successful_count: Number(summary?.successful_count ?? summary?.successfulCount ?? derivedSummary.successful_count),
+            pending_refunds: Number(summary?.pending_refunds ?? summary?.pendingRefunds ?? derivedSummary.pending_refunds),
+            settled_volume: Number(summary?.settled_volume ?? summary?.settledVolume ?? derivedSummary.settled_volume),
+          };
+
+      const paginationTotalPages = Number(pagination?.total_pages ?? pagination?.totalPages ?? 0);
+      const hasServerPagination = pagination && Number.isInteger(paginationTotalPages) && paginationTotalPages > 0;
+
+      let normalizedRecords = records;
+      let page = 1;
+      let totalPages = 1;
+      let totalRecords = records.length;
+
+      if (hasServerPagination) {
+        page = Number(pagination?.page ?? requestedPage ?? 1);
+        totalPages = paginationTotalPages;
+        totalRecords = Number(pagination?.total_records ?? pagination?.totalRecords ?? records.length);
+      } else {
+        totalRecords = records.length;
+        totalPages = Math.max(1, Math.ceil(totalRecords / PAYMENTS_PAGE_SIZE));
+        page = Math.min(Math.max(1, Number(requestedPage || 1)), totalPages);
+        const start = (page - 1) * PAYMENTS_PAGE_SIZE;
+        normalizedRecords = records.slice(start, start + PAYMENTS_PAGE_SIZE);
+      }
+
+      setGuidePaymentRecords(normalizedRecords);
+      setGuidePaymentsSummary(normalizedSummary);
+      setGuidePaymentsPagination({
+        page,
+        limit: Number(pagination?.limit ?? pagination?.pageSize ?? PAYMENTS_PAGE_SIZE),
+        total_records: totalRecords,
+        total_pages: totalPages,
+        has_prev: page > 1,
+        has_next: page < totalPages,
+      });
     } catch (err) {
       console.error("Error fetching admin guide payment records:", err);
+      setGuidePaymentRecords([]);
+      setGuidePaymentsSummary({
+        total_sessions: 0,
+        successful_count: 0,
+        pending_refunds: 0,
+        settled_volume: 0,
+      });
+      setGuidePaymentsPagination((prev) => ({
+        ...prev,
+        total_records: 0,
+        total_pages: 1,
+        has_prev: false,
+        has_next: false,
+      }));
     } finally {
       setGuidePaymentsLoading(false);
     }
+  }, [derivePaymentSummaryFromRecords]);
+
+  const fetchAdminContactEnquiries = useCallback(async (requestedPage = 1) => {
+    setContactEnquiriesLoading(true);
+    try {
+      const res = await api.get(`${API}/contact/enquiries/admin`, {
+        params: {
+          page: requestedPage,
+          limit: 20,
+        },
+      });
+
+      setContactEnquiries(Array.isArray(res.data?.enquiries) ? res.data.enquiries : []);
+      setContactEnquiriesSummary({
+        total_records: Number(res.data?.summary?.total_records || 0),
+        last_24h: Number(res.data?.summary?.last_24h || 0),
+        booking_related: Number(res.data?.summary?.booking_related || 0),
+        replied_count: Number(res.data?.summary?.replied_count || 0),
+        pending_reply_count: Number(res.data?.summary?.pending_reply_count || 0),
+      });
+      setContactEnquiriesPagination({
+        page: Number(res.data?.pagination?.page || requestedPage || 1),
+        limit: Number(res.data?.pagination?.limit || 20),
+        total_records: Number(res.data?.pagination?.total_records || 0),
+        total_pages: Number(res.data?.pagination?.total_pages || 1),
+        has_prev: Boolean(res.data?.pagination?.has_prev),
+        has_next: Boolean(res.data?.pagination?.has_next),
+      });
+    } catch (err) {
+      console.error("Error fetching admin contact enquiries:", err);
+      setContactEnquiries([]);
+      setContactEnquiriesSummary({
+        total_records: 0,
+        last_24h: 0,
+        booking_related: 0,
+        replied_count: 0,
+        pending_reply_count: 0,
+      });
+      setContactEnquiriesPagination((prev) => ({
+        ...prev,
+        page: 1,
+        total_records: 0,
+        total_pages: 1,
+        has_prev: false,
+        has_next: false,
+      }));
+    } finally {
+      setContactEnquiriesLoading(false);
+    }
   }, []);
+
+  const goToHomestayPaymentsPage = (nextPage) => {
+    if (paymentsLoading) return;
+    if (nextPage < 1 || nextPage > Number(homestayPaymentsPagination.total_pages || 1)) return;
+    fetchAdminPayments(nextPage);
+  };
+
+  const goToGuidePaymentsPage = (nextPage) => {
+    if (guidePaymentsLoading) return;
+    if (nextPage < 1 || nextPage > Number(guidePaymentsPagination.total_pages || 1)) return;
+    fetchAdminGuidePayments(nextPage);
+  };
+
+  const goToContactEnquiriesPage = (nextPage) => {
+    if (contactEnquiriesLoading) return;
+    if (nextPage < 1 || nextPage > Number(contactEnquiriesPagination.total_pages || 1)) return;
+    fetchAdminContactEnquiries(nextPage);
+  };
+
+  const pushContactReplyNotice = useCallback((type, message) => {
+    const noticeId = Date.now();
+    setContactReplyNotice({ id: noticeId, type, message });
+
+    window.setTimeout(() => {
+      setContactReplyNotice((prev) => (prev?.id === noticeId ? null : prev));
+    }, 7000);
+  }, []);
+
+  const handleAdminContactReply = async (entry) => {
+    const enquiryId = Number(entry?.enquiry_id);
+    if (!Number.isInteger(enquiryId) || enquiryId <= 0) return;
+
+    const existingReply = String(entry?.admin_reply_message || "").trim();
+    const draftValue = Object.prototype.hasOwnProperty.call(contactReplyDrafts, enquiryId)
+      ? contactReplyDrafts[enquiryId]
+      : existingReply;
+    const replyMessage = String(draftValue || "").trim();
+
+    if (replyMessage.length < 8) {
+      pushContactReplyNotice("error", "Reply message must be at least 8 characters.");
+      return;
+    }
+
+    setSubmittingContactReplyId(enquiryId);
+
+    try {
+      const res = await api.post(`${API}/contact/enquiries/${enquiryId}/reply`, {
+        replyMessage,
+      });
+
+      setContactReplyDrafts((prev) => ({
+        ...prev,
+        [enquiryId]: String(res.data?.enquiry?.admin_reply_message || replyMessage),
+      }));
+      pushContactReplyNotice("success", "Reply sent to this enquiry.");
+      await fetchAdminContactEnquiries(contactEnquiriesPagination.page || 1);
+    } catch (err) {
+      console.error("Error replying to contact enquiry:", err);
+      pushContactReplyNotice("error", err.response?.data?.message || "Failed to send reply.");
+    } finally {
+      setSubmittingContactReplyId(null);
+    }
+  };
 
   const pushRefundNotice = useCallback((type, message) => {
     const noticeId = Date.now();
@@ -307,8 +638,9 @@ const AdminDashboard = () => {
       fetchAdminGuides();
       fetchAdminPayments();
       fetchAdminGuidePayments();
+      fetchAdminContactEnquiries();
     }
-  }, [isLoading, user, fetchTrails, fetchAdminHomestays, fetchAdminGuides, fetchAdminPayments, fetchAdminGuidePayments]);
+  }, [isLoading, user, fetchTrails, fetchAdminHomestays, fetchAdminGuides, fetchAdminPayments, fetchAdminGuidePayments, fetchAdminContactEnquiries]);
 
   const handleHomestayStatus = async (id, status) => {
     try {
@@ -403,26 +735,19 @@ const AdminDashboard = () => {
   const rejectedGuides = guidesAdmin.filter((g) => g.verification_status === "rejected").length;
 
   // Homestay Payment Metrics
-  const homestaySuccessfulPayments = paymentRecords.filter(
-    (record) => String(record.payment_status || "").trim().toLowerCase() === "success"
-  ).length;
-  const homestayPendingRefunds = paymentRecords.filter((record) =>
-    ["requested", "processing"].includes(normalizeRefundStatus(record))
-  ).length;
-  const homestayRevenue = paymentRecords
-    .filter((record) => String(record.payment_status || "").trim().toLowerCase() === "success")
-    .reduce((sum, record) => sum + Number(record.total_amount || 0), 0);
+  const homestaySuccessfulPayments = Number(homestayPaymentsSummary.successful_count || 0);
+  const homestayPendingRefunds = Number(homestayPaymentsSummary.pending_refunds || 0);
+  const homestayRevenue = Number(homestayPaymentsSummary.settled_volume || 0);
 
   // Guide Payment Metrics
-  const guideSuccessfulPayments = guidePaymentRecords.filter(
-    (record) => String(record.payment_status || "").trim().toLowerCase() === "success"
-  ).length;
-  const guidePendingRefunds = guidePaymentRecords.filter((record) =>
-    ["requested", "processing"].includes(normalizeRefundStatus(record))
-  ).length;
-  const guideRevenue = guidePaymentRecords
-    .filter((record) => String(record.payment_status || "").trim().toLowerCase() === "success")
-    .reduce((sum, record) => sum + Number(record.total_amount || 0), 0);
+  const guideSuccessfulPayments = Number(guidePaymentsSummary.successful_count || 0);
+  const guidePendingRefunds = Number(guidePaymentsSummary.pending_refunds || 0);
+  const guideRevenue = Number(guidePaymentsSummary.settled_volume || 0);
+  const totalContactEnquiries = Number(contactEnquiriesSummary.total_records || 0);
+  const recentContactEnquiries = Number(contactEnquiriesSummary.last_24h || 0);
+  const bookingContactEnquiries = Number(contactEnquiriesSummary.booking_related || 0);
+  const repliedContactEnquiries = Number(contactEnquiriesSummary.replied_count || 0);
+  const pendingReplyContactEnquiries = Number(contactEnquiriesSummary.pending_reply_count || 0);
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] flex font-body">
@@ -454,6 +779,7 @@ const AdminDashboard = () => {
             { id: "trails", icon: Mountain, label: "Trekking Trails", count: trails.length },
             { id: "homestays", icon: Home, label: "Homestay Approvals", count: pendingHomestays > 0 ? pendingHomestays : null, countType: "alert" },
             { id: "guides", icon: Compass, label: "Guides Management" },
+            { id: "contact-enquiries", icon: MessageSquare, label: "Contact Enquiries", count: recentContactEnquiries > 0 ? recentContactEnquiries : null, countType: "alert" },
             { id: "homestay-payments", icon: CreditCard, label: "Homestay Payments", count: homestayPendingRefunds > 0 ? homestayPendingRefunds : null, countType: "alert" },
             { id: "guide-payments", icon: Briefcase, label: "Guide Payments", count: guidePendingRefunds > 0 ? guidePendingRefunds : null, countType: "alert" },
           ].map((item) => (
@@ -496,13 +822,25 @@ const AdminDashboard = () => {
               <p className="text-white/50 text-[11px] font-medium mt-0.5 uppercase tracking-wider">Control Center</p>
             </div>
           </div>
-          <button
-            onClick={setShowLogoutModal}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-sm font-bold transition-colors border border-red-500/20 hover:border-red-500/40"
-          >
-            <LogOut className="h-4 w-4" />
-            Sign Out
-          </button>
+          <div className="grid grid-cols-2 gap-3">
+            <Link
+              to="/admin-profile"
+              title="My Profile"
+              className="inline-flex h-11 items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 text-white transition-colors border border-white/10"
+            >
+              <Shield className="h-4 w-4" />
+              <span className="sr-only">My Profile</span>
+            </Link>
+            <button
+              type="button"
+              onClick={setShowLogoutModal}
+              title="Sign Out"
+              className="inline-flex h-11 items-center justify-center rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors border border-red-500/20 hover:border-red-500/40"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="sr-only">Sign Out</span>
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -518,6 +856,7 @@ const AdminDashboard = () => {
               {activeTab === "trails" && "Trail Management"}
               {activeTab === "homestays" && "Homestay Approvals"}
               {activeTab === "guides" && "Guides Management"}
+              {activeTab === "contact-enquiries" && "Contact Enquiries"}
               {activeTab === "homestay-payments" && "Homestay Booking Payments"}
               {activeTab === "guide-payments" && "Guide Booking Payments"}
             </h1>
@@ -536,22 +875,23 @@ const AdminDashboard = () => {
               <span className="text-alpine-dark text-[11px] font-bold tracking-wide uppercase">System Online</span>
             </div>
             {/* Mobile nav buttons */}
-            <div className="lg:hidden flex gap-2">
+            <div className="lg:hidden flex gap-1 flex-wrap justify-end">
               {[
                 { id: "trails", icon: Mountain },
                 { id: "homestays", icon: Home, count: pendingHomestays },
                 { id: "guides", icon: Compass },
+                { id: "contact-enquiries", icon: MessageSquare, count: recentContactEnquiries },
                 { id: "homestay-payments", icon: CreditCard, count: homestayPendingRefunds },
                 { id: "guide-payments", icon: Briefcase, count: guidePendingRefunds },
               ].map((item) => (
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`p-2.5 rounded-xl transition-all relative ${
+                  className={`p-2 rounded-lg transition-all relative shrink-0 ${
                     activeTab === item.id ? "bg-navy text-gold shadow-md" : "text-gray-400 hover:bg-gray-100"
                   }`}
                 >
-                  <item.icon className="h-5 w-5" />
+                  <item.icon className="h-4 w-4" />
                   {item.count > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold shadow-sm">
                       {item.count}
@@ -561,10 +901,17 @@ const AdminDashboard = () => {
               ))}
               <button
                 onClick={setShowLogoutModal}
-                className="p-2.5 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-xl transition-all border border-transparent hover:border-red-100"
+                className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all border border-transparent hover:border-red-100 shrink-0"
               >
-                <LogOut className="h-5 w-5" />
+                <LogOut className="h-4 w-4" />
               </button>
+              <Link
+                to="/admin-profile"
+                className="p-2 text-navy hover:bg-navy/10 rounded-lg transition-all border border-transparent hover:border-navy/10 shrink-0"
+                title="Admin Profile"
+              >
+                <Shield className="h-4 w-4" />
+              </Link>
             </div>
           </div>
         </header>
@@ -599,9 +946,18 @@ const AdminDashboard = () => {
               </>
             )}
 
+            {activeTab === "contact-enquiries" && (
+              <>
+                <StatCard icon={MessageSquare} label="Total Enquiries" value={totalContactEnquiries} accent="navy" delay={0.1} />
+                <StatCard icon={Activity} label="Received In 24h" value={recentContactEnquiries} accent="gold" delay={0.2} />
+                <StatCard icon={Briefcase} label="Booking Related" value={bookingContactEnquiries} accent="charcoal" delay={0.3} />
+                <StatCard icon={Mail} label="Shown On Page" value={contactEnquiries.length} accent="alpine" delay={0.4} />
+              </>
+            )}
+
             {activeTab === "homestay-payments" && (
               <>
-                <StatCard icon={CreditCard} label="Payment Sessions" value={paymentRecords.length} accent="navy" delay={0.1} />
+                <StatCard icon={CreditCard} label="Payment Sessions" value={homestayPaymentsSummary.total_sessions} accent="navy" delay={0.1} />
                 <StatCard icon={CheckCircle} label="Successful" value={homestaySuccessfulPayments} accent="alpine" delay={0.2} />
                 <StatCard icon={TrendingUp} label="Refund Queue" value={homestayPendingRefunds} accent="charcoal" delay={0.3} />
                 <StatCard icon={DollarSign} label="Settled Volume" value={`NPR ${homestayRevenue.toLocaleString()}`} accent="gold" delay={0.4} />
@@ -610,7 +966,7 @@ const AdminDashboard = () => {
 
             {activeTab === "guide-payments" && (
               <>
-                <StatCard icon={Briefcase} label="Guide Sessions" value={guidePaymentRecords.length} accent="navy" delay={0.1} />
+                <StatCard icon={Briefcase} label="Guide Sessions" value={guidePaymentsSummary.total_sessions} accent="navy" delay={0.1} />
                 <StatCard icon={CheckCircle} label="Successful" value={guideSuccessfulPayments} accent="alpine" delay={0.2} />
                 <StatCard icon={TrendingUp} label="Refund Queue" value={guidePendingRefunds} accent="charcoal" delay={0.3} />
                 <StatCard icon={DollarSign} label="Settled Volume" value={`NPR ${guideRevenue.toLocaleString()}`} accent="gold" delay={0.4} />
@@ -906,6 +1262,216 @@ const AdminDashboard = () => {
             </div>
           )}
 
+          {activeTab === "contact-enquiries" && (
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-amber-50 border border-amber-100">
+                    <MessageSquare className="h-4 w-4 text-amber-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-gray-900 font-semibold text-base">Submitted Contact Enquiries</h2>
+                    <p className="text-gray-400 text-xs">Direct messages from users and visitors via the Contact page</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => fetchAdminContactEnquiries(contactEnquiriesPagination.page || 1)}
+                  disabled={contactEnquiriesLoading}
+                  className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  {contactEnquiriesLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+                  Refresh
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Total Enquiries</p>
+                    <p className="mt-1 text-2xl font-bold text-gray-900">{totalContactEnquiries}</p>
+                  </div>
+                  <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                    <p className="text-xs text-blue-600 uppercase tracking-wide">In Last 24 Hours</p>
+                    <p className="mt-1 text-2xl font-bold text-blue-700">{recentContactEnquiries}</p>
+                  </div>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <p className="text-xs text-amber-700 uppercase tracking-wide">Booking Related</p>
+                    <p className="mt-1 text-2xl font-bold text-amber-700">{bookingContactEnquiries}</p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                    <p className="text-xs text-emerald-700 uppercase tracking-wide">Replied</p>
+                    <p className="mt-1 text-2xl font-bold text-emerald-700">{repliedContactEnquiries}</p>
+                  </div>
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+                    <p className="text-xs text-rose-700 uppercase tracking-wide">Awaiting Reply</p>
+                    <p className="mt-1 text-2xl font-bold text-rose-700">{pendingReplyContactEnquiries}</p>
+                  </div>
+                </div>
+
+                {contactReplyNotice && (
+                  <div
+                    className={`rounded-xl border px-4 py-3 text-sm font-medium ${
+                      contactReplyNotice.type === "success"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-red-200 bg-red-50 text-red-700"
+                    }`}
+                  >
+                    {contactReplyNotice.message}
+                  </div>
+                )}
+
+                {contactEnquiriesLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                  </div>
+                ) : contactEnquiries.length === 0 ? (
+                  <div className="flex flex-col items-center py-16 gap-4 rounded-2xl border border-dashed border-gray-200 bg-gray-50">
+                    <div className="w-16 h-16 rounded-2xl bg-white border border-gray-200 flex items-center justify-center">
+                      <MessageSquare className="h-8 w-8 text-gray-300" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-gray-700 font-semibold">No contact enquiries yet</p>
+                      <p className="text-gray-400 text-sm mt-1">Submitted messages from the contact page will appear here.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {contactEnquiries.map((entry) => {
+                      const rawMessage = String(entry.message || "").trim();
+                      const previewMessage = rawMessage.length > 360
+                        ? `${rawMessage.slice(0, 360)}...`
+                        : rawMessage;
+                      const existingReply = String(entry.admin_reply_message || "").trim();
+                      const replyDraft = Object.prototype.hasOwnProperty.call(contactReplyDrafts, entry.enquiry_id)
+                        ? String(contactReplyDrafts[entry.enquiry_id] || "")
+                        : existingReply;
+                      const isReplySending = submittingContactReplyId === Number(entry.enquiry_id);
+                      const accountReference = entry.submitter_user_type && entry.submitter_user_id
+                        ? `${entry.submitter_user_type} #${entry.submitter_user_id}`
+                        : "Guest visitor";
+
+                      return (
+                        <div
+                          key={entry.enquiry_id}
+                          className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-all duration-200 hover:border-gray-300 hover:shadow-md"
+                        >
+                          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0 space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-bold text-gray-900">{entry.subject}</p>
+                                <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-blue-700">
+                                  {entry.category || "general"}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                                <span className="font-semibold text-gray-700">{entry.full_name}</span>
+                                <span>{entry.email}</span>
+                              </div>
+
+                              <p className="text-sm leading-relaxed text-gray-600 whitespace-pre-line">{previewMessage}</p>
+
+                              <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                  <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                                    Admin Reply
+                                  </p>
+                                  {entry.admin_reply_at && (
+                                    <span className="text-[11px] text-emerald-700 font-semibold">
+                                      Replied {formatDateTime(entry.admin_reply_at)}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {existingReply && (
+                                  <div className="mb-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2.5">
+                                    <p className="text-sm text-emerald-900 whitespace-pre-line leading-relaxed">
+                                      {existingReply}
+                                    </p>
+                                  </div>
+                                )}
+
+                                <textarea
+                                  rows={3}
+                                  value={replyDraft}
+                                  onChange={(event) => {
+                                    const value = event.target.value;
+                                    setContactReplyDrafts((prev) => ({
+                                      ...prev,
+                                      [entry.enquiry_id]: value,
+                                    }));
+                                  }}
+                                  placeholder="Write a response for this enquiry..."
+                                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                />
+
+                                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-[11px] text-gray-500">
+                                    Reply is visible in tourist contact notifications for linked user accounts.
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAdminContactReply(entry)}
+                                    disabled={isReplySending || String(replyDraft || "").trim().length < 8}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {isReplySending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                                    {existingReply ? "Update Reply" : "Send Reply"}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-xs text-gray-500 lg:text-right lg:min-w-[220px] space-y-1">
+                              <p>
+                                Received: <span className="font-semibold text-gray-700">{formatDateTime(entry.created_at)}</span>
+                              </p>
+                              <p>
+                                Account: <span className="font-semibold text-gray-700 capitalize">{accountReference}</span>
+                              </p>
+                              {entry.source_ip && (
+                                <p>
+                                  IP: <span className="font-mono text-gray-700">{entry.source_ip}</span>
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                      <p className="text-xs font-medium text-gray-600">
+                        Page <span className="font-bold text-gray-900">{contactEnquiriesPagination.page}</span> of <span className="font-bold text-gray-900">{contactEnquiriesPagination.total_pages}</span>
+                        <span className="mx-2 text-gray-300">|</span>
+                        {contactEnquiriesPagination.total_records} total enquiries
+                      </p>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => goToContactEnquiriesPage(contactEnquiriesPagination.page - 1)}
+                          disabled={contactEnquiriesLoading || !contactEnquiriesPagination.has_prev}
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => goToContactEnquiriesPage(contactEnquiriesPagination.page + 1)}
+                          disabled={contactEnquiriesLoading || !contactEnquiriesPagination.has_next}
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {activeTab === "homestay-payments" && (
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-gray-100">
@@ -919,7 +1485,7 @@ const AdminDashboard = () => {
                   </div>
                 </div>
                 <button
-                  onClick={fetchAdminPayments}
+                  onClick={() => fetchAdminPayments(homestayPaymentsPagination.page || 1)}
                   disabled={paymentsLoading}
                   className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-60"
                 >
@@ -932,7 +1498,7 @@ const AdminDashboard = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                     <p className="text-xs text-gray-500 uppercase tracking-wide">Total Sessions</p>
-                    <p className="mt-1 text-2xl font-bold text-gray-900">{paymentRecords.length}</p>
+                    <p className="mt-1 text-2xl font-bold text-gray-900">{homestayPaymentsSummary.total_sessions}</p>
                   </div>
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                     <p className="text-xs text-emerald-600 uppercase tracking-wide">Successful</p>
@@ -1058,6 +1624,33 @@ const AdminDashboard = () => {
                         </div>
                       );
                     })}
+
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                      <p className="text-xs font-medium text-gray-600">
+                        Page <span className="font-bold text-gray-900">{homestayPaymentsPagination.page}</span> of <span className="font-bold text-gray-900">{homestayPaymentsPagination.total_pages}</span>
+                        <span className="mx-2 text-gray-300">|</span>
+                        {homestayPaymentsPagination.total_records} total sessions
+                      </p>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => goToHomestayPaymentsPage(homestayPaymentsPagination.page - 1)}
+                          disabled={paymentsLoading || !homestayPaymentsPagination.has_prev}
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => goToHomestayPaymentsPage(homestayPaymentsPagination.page + 1)}
+                          disabled={paymentsLoading || !homestayPaymentsPagination.has_next}
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1077,7 +1670,7 @@ const AdminDashboard = () => {
                   </div>
                 </div>
                 <button
-                  onClick={fetchAdminGuidePayments}
+                  onClick={() => fetchAdminGuidePayments(guidePaymentsPagination.page || 1)}
                   disabled={guidePaymentsLoading}
                   className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-60"
                 >
@@ -1090,7 +1683,7 @@ const AdminDashboard = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                     <p className="text-xs text-gray-500 uppercase tracking-wide">Total Sessions</p>
-                    <p className="mt-1 text-2xl font-bold text-gray-900">{guidePaymentRecords.length}</p>
+                    <p className="mt-1 text-2xl font-bold text-gray-900">{guidePaymentsSummary.total_sessions}</p>
                   </div>
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
                     <p className="text-xs text-emerald-600 uppercase tracking-wide">Successful</p>
@@ -1216,6 +1809,33 @@ const AdminDashboard = () => {
                         </div>
                       );
                     })}
+
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                      <p className="text-xs font-medium text-gray-600">
+                        Page <span className="font-bold text-gray-900">{guidePaymentsPagination.page}</span> of <span className="font-bold text-gray-900">{guidePaymentsPagination.total_pages}</span>
+                        <span className="mx-2 text-gray-300">|</span>
+                        {guidePaymentsPagination.total_records} total sessions
+                      </p>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => goToGuidePaymentsPage(guidePaymentsPagination.page - 1)}
+                          disabled={guidePaymentsLoading || !guidePaymentsPagination.has_prev}
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => goToGuidePaymentsPage(guidePaymentsPagination.page + 1)}
+                          disabled={guidePaymentsLoading || !guidePaymentsPagination.has_next}
+                          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

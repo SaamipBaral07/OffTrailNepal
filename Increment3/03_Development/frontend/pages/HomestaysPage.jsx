@@ -14,12 +14,15 @@ import {
   Loader2,
   X,
   Mountain,
+  Heart,
 } from "lucide-react";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import { useAuth } from "../context/AuthContext";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
+import { useWishlist } from "../hooks/useWishlist";
+import WishlistToggleButton from "../components/wishlist/WishlistToggleButton";
 
 const API = "http://localhost:5000";
 
@@ -46,6 +49,7 @@ const HomestaysPage = () => {
   const [maxPrice, setMaxPrice] = useState("");
   const [minRating, setMinRating] = useState("");
   const [sortBy, setSortBy] = useState("recent");
+  const { isTourist, isWishlisted, isUpdating, toggleWishlist } = useWishlist();
 
   useEffect(() => {
     if (authUser) setUser(authUser);
@@ -105,6 +109,17 @@ const HomestaysPage = () => {
     setMinRating("");
     setSortBy("recent");
     navigate("/homestays", { replace: true });
+  };
+
+  const handleToggleHomestayWishlist = async (homestayId) => {
+    const result = await toggleWishlist("homestay", homestayId);
+    if (!result.ok && result.reason === "login-required") {
+      navigate("/login", { replace: false });
+      return;
+    }
+    if (!result.ok && result.message) {
+      window.alert(result.message);
+    }
   };
 
   return (
@@ -247,8 +262,8 @@ const HomestaysPage = () => {
                   transition={{ duration: 0.25 }}
                   className="group bg-white rounded-2xl overflow-hidden shadow-lg shadow-navy/5 border border-gray-100 hover:shadow-xl hover:border-gold/20 transition-all duration-500"
                 >
-                  <Link to={`/homestays/${homestay.homestay_id}`}>
-                    <div className="relative h-52 overflow-hidden">
+                  <div className="relative h-52 overflow-hidden">
+                    <Link to={`/homestays/${homestay.homestay_id}`}>
                       <img
                         src={imageUrl}
                         alt={homestay.name}
@@ -264,13 +279,35 @@ const HomestaysPage = () => {
                       <span className={`absolute top-4 right-4 inline-flex items-center rounded-full px-3 py-1 text-xs font-bold backdrop-blur-sm ${soldOut ? "bg-red-50/95 text-red-700" : "bg-emerald-50/95 text-emerald-700"}`}>
                         {soldOut ? "Sold Out" : `${availableRooms}/${totalRooms || "-"} rooms`}
                       </span>
-                    </div>
-                  </Link>
+
+                      {isTourist && (
+                        <div className="absolute bottom-4 left-4 z-10">
+                          <WishlistToggleButton
+                            active={isWishlisted("homestay", homestay.homestay_id)}
+                            loading={isUpdating("homestay", homestay.homestay_id)}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              handleToggleHomestayWishlist(homestay.homestay_id);
+                            }}
+                            className="h-9 w-9"
+                          />
+                        </div>
+                      )}
+                    </Link>
+                  </div>
 
                   <div className="p-5">
-                    <h3 className="text-lg font-bold text-charcoal mb-1 group-hover:text-navy transition-colors">
-                      {homestay.name}
-                    </h3>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="text-lg font-bold text-charcoal mb-1 group-hover:text-navy transition-colors">
+                        {homestay.name}
+                      </h3>
+                      {isTourist && isWishlisted("homestay", homestay.homestay_id) && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                          <Heart className="h-3 w-3 fill-current" /> Saved
+                        </span>
+                      )}
+                    </div>
 
                     <p className="text-sm text-gray-500 flex items-center gap-1.5 mb-3">
                       <MapPin className="h-3.5 w-3.5 text-gold" />

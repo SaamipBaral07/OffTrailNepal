@@ -1,7 +1,10 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../api";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
 import {
   LogOut,
   Home,
@@ -28,8 +31,6 @@ import {
   Star,
   Shield,
   Mail,
-  Activity,
-  Compass,
   Key,
   UserCircle,
 } from "lucide-react";
@@ -121,6 +122,22 @@ const StatCard = ({ icon: Icon, label, value, accent, delay }) => {
   );
 };
 
+const isValidCoordinate = (lat, lng) =>
+  Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+
+const LiveHomestayMapViewport = ({ latitude, longitude }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    map.flyTo([latitude, longitude], 11, {
+      duration: 0.9,
+      easeLinearity: 0.3,
+    });
+  }, [latitude, longitude, map]);
+
+  return null;
+};
+
 /* ─────────────────────────────────────────
    CREATE / EDIT FORM
 ───────────────────────────────────────── */
@@ -145,11 +162,40 @@ const HomestayForm = ({ trails, onSubmit, onCancel, initialData, isSubmitting, o
   const [existingImages, setExistingImages] = useState(initialData?.images || []);
   const [replaceExistingImages, setReplaceExistingImages] = useState(false);
   const [imageActionLoading, setImageActionLoading] = useState(false);
+  const [showLocationDetails, setShowLocationDetails] = useState(true);
+  const parsedLatitude = form.latitude === "" ? Number.NaN : Number(form.latitude);
+  const parsedLongitude = form.longitude === "" ? Number.NaN : Number(form.longitude);
+  const hasCoordinatePair = form.latitude !== "" && form.longitude !== "";
+  const hasValidCoordinates = isValidCoordinate(parsedLatitude, parsedLongitude);
+  const selectedTrail = trails.find((trail) => String(trail.trail_id) === String(form.trail_id));
+  const redPinMarkerIcon = useMemo(
+    () =>
+      L.divIcon({
+        className: "homestay-red-pin",
+        html: `
+          <div class="homestay-red-pin__inner">
+            <span class="homestay-red-pin__head"></span>
+            <span class="homestay-red-pin__stem"></span>
+            <span class="homestay-red-pin__base"></span>
+          </div>
+        `,
+        iconSize: [44, 86],
+        iconAnchor: [22, 84],
+      }),
+    []
+  );
 
   useEffect(() => {
     setExistingImages(initialData?.images || []);
     setReplaceExistingImages(false);
+    setShowLocationDetails(true);
   }, [initialData]);
+
+  useEffect(() => {
+    if (hasValidCoordinates) {
+      setShowLocationDetails(true);
+    }
+  }, [hasValidCoordinates, parsedLatitude, parsedLongitude]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -432,6 +478,114 @@ const HomestayForm = ({ trails, onSubmit, onCancel, initialData, isSubmitting, o
               />
             </div>
           </div>
+
+          <AnimatePresence initial={false}>
+            {hasCoordinatePair && (
+              <motion.div
+                initial={{ opacity: 0, y: 12, height: 0 }}
+                animate={{ opacity: 1, y: 0, height: "auto" }}
+                exit={{ opacity: 0, y: 8, height: 0 }}
+                transition={{ duration: 0.35, ease: "easeOut" }}
+                className="overflow-hidden"
+              >
+                <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-sky-50 to-blue-50 shadow-sm">
+                  <div className="px-4 py-3 border-b border-blue-100/70">
+                    <p className="text-sm font-bold text-navy">Location Preview</p>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      {hasValidCoordinates
+                        ? "Map pin updated using entered coordinates."
+                        : "Enter valid coordinates to preview this location on map."}
+                    </p>
+                  </div>
+
+                  {hasValidCoordinates ? (
+                    <div className="relative h-[26rem]">
+                      <MapContainer
+                        center={[parsedLatitude, parsedLongitude]}
+                        zoom={11}
+                        scrollWheelZoom={false}
+                        className="h-full w-full"
+                      >
+                        <TileLayer
+                          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        />
+                        <LiveHomestayMapViewport
+                          latitude={parsedLatitude}
+                          longitude={parsedLongitude}
+                        />
+                        <Marker
+                          position={[parsedLatitude, parsedLongitude]}
+                          icon={redPinMarkerIcon}
+                          eventHandlers={{
+                            click: () => setShowLocationDetails(true),
+                          }}
+                        />
+                      </MapContainer>
+
+                      <AnimatePresence initial={false}>
+                        {showLocationDetails ? (
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 8 }}
+                            transition={{ duration: 0.2 }}
+                            style={{ zIndex: 650 }}
+                            className="absolute top-3 right-3 w-[min(17rem,calc(100%-1.5rem))] bg-white/95 backdrop-blur rounded-xl border border-gray-200 shadow-xl p-2.5"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="text-[11px] uppercase tracking-[0.12em] font-bold text-gray-500">Marked Location</p>
+                                <p className="text-[1.05rem] font-bold text-gray-900 mt-0.5 leading-tight">
+                                  {form.name || "ABC Homevasio"}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowLocationDetails(false)}
+                                className="p-1 rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                                aria-label="Close location details"
+                                title="Close details"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+
+                            <div className="mt-1.5 space-y-1 text-[0.92rem]">
+                              <p className="text-gray-700 leading-snug">
+                                <span className="font-semibold">Trail:</span>{" "}
+                                {selectedTrail?.trail_name || "Kori Himal Trek"}
+                              </p>
+                              <p className="text-gray-700 leading-snug">
+                                {form.location || "ABC Base camp"}
+                              </p>
+                            </div>
+                          </motion.div>
+                        ) : (
+                          <motion.button
+                            type="button"
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 8 }}
+                            transition={{ duration: 0.2 }}
+                            style={{ zIndex: 650 }}
+                            onClick={() => setShowLocationDetails(true)}
+                            className="absolute top-3 right-3 px-3 py-1.5 rounded-lg text-xs font-semibold text-navy bg-white/95 border border-gray-200 shadow-md hover:bg-white"
+                          >
+                            Show details
+                          </motion.button>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  ) : (
+                    <div className="px-4 py-4 text-xs font-medium text-amber-700 bg-amber-50 border-t border-amber-100">
+                      Coordinates must be within valid ranges: latitude between -90 and 90, longitude between -180 and 180.
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Description */}
           <div>

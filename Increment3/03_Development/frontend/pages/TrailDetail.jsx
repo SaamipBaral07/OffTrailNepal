@@ -32,11 +32,14 @@ import {
   Star,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { DayPicker } from "react-day-picker";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import TrailMap from "../components/TrailMap";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
+import { useWishlist } from "../hooks/useWishlist";
+import WishlistToggleButton from "../components/wishlist/WishlistToggleButton";
 import api from "../api";
 
 const API = "http://localhost:5000";
@@ -106,6 +109,42 @@ const getBookingTotalDays = (startDateKey, endDateKey) => {
   const endUtc = Date.UTC(endYear, endMonth - 1, endDay);
   const msInDay = 24 * 60 * 60 * 1000;
   return Math.ceil((endUtc - startUtc) / msInDay);
+};
+
+const dateKeyToLocalDate = (value) => {
+  const normalized = toDateKey(value);
+  if (!normalized) return null;
+  const [year, month, day] = normalized.split("-").map(Number);
+  const localDate = new Date(year, month - 1, day);
+  if (Number.isNaN(localDate.getTime())) return null;
+  return localDate;
+};
+
+const localDateToDateKey = (value) => {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return "";
+  const yyyy = value.getFullYear();
+  const mm = String(value.getMonth() + 1).padStart(2, "0");
+  const dd = String(value.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const getLocalDayTimestamp = (value) => {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return null;
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+};
+
+const isSameLocalDay = (a, b) => {
+  const aTs = getLocalDayTimestamp(a);
+  const bTs = getLocalDayTimestamp(b);
+  return aTs !== null && bTs !== null && aTs === bTs;
+};
+
+const isBetweenLocalDays = (date, from, to) => {
+  const dateTs = getLocalDayTimestamp(date);
+  const fromTs = getLocalDayTimestamp(from);
+  const toTs = getLocalDayTimestamp(to);
+  if (dateTs === null || fromTs === null || toTs === null) return false;
+  return dateTs > fromTs && dateTs < toTs;
 };
 
 const difficultyConfig = {
@@ -314,6 +353,10 @@ const HomestayCard = ({
   distanceThresholdKm = 3,
   onSelect,
   layout = "grid",
+  showWishlist = false,
+  wishlisted = false,
+  wishlistLoading = false,
+  onToggleWishlist,
 }) => {
   const primary = homestay.images?.find((i) => i.is_primary) || homestay.images?.[0];
   const isNearTrail = Number.isFinite(distanceKm) && distanceKm <= distanceThresholdKm;
@@ -363,6 +406,20 @@ const HomestayCard = ({
         )}
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent pointer-events-none" />
+
+        {showWishlist && (
+          <div className="absolute top-3 left-3 z-10">
+            <WishlistToggleButton
+              active={wishlisted}
+              loading={wishlistLoading}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleWishlist?.(event);
+              }}
+              className="h-9 w-9"
+            />
+          </div>
+        )}
 
         <div className="absolute top-3 right-3 bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm border border-white/80">
           <span className="text-xs font-extrabold text-charcoal">
@@ -525,7 +582,16 @@ const DifficultyBar = ({ level }) => {
 /* ─────────────────────────────────────────────
    GUIDE SERVICE CARD
 ───────────────────────────────────────────── */
-const GuideServiceCard = ({ service, index, user, onBookPackage }) => {
+const GuideServiceCard = ({
+  service,
+  index,
+  user,
+  onBookPackage,
+  showWishlist = false,
+  wishlisted = false,
+  wishlistLoading = false,
+  onToggleWishlist,
+}) => {
   const isTourist = user?.user_type === "tourist";
   const avgRating = Number(service.avg_rating || 0);
   const totalReviews = Number(service.total_reviews || 0);
@@ -572,13 +638,30 @@ const GuideServiceCard = ({ service, index, user, onBookPackage }) => {
 
       {/* Service Details Side */}
       <div className="p-6 sm:w-2/3 flex flex-col">
-        <div className="flex justify-between items-start mb-2">
-          <h3 className="font-bold text-lg text-charcoal">{service.title}</h3>
-          <div className="text-right">
-            <p className="text-lg font-black text-gold leading-none">
-              NPR {Number(service.price_per_day).toLocaleString()}
-            </p>
-            <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mt-1">per day</p>
+        <div className="flex justify-between items-start mb-2 gap-3">
+          <div>
+            <h3 className="font-bold text-lg text-charcoal">{service.title}</h3>
+            {showWishlist && wishlisted && (
+              <span className="mt-1 inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+                Saved
+              </span>
+            )}
+          </div>
+          <div className="flex items-start gap-2">
+            {showWishlist && (
+              <WishlistToggleButton
+                active={wishlisted}
+                loading={wishlistLoading}
+                onClick={onToggleWishlist}
+                className="h-9 w-9 border-gray-200 bg-white text-gray-500 hover:text-rose-600"
+              />
+            )}
+            <div className="text-right">
+              <p className="text-lg font-black text-gold leading-none">
+                NPR {Number(service.price_per_day).toLocaleString()}
+              </p>
+              <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mt-1">per day</p>
+            </div>
           </div>
         </div>
 
@@ -638,7 +721,14 @@ const AwardBadge = ({ level }) => {
 /* ─────────────────────────────────────────────
    BASE GUIDE CARD
 ───────────────────────────────────────────── */
-const BaseGuideCard = ({ guide, index }) => {
+const BaseGuideCard = ({
+  guide,
+  index,
+  showWishlist = false,
+  wishlisted = false,
+  wishlistLoading = false,
+  onToggleWishlist,
+}) => {
   const avgRating = Number(guide.avg_rating || 0);
   const totalReviews = Number(guide.total_reviews || 0);
 
@@ -667,6 +757,16 @@ const BaseGuideCard = ({ guide, index }) => {
       </div>
       
       <div className="text-right">
+        {showWishlist && (
+          <div className="mb-2 flex justify-end">
+            <WishlistToggleButton
+              active={wishlisted}
+              loading={wishlistLoading}
+              onClick={onToggleWishlist}
+              className="h-8 w-8 border-gray-200 bg-white text-gray-500 hover:text-rose-600"
+            />
+          </div>
+        )}
         <p className="font-bold text-charcoal">Base Guide Profile</p>
         <p className="text-[10px] text-gray-400 font-normal mt-0.5">Bookings are available only through package cards</p>
       </div>
@@ -690,6 +790,7 @@ const GuidePackageBookingModal = ({
     contact_phone: "",
     special_requests: "",
   });
+  const [hoveredDate, setHoveredDate] = useState(null);
 
   useEffect(() => {
     if (!isOpen) {
@@ -700,6 +801,7 @@ const GuidePackageBookingModal = ({
         contact_phone: "",
         special_requests: "",
       });
+      setHoveredDate(null);
     }
   }, [isOpen, service?.service_id]);
 
@@ -738,14 +840,39 @@ const GuidePackageBookingModal = ({
 
   const blockedDateSet = useMemo(() => new Set(blockedDateKeys), [blockedDateKeys]);
 
-  const minimumEndDateKey = useMemo(() => {
-    if (form.start_date) return addDaysToDateKey(form.start_date, serviceMinBookingDays) || "";
-    return addDaysToDateKey(minimumStartDateKey, serviceMinBookingDays) || "";
-  }, [form.start_date, minimumStartDateKey, serviceMinBookingDays]);
-
   const bookingTotalDays = useMemo(
     () => getBookingTotalDays(form.start_date, form.end_date),
     [form.start_date, form.end_date]
+  );
+
+  const selectedDateRange = useMemo(
+    () => ({
+      from: dateKeyToLocalDate(form.start_date) || undefined,
+      to: dateKeyToLocalDate(form.end_date) || undefined,
+    }),
+    [form.start_date, form.end_date]
+  );
+
+  const hoverPreviewRange = useMemo(() => {
+    if (!selectedDateRange.from || selectedDateRange.to || !hoveredDate) return null;
+
+    const fromTs = getLocalDayTimestamp(selectedDateRange.from);
+    const hoverTs = getLocalDayTimestamp(hoveredDate);
+    if (fromTs === null || hoverTs === null) return null;
+
+    return hoverTs >= fromTs
+      ? { from: selectedDateRange.from, to: hoveredDate }
+      : { from: hoveredDate, to: selectedDateRange.from };
+  }, [selectedDateRange.from, selectedDateRange.to, hoveredDate]);
+
+  const minimumStartDateObject = useMemo(
+    () => dateKeyToLocalDate(minimumStartDateKey) || new Date(),
+    [minimumStartDateKey]
+  );
+
+  const blockedDateObjects = useMemo(
+    () => blockedDateKeys.map((dateKey) => dateKeyToLocalDate(dateKey)).filter(Boolean),
+    [blockedDateKeys]
   );
 
   const blockedDatesInSelection = useMemo(() => {
@@ -828,39 +955,84 @@ const GuidePackageBookingModal = ({
           className="flex-1 min-h-0 flex flex-col"
         >
           <div className="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 py-5 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Start Date</label>
-                <input
-                  type="date"
-                  required
-                  min={minimumStartDateKey}
-                  value={form.start_date}
-                  onChange={(e) => {
-                    const nextStartDate = e.target.value;
-                    setForm((prev) => ({
-                      ...prev,
-                      start_date: nextStartDate,
-                      end_date:
-                        prev.end_date && nextStartDate && prev.end_date <= nextStartDate
-                          ? ""
-                          : prev.end_date,
-                    }));
-                  }}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
-                />
+            <div className="rounded-2xl border border-navy/10 bg-gradient-to-br from-white to-navy/5 p-3">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-gray-700">Package Date Range</p>
+                <p className="text-xs text-gray-500">
+                  {form.start_date && form.end_date
+                    ? `${form.start_date} to ${form.end_date}`
+                    : "Select trek start and end dates"}
+                </p>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">End Date</label>
-                <input
-                  type="date"
-                  required
-                  min={minimumEndDateKey}
-                  value={form.end_date}
-                  onChange={(e) => setForm((prev) => ({ ...prev, end_date: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl"
-                />
-              </div>
+
+              <DayPicker
+                mode="range"
+                min={serviceMinBookingDays}
+                showOutsideDays
+                fixedWeeks
+                selected={selectedDateRange}
+                onDayMouseEnter={(day) => setHoveredDate(day)}
+                onDayMouseLeave={() => setHoveredDate(null)}
+                onSelect={(range) => {
+                  if (!range?.from) {
+                    setForm((prev) => ({ ...prev, start_date: "", end_date: "" }));
+                    return;
+                  }
+
+                  const startDateKey = localDateToDateKey(range.from);
+                  const endDateKey = range.to ? localDateToDateKey(range.to) : "";
+                  setForm((prev) => ({
+                    ...prev,
+                    start_date: startDateKey,
+                    end_date: endDateKey,
+                  }));
+                }}
+                disabled={[{ before: minimumStartDateObject }, ...blockedDateObjects]}
+                modifiers={{
+                  previewStart: (date) =>
+                    Boolean(
+                      hoverPreviewRange &&
+                        isSameLocalDay(date, hoverPreviewRange.from)
+                    ),
+                  previewMiddle: (date) =>
+                    Boolean(
+                      hoverPreviewRange &&
+                        isBetweenLocalDays(date, hoverPreviewRange.from, hoverPreviewRange.to)
+                    ),
+                  previewEnd: (date) =>
+                    Boolean(
+                      hoverPreviewRange &&
+                        isSameLocalDay(date, hoverPreviewRange.to)
+                    ),
+                }}
+                modifiersClassNames={{
+                  previewStart: "bg-amber-300 text-amber-950 rounded-l-xl rounded-r-none",
+                  previewMiddle: "bg-amber-100 text-amber-900 rounded-none",
+                  previewEnd: "bg-amber-300 text-amber-950 rounded-r-xl rounded-l-none",
+                }}
+                className="w-full"
+                classNames={{
+                  months: "flex justify-center",
+                  month: "space-y-2 w-full",
+                  caption: "flex justify-between py-1.5 px-1 relative items-center",
+                  caption_label: "text-sm sm:text-base font-bold tracking-tight text-charcoal",
+                  nav: "flex items-center gap-1",
+                  nav_button: "h-7 w-7 sm:h-8 sm:w-8 rounded-lg border border-navy/15 bg-white text-navy hover:bg-navy/10 hover:border-navy/25 transition-all duration-200 active:scale-95",
+                  table: "w-full border-collapse",
+                  head_row: "grid grid-cols-7 gap-1 sm:gap-1.5",
+                  head_cell: "text-gray-500 rounded-md w-full font-semibold text-[11px] sm:text-xs uppercase tracking-[0.06em]",
+                  row: "grid grid-cols-7 gap-1 sm:gap-1.5 w-full mt-1.5",
+                  cell: "h-9 w-9 sm:h-10 sm:w-10 text-center text-sm p-0 relative",
+                  day: "h-9 w-9 sm:h-10 sm:w-10 p-0 font-semibold rounded-lg sm:rounded-xl hover:bg-amber-100 hover:text-amber-900 transition-all duration-150 hover:scale-[1.03] hover:shadow-sm",
+                  day_selected: "bg-gradient-to-br from-amber-400 to-yellow-300 text-amber-950 border border-amber-400 shadow-[0_6px_14px_rgba(217,119,6,0.28)] hover:from-amber-400 hover:to-yellow-300",
+                  day_today: "border border-amber-400 text-amber-800 ring-1 ring-amber-200",
+                  day_outside: "text-gray-300 opacity-45",
+                  day_disabled: "text-gray-300 opacity-70 cursor-not-allowed",
+                  day_range_middle: "bg-amber-100 text-amber-900 rounded-none",
+                  day_range_start: "bg-amber-300 text-amber-950 rounded-l-xl rounded-r-none",
+                  day_range_end: "bg-amber-300 text-amber-950 rounded-r-xl rounded-l-none",
+                }}
+              />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1044,6 +1216,7 @@ const TrailDetail = () => {
   const [activeTab, setActiveTab] = useState("Overview");
   const tabRef = useRef(null);
   const { user: authUser } = useAuth();
+  const { isTourist, isWishlisted, isUpdating, toggleWishlist } = useWishlist();
 
   const {
     handleLogout: originalHandleLogout,
@@ -1191,6 +1364,17 @@ const TrailDetail = () => {
     setShowGuideBookingModal(true);
   };
 
+  const handleWishlistToggle = async (itemType, itemId) => {
+    const result = await toggleWishlist(itemType, itemId);
+    if (!result.ok && result.reason === "login-required") {
+      navigate("/login", { replace: false });
+      return;
+    }
+    if (!result.ok && result.message) {
+      window.alert(result.message);
+    }
+  };
+
   const handleSubmitGuideBooking = async (payload) => {
     setGuideBookingSubmitting(true);
     try {
@@ -1298,6 +1482,7 @@ const TrailDetail = () => {
 
         {/* Top nav */}
         <div className="absolute top-0 left-0 right-0 px-6 sm:px-10 pt-24">
+          <div className="flex items-center justify-between gap-3">
           <Link
             to="/"
             className="inline-flex items-center gap-2 px-4 py-2 bg-black/25 backdrop-blur-md rounded-xl text-white/90 text-sm font-medium border border-white/15 hover:bg-black/40 hover:border-white/30 transition-all duration-200"
@@ -1305,6 +1490,16 @@ const TrailDetail = () => {
             <ArrowLeft className="h-4 w-4" />
             All Trails
           </Link>
+
+          {isTourist && (
+            <WishlistToggleButton
+              active={isWishlisted("trail", trail.trail_id)}
+              loading={isUpdating("trail", trail.trail_id)}
+              onClick={() => handleWishlistToggle("trail", trail.trail_id)}
+              className="h-10 w-10 border-white/20 bg-black/25 text-white hover:bg-black/40"
+            />
+          )}
+          </div>
         </div>
 
         {/* Hero content */}
@@ -1801,6 +1996,10 @@ const TrailDetail = () => {
                               distanceKm={homestayDistanceMap[h.homestay_id]}
                               distanceThresholdKm={distanceThresholdKm}
                               onSelect={handleHomestayCardSelect}
+                              showWishlist={isTourist}
+                              wishlisted={isWishlisted("homestay", h.homestay_id)}
+                              wishlistLoading={isUpdating("homestay", h.homestay_id)}
+                              onToggleWishlist={() => handleWishlistToggle("homestay", h.homestay_id)}
                               cardRef={(el) => {
                                 if (el) homestayCardRefs.current[h.homestay_id] = el;
                               }}
@@ -1848,6 +2047,10 @@ const TrailDetail = () => {
                             distanceKm={homestayDistanceMap[h.homestay_id]}
                             distanceThresholdKm={distanceThresholdKm}
                             onSelect={handleHomestayCardSelect}
+                            showWishlist={isTourist}
+                            wishlisted={isWishlisted("homestay", h.homestay_id)}
+                            wishlistLoading={isUpdating("homestay", h.homestay_id)}
+                            onToggleWishlist={() => handleWishlistToggle("homestay", h.homestay_id)}
                             cardRef={(el) => {
                               if (el) homestayCardRefs.current[h.homestay_id] = el;
                             }}
@@ -1929,6 +2132,10 @@ const TrailDetail = () => {
                           index={i}
                           user={user}
                           onBookPackage={handleOpenGuidePackageBooking}
+                          showWishlist={isTourist}
+                          wishlisted={isWishlisted("guide", service.guide_id)}
+                          wishlistLoading={isUpdating("guide", service.guide_id)}
+                          onToggleWishlist={() => handleWishlistToggle("guide", service.guide_id)}
                         />
                       ))}
                     </div>
@@ -1954,7 +2161,15 @@ const TrailDetail = () => {
                   ) : (
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-5xl">
                         {baseGuides.map((guide, i) => (
-                           <BaseGuideCard key={guide.id} guide={guide} index={i} />
+                        <BaseGuideCard
+                          key={guide.id}
+                          guide={guide}
+                          index={i}
+                          showWishlist={isTourist}
+                          wishlisted={isWishlisted("guide", guide.guide_id || guide.id)}
+                          wishlistLoading={isUpdating("guide", guide.guide_id || guide.id)}
+                          onToggleWishlist={() => handleWishlistToggle("guide", guide.guide_id || guide.id)}
+                        />
                         ))}
                      </div>
                   )}

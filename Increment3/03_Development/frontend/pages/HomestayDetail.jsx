@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
 import {
@@ -23,12 +23,15 @@ import {
   Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { DayPicker } from "react-day-picker";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import { useAuth } from "../context/AuthContext";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import { setCsrfToken } from "../tokenStore";
 import LogoutModal from "../components/LogoutModal";
+import { useWishlist } from "../hooks/useWishlist";
+import WishlistToggleButton from "../components/wishlist/WishlistToggleButton";
 import api from "../api";
 
 const API = "http://localhost:5000";
@@ -117,6 +120,46 @@ const extractGoogleMapSrc = (rawValue) => {
   }
 };
 
+const dateKeyToLocalDate = (value) => {
+  if (!value || typeof value !== "string") return null;
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+
+  const year = Number.parseInt(match[1], 10);
+  const month = Number.parseInt(match[2], 10);
+  const day = Number.parseInt(match[3], 10);
+  const localDate = new Date(year, month - 1, day);
+  if (Number.isNaN(localDate.getTime())) return null;
+  return localDate;
+};
+
+const localDateToDateKey = (value) => {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return "";
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getLocalDayTimestamp = (value) => {
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) return null;
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+};
+
+const isSameLocalDay = (a, b) => {
+  const aTs = getLocalDayTimestamp(a);
+  const bTs = getLocalDayTimestamp(b);
+  return aTs !== null && bTs !== null && aTs === bTs;
+};
+
+const isBetweenLocalDays = (date, from, to) => {
+  const dateTs = getLocalDayTimestamp(date);
+  const fromTs = getLocalDayTimestamp(from);
+  const toTs = getLocalDayTimestamp(to);
+  if (dateTs === null || fromTs === null || toTs === null) return false;
+  return dateTs > fromTs && dateTs < toTs;
+};
+
 const HomestayBookingModal = ({
   isOpen,
   onClose,
@@ -133,6 +176,15 @@ const HomestayBookingModal = ({
   todayIso,
   user,
 }) => {
+  const [hoveredDate, setHoveredDate] = useState(null);
+
+  const selectedDateRange = {
+    from: dateKeyToLocalDate(bookingForm.check_in_date) || undefined,
+    to: dateKeyToLocalDate(bookingForm.check_out_date) || undefined,
+  };
+
+  const todayDate = dateKeyToLocalDate(todayIso) || new Date();
+
   useEffect(() => {
     if (!isOpen) return undefined;
 
@@ -144,10 +196,29 @@ const HomestayBookingModal = ({
     };
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      setHoveredDate(null);
+    }
+  }, [isOpen]);
+
+  const hoverPreviewRange = useMemo(() => {
+    if (!selectedDateRange.from || selectedDateRange.to || !hoveredDate) return null;
+
+    const fromTs = getLocalDayTimestamp(selectedDateRange.from);
+    const hoverTs = getLocalDayTimestamp(hoveredDate);
+    if (fromTs === null || hoverTs === null) return null;
+
+    return hoverTs >= fromTs
+      ? { from: selectedDateRange.from, to: hoveredDate }
+      : { from: hoveredDate, to: selectedDateRange.from };
+  }, [selectedDateRange.from, selectedDateRange.to, hoveredDate]);
+
   if (!isOpen) return null;
 
   const nonTouristUser = user && user.user_type !== "tourist";
   const disableSubmit = isSoldOut || bookingSubmitting || paymentVerifying || nonTouristUser;
+
   const paymentOptions = [
     {
       key: "esewa",
@@ -223,31 +294,83 @@ const HomestayBookingModal = ({
               </div>
             </div>
 
+            <div className="rounded-2xl border border-navy/10 bg-gradient-to-br from-white to-navy/5 p-3">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-gray-700">Check-in / Check-out</p>
+                <p className="text-xs text-gray-500">
+                  {bookingForm.check_in_date && bookingForm.check_out_date
+                    ? `${bookingForm.check_in_date} to ${bookingForm.check_out_date}`
+                    : "Select your stay range"}
+                </p>
+              </div>
+
+              <DayPicker
+                mode="range"
+                min={1}
+                showOutsideDays
+                fixedWeeks
+                selected={selectedDateRange}
+                onDayMouseEnter={(day) => setHoveredDate(day)}
+                onDayMouseLeave={() => setHoveredDate(null)}
+                onSelect={(range) => {
+                  if (!range?.from) {
+                    handleBookingField("check_in_date", "");
+                    handleBookingField("check_out_date", "");
+                    return;
+                  }
+
+                  handleBookingField("check_in_date", localDateToDateKey(range.from));
+                  handleBookingField("check_out_date", range.to ? localDateToDateKey(range.to) : "");
+                }}
+                disabled={[{ before: todayDate }]}
+                modifiers={{
+                  previewStart: (date) =>
+                    Boolean(
+                      hoverPreviewRange &&
+                        isSameLocalDay(date, hoverPreviewRange.from)
+                    ),
+                  previewMiddle: (date) =>
+                    Boolean(
+                      hoverPreviewRange &&
+                        isBetweenLocalDays(date, hoverPreviewRange.from, hoverPreviewRange.to)
+                    ),
+                  previewEnd: (date) =>
+                    Boolean(
+                      hoverPreviewRange &&
+                        isSameLocalDay(date, hoverPreviewRange.to)
+                    ),
+                }}
+                modifiersClassNames={{
+                  previewStart: "bg-amber-300 text-amber-950 rounded-l-xl rounded-r-none",
+                  previewMiddle: "bg-amber-100 text-amber-900 rounded-none",
+                  previewEnd: "bg-amber-300 text-amber-950 rounded-r-xl rounded-l-none",
+                }}
+                className="w-full"
+                classNames={{
+                  months: "flex justify-center",
+                  month: "space-y-2 w-full",
+                  caption: "flex justify-between py-1.5 px-1 relative items-center",
+                  caption_label: "text-sm sm:text-base font-bold tracking-tight text-charcoal",
+                  nav: "flex items-center gap-1",
+                  nav_button: "h-7 w-7 sm:h-8 sm:w-8 rounded-lg border border-navy/15 bg-white text-navy hover:bg-navy/10 hover:border-navy/25 transition-all duration-200 active:scale-95",
+                  table: "w-full border-collapse",
+                  head_row: "grid grid-cols-7 gap-1 sm:gap-1.5",
+                  head_cell: "text-gray-500 rounded-md w-full font-semibold text-[11px] sm:text-xs uppercase tracking-[0.06em]",
+                  row: "grid grid-cols-7 gap-1 sm:gap-1.5 w-full mt-1.5",
+                  cell: "h-9 w-9 sm:h-10 sm:w-10 text-center text-sm p-0 relative",
+                  day: "h-9 w-9 sm:h-10 sm:w-10 p-0 font-semibold rounded-lg sm:rounded-xl hover:bg-amber-100 hover:text-amber-900 transition-all duration-150 hover:scale-[1.03] hover:shadow-sm",
+                  day_selected: "bg-gradient-to-br from-amber-400 to-yellow-300 text-amber-950 border border-amber-400 shadow-[0_6px_14px_rgba(217,119,6,0.28)] hover:from-amber-400 hover:to-yellow-300",
+                  day_today: "border border-amber-400 text-amber-800 ring-1 ring-amber-200",
+                  day_outside: "text-gray-300 opacity-45",
+                  day_disabled: "text-gray-300 opacity-70 cursor-not-allowed",
+                  day_range_middle: "bg-amber-100 text-amber-900 rounded-none",
+                  day_range_start: "bg-amber-300 text-amber-950 rounded-l-xl rounded-r-none",
+                  day_range_end: "bg-amber-300 text-amber-950 rounded-r-xl rounded-l-none",
+                }}
+              />
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="text-xs font-semibold text-gray-600">
-                Check-in Date
-                <input
-                  type="date"
-                  min={todayIso}
-                  value={bookingForm.check_in_date}
-                  onChange={(e) => handleBookingField("check_in_date", e.target.value)}
-                  required
-                  className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
-                />
-              </label>
-
-              <label className="text-xs font-semibold text-gray-600">
-                Check-out Date
-                <input
-                  type="date"
-                  min={bookingForm.check_in_date || todayIso}
-                  value={bookingForm.check_out_date}
-                  onChange={(e) => handleBookingField("check_out_date", e.target.value)}
-                  required
-                  className="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
-                />
-              </label>
-
               <label className="text-xs font-semibold text-gray-600">
                 Rooms Needed
                 <input
@@ -361,6 +484,7 @@ const HomestayDetail = () => {
     showLogoutModal,
     setShowLogoutModal,
   } = useLogoutHandler();
+  const { isTourist, isWishlisted, isUpdating, toggleWishlist } = useWishlist();
   const [homestay, setHomestay] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -580,6 +704,20 @@ const HomestayDetail = () => {
     setActiveImageIndex(0);
   }, [homestay?.homestay_id]);
 
+  const handleToggleHomestayWishlist = async () => {
+    if (!homestay?.homestay_id) return;
+
+    const result = await toggleWishlist("homestay", homestay.homestay_id);
+    if (!result.ok && result.reason === "login-required") {
+      navigate("/login", { replace: false });
+      return;
+    }
+
+    if (!result.ok && result.message) {
+      window.alert(result.message);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-[#f4f2ee] via-[#faf8f4] to-[#f2efe8]">
@@ -668,6 +806,15 @@ const HomestayDetail = () => {
             </div>
 
             <div className="flex flex-wrap gap-2">
+              {isTourist && (
+                <WishlistToggleButton
+                  active={isWishlisted("homestay", homestay.homestay_id)}
+                  loading={isUpdating("homestay", homestay.homestay_id)}
+                  onClick={handleToggleHomestayWishlist}
+                  className="h-8 w-8 border-rose-200 bg-white text-rose-600"
+                />
+              )}
+
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gold/30 bg-gold-pale text-gold-dark text-xs font-bold shadow-sm">
                 NPR {Number(homestay.price_per_night).toLocaleString()} / night
               </span>

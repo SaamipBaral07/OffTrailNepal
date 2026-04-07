@@ -11,12 +11,15 @@ import {
   Compass,
   CalendarCheck,
   MessageCircle,
+  Heart,
 } from "lucide-react";
 
 const primaryLinks = [
   { name: "Home", to: "/" },
   { name: "Trails", to: "/trails" },
   { name: "Homestays", to: "/homestays" },
+  { name: "Guides", to: "/guides" },
+  { name: "Contact", to: "/contact" },
 ];
 
 export const Header = ({ user, onLogoutClick }) => {
@@ -29,6 +32,8 @@ export const Header = ({ user, onLogoutClick }) => {
   const isHomeRoute = location.pathname === "/";
   const isTrailsRoute = location.pathname.startsWith("/trails");
   const isHomestaysRoute = location.pathname.startsWith("/homestays");
+  const isGuidesRoute = location.pathname.startsWith("/guides");
+  const isContactRoute = location.pathname.startsWith("/contact");
   const profileImageUrl = user?.profile_image_path
     ? (String(user.profile_image_path).startsWith("http")
       ? user.profile_image_path
@@ -206,6 +211,44 @@ export const Header = ({ user, onLogoutClick }) => {
                   )}
                   <span className="relative z-10">HOMESTAYS</span>
                 </button>
+
+                <span className="text-white/25 text-xs font-semibold px-1">•</span>
+
+                <button
+                  onClick={() => goToPrimaryLink("/guides")}
+                  className={`relative px-4 py-2 text-[12px] font-semibold uppercase tracking-wider rounded-full transition-all duration-300 ${isGuidesRoute ? "text-navy" : "text-white/70 hover:text-white"}`}
+                >
+                  {isGuidesRoute && (
+                    <motion.span
+                      layoutId="primaryPagePill"
+                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                      className="absolute inset-0 rounded-full"
+                      style={{
+                        background: "linear-gradient(135deg, #C8932A, #E0B04A)",
+                      }}
+                    />
+                  )}
+                  <span className="relative z-10">GUIDES</span>
+                </button>
+
+                <span className="text-white/25 text-xs font-semibold px-1">•</span>
+
+                <button
+                  onClick={() => goToPrimaryLink("/contact")}
+                  className={`relative px-4 py-2 text-[12px] font-semibold uppercase tracking-wider rounded-full transition-all duration-300 ${isContactRoute ? "text-navy" : "text-white/70 hover:text-white"}`}
+                >
+                  {isContactRoute && (
+                    <motion.span
+                      layoutId="primaryPagePill"
+                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                      className="absolute inset-0 rounded-full"
+                      style={{
+                        background: "linear-gradient(135deg, #C8932A, #E0B04A)",
+                      }}
+                    />
+                  )}
+                  <span className="relative z-10">CONTACT</span>
+                </button>
               </div>
             </div>
 
@@ -305,6 +348,15 @@ export const Header = ({ user, onLogoutClick }) => {
                               <User className="h-4 w-4 text-gray-400" />
                               My Profile
                             </Link>
+                          ) : user.user_type === "admin" ? (
+                            <Link
+                              to="/admin-profile"
+                              onClick={() => setDropdownOpen(false)}
+                              className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors"
+                            >
+                              <User className="h-4 w-4 text-gray-400" />
+                              My Profile
+                            </Link>
                           ) : (
                             <button className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors">
                               <User className="h-4 w-4 text-gray-400" />
@@ -319,6 +371,16 @@ export const Header = ({ user, onLogoutClick }) => {
                             >
                               <CalendarCheck className="h-4 w-4 text-gray-400" />
                               My Bookings
+                            </Link>
+                          )}
+                          {user.user_type === "tourist" && (
+                            <Link
+                              to="/wishlist"
+                              onClick={() => setDropdownOpen(false)}
+                              className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors"
+                            >
+                              <Heart className="h-4 w-4 text-gray-400" />
+                              Wishlist
                             </Link>
                           )}
                           {(user.user_type === "tourist" || user.user_type === "guide") && (
@@ -461,6 +523,16 @@ export const Header = ({ user, onLogoutClick }) => {
                     transition={{ delay: 0.2 }}
                     className="pt-3 mt-2 border-t border-white/10"
                   >
+                    {user.user_type === "tourist" && (
+                      <Link
+                        to="/wishlist"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="w-full mb-2 flex items-center gap-2 px-4 py-3 rounded-xl bg-white/5 text-white/80 font-semibold hover:bg-white/10 transition-all"
+                      >
+                        <Heart className="h-4 w-4" />
+                        Wishlist
+                      </Link>
+                    )}
                     <Link
                       to="/chats"
                       onClick={() => setMobileMenuOpen(false)}
