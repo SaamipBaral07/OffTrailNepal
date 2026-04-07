@@ -12,6 +12,7 @@ import {
   removeGuideFromTrail,
   toggleGuideTrailActive,
   getGuidesByTrail,
+  getPublicGuides,
   getAllGuidesAdmin,
 } from "../controllers/guideController.js";
 import {
@@ -103,6 +104,7 @@ const requireAdmin = (req, res, next) => {
 /* ─── PUBLIC ROUTES (no auth) ─── */
 
 // Get active guides for a specific trail
+router.get("/public", getPublicGuides);
 router.get("/public/trail/:trailId", getGuidesByTrail);
 
 /* ─── GUIDE TRAIL ROUTES ─── */

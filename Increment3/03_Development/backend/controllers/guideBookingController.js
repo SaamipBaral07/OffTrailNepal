@@ -56,6 +56,8 @@ const createGuideRefundWithOptionalAutoProcess = async ({
   let refundStatus = "processing";
   let gatewayRefundReference = null;
   let gatewayResponse = null;
+  const parsedActorUserId = Number.parseInt(actorUserId, 10);
+  const reviewedByUserId = Number.isInteger(parsedActorUserId) ? parsedActorUserId : null;
 
   if (provider === "stripe" && stripeClient && String(paymentReference || "").startsWith("pi_")) {
     try {
@@ -87,11 +89,11 @@ const createGuideRefundWithOptionalAutoProcess = async ({
        refund_reason, policy_rule, refund_status, provider, requested_at, reviewed_at, processed_at,
        reviewed_by_user_id, review_note, gateway_refund_reference, gateway_response, updated_at)
      VALUES
-      ($1, $2, $3, $4, $4, 'NPR', $5, $6, $7, $8, CURRENT_TIMESTAMP,
-       CASE WHEN $7 IN ('refunded', 'rejected') THEN CURRENT_TIMESTAMP ELSE NULL END,
-       CASE WHEN $7 = 'refunded' THEN CURRENT_TIMESTAMP ELSE NULL END,
-       CASE WHEN $7 IN ('refunded', 'rejected') THEN $9 ELSE NULL END,
-       CASE WHEN $7 IN ('refunded', 'rejected') THEN $10 ELSE NULL END,
+      ($1, $2, $3, $4, $4, 'NPR', $5, $6, $7::varchar, $8, CURRENT_TIMESTAMP,
+       CASE WHEN $7::varchar IN ('refunded'::varchar, 'rejected'::varchar) THEN CURRENT_TIMESTAMP ELSE NULL END,
+       CASE WHEN $7::varchar = 'refunded'::varchar THEN CURRENT_TIMESTAMP ELSE NULL END,
+      CASE WHEN $7::varchar IN ('refunded'::varchar, 'rejected'::varchar) THEN $9::integer ELSE NULL::integer END,
+       CASE WHEN $7::varchar IN ('refunded'::varchar, 'rejected'::varchar) THEN $10 ELSE NULL END,
        $11, $12::jsonb, CURRENT_TIMESTAMP)
      ON CONFLICT (booking_id)
      DO UPDATE SET session_id = EXCLUDED.session_id,
@@ -119,7 +121,7 @@ const createGuideRefundWithOptionalAutoProcess = async ({
       policyRule,
       refundStatus,
       provider,
-      actorUserId || null,
+      reviewedByUserId,
       note || null,
       gatewayRefundReference,
       gatewayResponse ? JSON.stringify(gatewayResponse) : null,
@@ -2059,6 +2061,44 @@ export const requestGuideBookingRefund = async (req, res) => {
 export const getAdminGuideBookingPayments = async (req, res) => {
   try {
     await processExpiredPendingGuideBookings();
+    const pageRaw = Number.parseInt(req.query.page, 10);
+    const limitRaw = Number.parseInt(req.query.limit, 10);
+    const requestedPage = Number.isInteger(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+    const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 10;
+
+    const [countResult, summaryResult] = await Promise.all([
+      pool.query(`SELECT COUNT(*)::int AS total FROM guide_package_payment_sessions`),
+      pool.query(
+        `SELECT
+           COUNT(*)::int AS total_sessions,
+           COUNT(*) FILTER (
+             WHERE LOWER(COALESCE(gps.payment_status, '')) = 'success'
+           )::int AS successful_count,
+           COUNT(*) FILTER (
+             WHERE LOWER(COALESCE(gr.refund_status, '')) IN ('requested', 'processing')
+                OR LOWER(COALESCE(gps.payment_status, '')) = 'refund_requested'
+           )::int AS pending_refunds,
+           COALESCE(
+             SUM(
+               CASE
+                 WHEN LOWER(COALESCE(gps.payment_status, '')) = 'success'
+                 THEN COALESCE(gps.total_amount, 0)
+                 ELSE 0
+               END
+             ),
+             0
+           )::numeric AS settled_volume
+         FROM guide_package_payment_sessions gps
+         LEFT JOIN guide_package_bookings b ON gps.booking_id = b.booking_id
+         LEFT JOIN guide_booking_refunds gr ON gr.booking_id = b.booking_id`
+      ),
+    ]);
+
+    const totalRecords = Number(countResult.rows[0]?.total || 0);
+    const totalPages = Math.max(1, Math.ceil(totalRecords / limit));
+    const page = Math.min(requestedPage, totalPages);
+    const offset = (page - 1) * limit;
+
     const result = await pool.query(
       `SELECT gps.session_id, gps.session_token, gps.payment_status,
               gps.transaction_uuid, gps.payment_ref_id,
@@ -2082,10 +2122,28 @@ export const getAdminGuideBookingPayments = async (req, res) => {
        JOIN tourists tr ON gps.tourist_id = tr.tourist_id
        JOIN guides g ON gps.guide_id = g.guide_id
        ORDER BY gps.created_at DESC
-       LIMIT 500`
+       LIMIT $1
+       OFFSET $2`,
+      [limit, offset]
     );
 
-    return res.status(200).json({ records: result.rows });
+    return res.status(200).json({
+      records: result.rows,
+      summary: {
+        total_sessions: Number(summaryResult.rows[0]?.total_sessions || 0),
+        successful_count: Number(summaryResult.rows[0]?.successful_count || 0),
+        pending_refunds: Number(summaryResult.rows[0]?.pending_refunds || 0),
+        settled_volume: Number(summaryResult.rows[0]?.settled_volume || 0),
+      },
+      pagination: {
+        page,
+        limit,
+        total_records: totalRecords,
+        total_pages: totalPages,
+        has_prev: page > 1,
+        has_next: page < totalPages,
+      },
+    });
   } catch (err) {
     console.error("Error fetching admin guide payment records:", err);
     return res.status(500).json({ message: "Server error fetching guide payment records" });

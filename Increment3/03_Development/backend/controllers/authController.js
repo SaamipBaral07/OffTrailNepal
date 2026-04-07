@@ -787,6 +787,33 @@ export const getGuideProfile = async (req, res) => {
 };
 
 /* =========================
+   ADMIN PROFILE (GET)
+========================= */
+export const getAdminProfile = async (req, res) => {
+  try {
+    if (req.user.user_type !== "admin") {
+      return res.status(403).json({ message: "Admin access only" });
+    }
+
+    const result = await pool.query(
+      `SELECT admin_id AS id, full_name, email, profile_image_path, created_at
+       FROM admins
+       WHERE admin_id = $1`,
+      [req.user.user_id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ message: "Admin profile not found" });
+    }
+
+    return res.status(200).json({ profile: result.rows[0] });
+  } catch (error) {
+    console.error("Get admin profile error:", error);
+    return res.status(500).json({ message: "Server error fetching admin profile" });
+  }
+};
+
+/* =========================
    GUIDE PROFILE (UPDATE)
 ========================= */
 export const updateGuideProfile = async (req, res) => {

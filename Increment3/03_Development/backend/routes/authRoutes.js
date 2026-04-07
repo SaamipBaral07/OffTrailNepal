@@ -18,6 +18,7 @@ import {
   getHostProfile,
   updateHostProfile,
   getGuideProfile,
+  getAdminProfile,
   updateGuideProfile,
   updateProfilePhoto,
 } from "../controllers/authController.js";
@@ -79,6 +80,7 @@ router.patch("/tourist/password", verifyToken, updateTouristPassword);
 router.get("/host/profile", verifyToken, getHostProfile);
 router.patch("/host/profile", verifyToken, updateHostProfile);
 router.get("/guide/profile", verifyToken, getGuideProfile);
+router.get("/admin/profile", verifyToken, getAdminProfile);
 router.patch("/guide/profile", verifyToken, updateGuideProfile);
 router.patch("/profile-photo", verifyToken, profileUpload.single("profile_photo"), updateProfilePhoto);
 

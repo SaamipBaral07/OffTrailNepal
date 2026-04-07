@@ -1569,11 +1569,50 @@ export const getPaymentSessionStatus = async (req, res) => {
 
 export const getAdminBookingPayments = async (req, res) => {
   try {
+    const pageRaw = Number.parseInt(req.query.page, 10);
+    const limitRaw = Number.parseInt(req.query.limit, 10);
+    const requestedPage = Number.isInteger(pageRaw) && pageRaw > 0 ? pageRaw : 1;
+    const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 10;
+
+    const [countResult, summaryResult] = await Promise.all([
+      pool.query(`SELECT COUNT(*)::int AS total FROM booking_payment_sessions`),
+      pool.query(
+        `SELECT
+           COUNT(*)::int AS total_sessions,
+           COUNT(*) FILTER (
+             WHERE LOWER(COALESCE(p.payment_status, ps.payment_status, '')) = 'success'
+           )::int AS successful_count,
+           COUNT(*) FILTER (
+             WHERE LOWER(COALESCE(r.refund_status, '')) IN ('requested', 'processing')
+                OR LOWER(COALESCE(p.payment_status, ps.payment_status, '')) = 'refund_requested'
+           )::int AS pending_refunds,
+           COALESCE(
+             SUM(
+               CASE
+                 WHEN LOWER(COALESCE(p.payment_status, ps.payment_status, '')) = 'success'
+                 THEN COALESCE(ps.total_amount, ps.amount, 0)
+                 ELSE 0
+               END
+             ),
+             0
+           )::numeric AS settled_volume
+         FROM booking_payment_sessions ps
+         LEFT JOIN homestay_bookings b ON ps.booking_id = b.booking_id
+         LEFT JOIN payments p ON p.booking_id = b.booking_id
+         LEFT JOIN booking_refunds r ON r.booking_id = b.booking_id`
+      ),
+    ]);
+
+    const totalRecords = Number(countResult.rows[0]?.total || 0);
+    const totalPages = Math.max(1, Math.ceil(totalRecords / limit));
+    const page = Math.min(requestedPage, totalPages);
+    const offset = (page - 1) * limit;
+
     const result = await pool.query(
-          `SELECT ps.session_id, ps.session_token,
+      `SELECT ps.session_id, ps.session_token,
               COALESCE(p.payment_status, ps.payment_status) AS payment_status,
               ps.transaction_uuid, COALESCE(p.transaction_reference, ps.payment_ref_id) AS payment_ref_id,
-            COALESCE(ps.payment_response->>'provider', CASE WHEN ps.transaction_uuid LIKE 'STPAY-%' THEN 'stripe' ELSE 'esewa' END) AS payment_provider,
+              COALESCE(ps.payment_response->>'provider', CASE WHEN ps.transaction_uuid LIKE 'STPAY-%' THEN 'stripe' ELSE 'esewa' END) AS payment_provider,
               ps.amount, ps.total_amount, ps.created_at AS payment_initiated_at, ps.verified_at,
               b.booking_id, b.booking_code, b.status AS booking_status,
               r.refund_status, r.requested_amount AS refund_requested_amount,
@@ -1589,10 +1628,28 @@ export const getAdminBookingPayments = async (req, res) => {
        JOIN tourists t ON ps.tourist_id = t.tourist_id
        JOIN hosts hs ON ps.host_id = hs.host_id
        ORDER BY ps.created_at DESC
-       LIMIT 500`
+       LIMIT $1
+       OFFSET $2`,
+      [limit, offset]
     );
 
-    return res.status(200).json({ records: result.rows });
+    return res.status(200).json({
+      records: result.rows,
+      summary: {
+        total_sessions: Number(summaryResult.rows[0]?.total_sessions || 0),
+        successful_count: Number(summaryResult.rows[0]?.successful_count || 0),
+        pending_refunds: Number(summaryResult.rows[0]?.pending_refunds || 0),
+        settled_volume: Number(summaryResult.rows[0]?.settled_volume || 0),
+      },
+      pagination: {
+        page,
+        limit,
+        total_records: totalRecords,
+        total_pages: totalPages,
+        has_prev: page > 1,
+        has_next: page < totalPages,
+      },
+    });
   } catch (err) {
     console.error("Error fetching admin booking payments:", err);
     return res.status(500).json({ message: "Server error fetching payment records" });

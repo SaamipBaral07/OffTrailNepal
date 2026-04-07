@@ -9,6 +9,7 @@ const CSRF_IGNORED_PATHS = new Set([
   "/api/auth/verify-email",
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
+  "/api/contact/enquiries",
   "/api/bookings/payment/esewa/success",
   "/api/bookings/payment/esewa/failure",
   "/api/guide-bookings/payment/esewa/success",

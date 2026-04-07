@@ -288,6 +288,130 @@ export const getGuidesByTrail = async (req, res) => {
 };
 
 /* =========================
+   PUBLIC: GET ALL APPROVED GUIDES
+   GET /api/guides/public
+========================= */
+export const getPublicGuides = async (req, res) => {
+  try {
+    const q = String(req.query.q || "").trim().toLowerCase();
+    const region = String(req.query.region || "").trim().toLowerCase();
+    const minRatingRaw = Number.parseFloat(req.query.minRating);
+    const minRating = Number.isFinite(minRatingRaw) ? minRatingRaw : null;
+    const sort = String(req.query.sort || "experience_desc").trim().toLowerCase();
+
+    const result = await pool.query(
+      `SELECT g.guide_id,
+              g.full_name,
+              g.phone,
+              g.experience_years,
+              COALESCE(ROUND(AVG(gr.rating)::numeric, 1), 0) AS avg_rating,
+              COUNT(DISTINCT gr.review_id)::int AS total_reviews,
+              COUNT(DISTINCT gt.id)::int AS total_trails,
+              COUNT(DISTINCT gs.service_id)::int AS total_services,
+              MIN(gs.price_per_day) AS starting_price,
+              COALESCE(
+                JSON_AGG(
+                  DISTINCT JSONB_BUILD_OBJECT(
+                    'trail_id', t.trail_id,
+                    'trail_name', t.trail_name,
+                    'region', t.region
+                  )
+                ) FILTER (WHERE t.trail_id IS NOT NULL),
+                '[]'::json
+              ) AS trails
+       FROM guides g
+       JOIN guide_verifications gv ON gv.guide_id = g.guide_id
+       LEFT JOIN guide_trails gt ON gt.guide_id = g.guide_id AND gt.is_active = true
+       LEFT JOIN trekking_trails t ON t.trail_id = gt.trail_id
+       LEFT JOIN guide_services gs ON gs.guide_id = g.guide_id AND gs.is_active = true
+       LEFT JOIN guide_reviews gr ON gr.guide_id = g.guide_id
+       WHERE gv.verification_status = 'approved'
+       GROUP BY g.guide_id
+       ORDER BY g.created_at DESC`
+    );
+
+    let guides = result.rows.map((row) => {
+      const trails = Array.isArray(row.trails) ? row.trails : [];
+      const normalizedTrails = trails
+        .filter((trail) => trail && trail.trail_id)
+        .map((trail) => ({
+          trail_id: Number(trail.trail_id),
+          trail_name: String(trail.trail_name || "").trim(),
+          region: String(trail.region || "").trim(),
+        }));
+
+      return {
+        guide_id: Number(row.guide_id),
+        full_name: row.full_name,
+        phone: row.phone,
+        experience_years: Number(row.experience_years || 0),
+        avg_rating: Number(row.avg_rating || 0),
+        total_reviews: Number(row.total_reviews || 0),
+        total_trails: Number(row.total_trails || 0),
+        total_services: Number(row.total_services || 0),
+        starting_price: row.starting_price !== null ? Number(row.starting_price) : null,
+        trails: normalizedTrails,
+      };
+    });
+
+    if (q) {
+      guides = guides.filter((guide) => {
+        const nameHit = String(guide.full_name || "").toLowerCase().includes(q);
+        const trailHit = guide.trails.some((trail) =>
+          String(trail.trail_name || "").toLowerCase().includes(q)
+        );
+        const regionHit = guide.trails.some((trail) =>
+          String(trail.region || "").toLowerCase().includes(q)
+        );
+        return nameHit || trailHit || regionHit;
+      });
+    }
+
+    if (region) {
+      guides = guides.filter((guide) =>
+        guide.trails.some((trail) => String(trail.region || "").toLowerCase() === region)
+      );
+    }
+
+    if (minRating !== null) {
+      guides = guides.filter((guide) => Number(guide.avg_rating || 0) >= minRating);
+    }
+
+    const sorters = {
+      experience_desc: (a, b) => b.experience_years - a.experience_years || b.avg_rating - a.avg_rating,
+      rating_desc: (a, b) => b.avg_rating - a.avg_rating || b.total_reviews - a.total_reviews,
+      reviews_desc: (a, b) => b.total_reviews - a.total_reviews || b.avg_rating - a.avg_rating,
+      price_asc: (a, b) => {
+        const priceA = Number.isFinite(a.starting_price) ? a.starting_price : Number.MAX_SAFE_INTEGER;
+        const priceB = Number.isFinite(b.starting_price) ? b.starting_price : Number.MAX_SAFE_INTEGER;
+        return priceA - priceB;
+      },
+      name_asc: (a, b) => String(a.full_name || "").localeCompare(String(b.full_name || "")),
+    };
+
+    const sorter = sorters[sort] || sorters.experience_desc;
+    guides.sort(sorter);
+
+    const regionSet = new Set();
+    guides.forEach((guide) => {
+      guide.trails.forEach((trail) => {
+        if (trail.region) regionSet.add(trail.region);
+      });
+    });
+
+    return res.status(200).json({
+      guides,
+      filters: {
+        regions: Array.from(regionSet).sort((a, b) => a.localeCompare(b)),
+      },
+    });
+  } catch (err) {
+    console.error("Error fetching public guides:", err);
+    return res.status(500).json({ message: "Server error fetching guides" });
+  }
+};
+
+/* =========================
    ADMIN: GET ALL GUIDES WITH STATS
    GET /api/guides/admin/all
 ========================= */
