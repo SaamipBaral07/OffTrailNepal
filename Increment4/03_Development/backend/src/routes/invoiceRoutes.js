@@ -1,0 +1,16 @@
+import express from "express";
+import { verifyToken } from "../middleware/authMiddleware.js";
+import { getTouristInvoice } from "../controllers/invoiceController.js";
+
+const router = express.Router();
+
+const requireTourist = (req, res, next) => {
+  if (req.user.user_type !== "tourist") {
+    return res.status(403).json({ message: "Tourist access only" });
+  }
+  next();
+};
+
+router.get("/:bookingType/:bookingId", verifyToken, requireTourist, getTouristInvoice);
+
+export default router;
