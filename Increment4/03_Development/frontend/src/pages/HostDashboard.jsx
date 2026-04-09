@@ -41,6 +41,7 @@ import {
   FileText,
   Key,
   UserCircle,
+  Menu,
 } from "lucide-react";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
@@ -1362,6 +1363,7 @@ const HostDashboard = () => {
   const [hostVerification, setHostVerification] = useState(undefined);
   const [hostVerificationSubmitting, setHostVerificationSubmitting] = useState(false);
   const [hostCitizenshipFile, setHostCitizenshipFile] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const hostVerificationStatus = hostVerification?.verification_status || "not_submitted";
   const isHostVerified = hostVerificationStatus === "approved";
@@ -1383,6 +1385,11 @@ const HostDashboard = () => {
     const element = document.getElementById(sectionId);
     if (!element) return;
     element.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleMobileSectionNav = (sectionId) => {
+    scrollToSection(sectionId);
+    setMobileMenuOpen(false);
   };
 
   // Auth check
@@ -1512,6 +1519,26 @@ const HostDashboard = () => {
     }
   }, [isLoading, user, fetchHomestays, fetchHostBookings, fetchTrails, fetchAmenityCatalog, fetchHostVerification]);
 
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [mobileMenuOpen]);
+
   // Create homestay
   const handleCreate = async (formData) => {
     if (!isHostVerified) {
@@ -1622,6 +1649,13 @@ const HostDashboard = () => {
   const hostAverageRating = hostReviews.length
     ? (hostReviews.reduce((sum, item) => sum + Number(item.review_rating || 0), 0) / hostReviews.length)
     : 0;
+
+  const mobileMenuItems = [
+    { id: "overview", icon: Home, label: "Overview" },
+    { id: "properties", icon: Key, label: "Properties", count: homestays.length },
+    { id: "bookings", icon: CalendarDays, label: "Bookings", count: currentHostBookings.length },
+    { id: "guest-reviews", icon: Star, label: "Guest Reviews", count: hostReviews.length },
+  ];
 
   const renderHostBookingCard = (booking, keyPrefix) => {
     const bookingState = getHostBookingDisplayState(booking);
@@ -1826,21 +1860,149 @@ const HostDashboard = () => {
         <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-gradient-to-br from-gold/5 via-alpine/5 to-transparent rounded-full blur-3xl -z-10 transform translate-x-1/3 -translate-y-1/3 pointer-events-none" />
         
         {/* Mobile Header (Visible only on small screens) */}
-        <header className="lg:hidden bg-navy border-b border-navy-light/30 px-4 py-4 sticky top-0 z-40 shadow-xl shadow-navy/10 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link to="/" className="w-10 h-10 rounded-full overflow-hidden ring-2 ring-gold/80">
-              <img src="/offtrail-latest.png" alt="OffTrail Nepal" className="h-full w-full object-cover bg-white" />
+        <header className="lg:hidden bg-navy border-b border-navy-light/30 px-4 py-4 sticky top-0 z-40 shadow-xl shadow-navy/10">
+          <div className="flex items-center justify-between gap-3">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-gold text-xs font-bold tracking-wide"
+            >
+              <Home className="h-4 w-4" />
+              Back to Home
             </Link>
-            <div>
-              <h1 className="text-lg font-heading font-bold text-white tracking-wide">
-                OffTrail<span className="text-gold">Nepal</span>
-              </h1>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isHostVerified) {
+                    showNotification("Complete and approve host citizenship verification first.", "error");
+                    return;
+                  }
+                  setShowCreateForm(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gold text-navy text-xs font-bold"
+              >
+                <Plus className="h-4 w-4" />
+                New
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(true)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-white"
+                aria-label="Open navigation menu"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
             </div>
           </div>
-          <button onClick={() => setShowLogoutModal(true)} className="p-2 text-red-400 hover:bg-red-500/10 rounded-xl border border-transparent">
-            <LogOut className="h-5 w-5" />
-          </button>
+
+          <div className="mt-4">
+            <h1 className="text-2xl font-heading font-bold text-white leading-tight">Host Dashboard</h1>
+            <p className="text-xs text-white/70 mt-1">Manage your listings, bookings, and guest feedback</p>
+          </div>
         </header>
+
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <>
+              <motion.button
+                type="button"
+                className="lg:hidden fixed inset-0 z-50 bg-black/45 backdrop-blur-[1px]"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setMobileMenuOpen(false)}
+                aria-label="Close menu overlay"
+              />
+
+              <motion.aside
+                initial={{ x: "100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "100%" }}
+                transition={{ type: "spring", stiffness: 320, damping: 32 }}
+                className="lg:hidden fixed inset-y-0 right-0 z-[60] w-[85%] max-w-sm bg-white shadow-2xl border-l border-gray-200 flex flex-col"
+              >
+                <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-navy to-navy-light">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-gold font-bold">Host Navigation</p>
+                      <h2 className="text-white font-heading font-bold text-lg mt-1">Control Panel</h2>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
+                      aria-label="Close navigation menu"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="px-5 py-4 border-b border-gray-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full overflow-hidden bg-gray-100 border border-gray-200">
+                      {profileImageUrl ? (
+                        <img src={profileImageUrl} alt="Host" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="h-full w-full flex items-center justify-center text-sm font-bold text-navy">
+                          {(user?.full_name || "H").charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-gray-900 truncate">{user?.full_name || "Host"}</p>
+                      <p className="text-[11px] text-gray-500">Host workspace</p>
+                    </div>
+                  </div>
+                </div>
+
+                <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+                  {mobileMenuItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleMobileSectionNav(item.id)}
+                      className="w-full flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-sm font-semibold text-gray-700 hover:border-navy/30 hover:bg-navy/5 transition-colors"
+                    >
+                      <item.icon className="h-4.5 w-4.5 text-navy" />
+                      <span>{item.label}</span>
+                      {item.count > 0 && (
+                        <span className="ml-auto inline-flex min-w-5 justify-center rounded-full bg-gold/20 px-2 py-0.5 text-[10px] font-bold text-gold-dark">
+                          {item.count}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+
+                  <Link
+                    to="/host-profile"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-sm font-semibold text-gray-700 hover:border-navy/30 hover:bg-navy/5 transition-colors"
+                  >
+                    <UserCircle className="h-4.5 w-4.5 text-navy" />
+                    My Profile
+                  </Link>
+                </nav>
+
+                <div className="px-4 py-4 border-t border-gray-100 bg-gray-50">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setShowLogoutModal(true);
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign Out
+                  </button>
+                </div>
+              </motion.aside>
+            </>
+          )}
+        </AnimatePresence>
 
       {/* Main Content */}
       <main id="overview" className="max-w-[1600px] w-full mx-auto px-4 sm:px-8 py-8 space-y-8 relative z-10">

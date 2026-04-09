@@ -1123,7 +1123,13 @@ export const getPublicHomestayById = async (req, res) => {
     await reconcileHomestayAvailability({ homestayId });
 
     const result = await pool.query(
-      `SELECT h.*, t.trail_name, t.region, t.trail_id
+      `SELECT h.homestay_id, h.trail_id, h.host_id, h.name, h.location,
+              h.price_per_night, h.capacity, h.description,
+              h.latitude, h.longitude, h.amenities,
+              h.total_rooms, h.available_rooms,
+              h.google_map_iframe_link,
+              h.created_at, h.updated_at,
+              t.trail_name, t.region
        FROM homestays h
        JOIN trekking_trails t ON h.trail_id = t.trail_id
        WHERE h.homestay_id = $1
@@ -1185,7 +1191,7 @@ export const getPublicHomestaysByTrail = async (req, res) => {
     const { trailId } = req.params;
     const result = await pool.query(
       `SELECT h.homestay_id, h.name, h.location, h.price_per_night, h.capacity,
-              h.description, h.contact_phone, h.latitude, h.longitude, h.is_active,
+              h.description, h.latitude, h.longitude, h.is_active,
               h.amenities, h.total_rooms, h.available_rooms, h.google_map_iframe_link,
               COALESCE(rs.avg_rating, 0) AS avg_rating,
               COALESCE(rs.total_reviews, 0) AS total_reviews

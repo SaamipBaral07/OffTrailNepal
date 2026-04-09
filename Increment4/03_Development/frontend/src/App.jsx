@@ -24,6 +24,7 @@ import HostDashboard from "./pages/HostDashboard";
 import GuideDashboard from "./pages/GuideDashboard";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminProfile from "./pages/AdminProfile";
+import AdminAnalytics from "./pages/AdminAnalytics";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentFailed from "./pages/PaymentFailed";
 import InvoicePage from "./pages/InvoicePage";
@@ -167,6 +168,15 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["admin"]}>
                 <AdminProfile />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/admin-analytics"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <AdminAnalytics />
               </ProtectedRoute>
             }
           />

@@ -26,6 +26,7 @@
     "migrate:wishlist": "node scripts/run_create_tourist_wishlists_migration.mjs",
     "migrate:contact-enquiries": "node scripts/run_create_contact_enquiries_migration.mjs",
     "migrate:contact-enquiry-replies": "node scripts/run_add_admin_reply_fields_to_contact_enquiries_migration.mjs",
+    "migrate:trail-community-photos": "node scripts/run_create_trail_community_photo_submissions_migration.mjs",
     "verify:guide-reviews": "node scripts/verify_guide_review_flow.mjs"
   },
   "keywords": [],

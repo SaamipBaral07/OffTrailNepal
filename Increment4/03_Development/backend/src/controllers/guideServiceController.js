@@ -273,7 +273,6 @@ export const getPublicServicesByTrail = async (req, res) => {
          gs.created_at,
          g.guide_id,
          g.full_name    AS guide_name,
-         g.phone        AS guide_phone,
          g.experience_years,
          g.license_no,
          gt.experience_level,

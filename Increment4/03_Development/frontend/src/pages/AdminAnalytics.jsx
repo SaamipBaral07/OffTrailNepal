@@ -1,0 +1,937 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  ArrowLeft,
+  BarChart3,
+  RefreshCw,
+  Download,
+  Home,
+  Compass,
+  MessageSquare,
+  CheckCircle2,
+  AlertTriangle,
+  TrendingUp,
+  Shield,
+  LogOut,
+  Loader2,
+} from "lucide-react";
+import { motion } from "framer-motion";
+import api from "../api";
+import { useAuth } from "../context/AuthContext";
+import { getToken } from "../tokenStore";
+import { useLogoutHandler } from "../hooks/useLogoutHandler";
+import LogoutModal from "../components/LogoutModal";
+
+const toNumber = (value) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const normalizedPaymentState = (record) => {
+  const paymentStatus = String(record?.payment_status || "").trim().toLowerCase();
+  const refundStatus = String(record?.refund_status || "").trim().toLowerCase();
+
+  if (["requested", "processing", "processed", "refunded"].includes(refundStatus)) {
+    return "refund";
+  }
+
+  if (["refund_requested", "refunded"].includes(paymentStatus)) {
+    return "refund";
+  }
+
+  if (paymentStatus === "success") {
+    return "success";
+  }
+
+  if (["pending", "initiated", "processing", "created"].includes(paymentStatus)) {
+    return "pending";
+  }
+
+  return "failed";
+};
+
+const toRecordDateKey = (value) => {
+  if (!value) return "";
+  const raw = String(value).trim();
+  if (!raw) return "";
+
+  const isoDateMatch = raw.match(/^(\d{4}-\d{2}-\d{2})(?:$|T)/);
+  if (isoDateMatch) {
+    return isoDateMatch[1];
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "";
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const normalizedPaymentProvider = (record) => {
+  const provider = String(record?.payment_provider || "").trim().toLowerCase();
+  if (provider.includes("esewa")) return "esewa";
+  if (provider.includes("stripe")) return "stripe";
+  return provider || "unknown";
+};
+
+const monthKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+const monthLabel = (date) =>
+  date.toLocaleDateString("en-US", {
+    month: "short",
+  });
+
+const cardAnimation = {
+  initial: { opacity: 0, y: 12 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.35 },
+};
+
+const AdminAnalytics = () => {
+  const navigate = useNavigate();
+  const { user: authUser, loading: authLoading } = useAuth();
+  const {
+    handleLogout,
+    handleStayLoggedIn,
+    showLogoutModal,
+    setShowLogoutModal,
+  } = useLogoutHandler();
+
+  const [pageLoading, setPageLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [providerFilter, setProviderFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [analytics, setAnalytics] = useState({
+    trails: [],
+    homestays: [],
+    guides: [],
+    homestayPayments: {
+      records: [],
+      summary: {
+        total_sessions: 0,
+        successful_count: 0,
+        pending_refunds: 0,
+        settled_volume: 0,
+      },
+    },
+    guidePayments: {
+      records: [],
+      summary: {
+        total_sessions: 0,
+        successful_count: 0,
+        pending_refunds: 0,
+        settled_volume: 0,
+      },
+    },
+    contact: {
+      enquiries: [],
+      summary: {
+        total_records: 0,
+        last_24h: 0,
+        booking_related: 0,
+        replied_count: 0,
+        pending_reply_count: 0,
+      },
+    },
+  });
+
+  const fetchAnalytics = useCallback(async (asRefresh = false) => {
+    if (asRefresh) {
+      setRefreshing(true);
+    } else {
+      setPageLoading(true);
+    }
+
+    setError("");
+
+    const [
+      trailsRes,
+      homestaysRes,
+      guidesRes,
+      homestayPaymentsRes,
+      guidePaymentsRes,
+      contactRes,
+    ] = await Promise.allSettled([
+      api.get("/api/trails"),
+      api.get("/api/homestays/admin/all"),
+      api.get("/api/guides/admin/all"),
+      api.get("/api/bookings/admin/payments", { params: { page: 1, limit: 50 } }),
+      api.get("/api/guide-bookings/admin/payments", { params: { page: 1, limit: 50 } }),
+      api.get("/api/contact/enquiries/admin", { params: { page: 1, limit: 20 } }),
+    ]);
+
+    const failedCalls = [
+      trailsRes,
+      homestaysRes,
+      guidesRes,
+      homestayPaymentsRes,
+      guidePaymentsRes,
+      contactRes,
+    ].filter((result) => result.status === "rejected").length;
+
+    if (failedCalls === 6) {
+      setError("Could not load analytics data right now. Please try again.");
+    } else if (failedCalls > 0) {
+      setError("Some analytics sources could not be loaded. Showing partial data.");
+    }
+
+    setAnalytics({
+      trails:
+        trailsRes.status === "fulfilled"
+          ? Array.isArray(trailsRes.value?.data?.trails)
+            ? trailsRes.value.data.trails
+            : []
+          : [],
+      homestays:
+        homestaysRes.status === "fulfilled"
+          ? Array.isArray(homestaysRes.value?.data?.homestays)
+            ? homestaysRes.value.data.homestays
+            : []
+          : [],
+      guides:
+        guidesRes.status === "fulfilled"
+          ? Array.isArray(guidesRes.value?.data?.guides)
+            ? guidesRes.value.data.guides
+            : []
+          : [],
+      homestayPayments:
+        homestayPaymentsRes.status === "fulfilled"
+          ? {
+              records: Array.isArray(homestayPaymentsRes.value?.data?.records)
+                ? homestayPaymentsRes.value.data.records
+                : [],
+              summary: {
+                total_sessions: toNumber(homestayPaymentsRes.value?.data?.summary?.total_sessions),
+                successful_count: toNumber(homestayPaymentsRes.value?.data?.summary?.successful_count),
+                pending_refunds: toNumber(homestayPaymentsRes.value?.data?.summary?.pending_refunds),
+                settled_volume: toNumber(homestayPaymentsRes.value?.data?.summary?.settled_volume),
+              },
+            }
+          : {
+              records: [],
+              summary: {
+                total_sessions: 0,
+                successful_count: 0,
+                pending_refunds: 0,
+                settled_volume: 0,
+              },
+            },
+      guidePayments:
+        guidePaymentsRes.status === "fulfilled"
+          ? {
+              records: Array.isArray(guidePaymentsRes.value?.data?.records)
+                ? guidePaymentsRes.value.data.records
+                : [],
+              summary: {
+                total_sessions: toNumber(guidePaymentsRes.value?.data?.summary?.total_sessions),
+                successful_count: toNumber(guidePaymentsRes.value?.data?.summary?.successful_count),
+                pending_refunds: toNumber(guidePaymentsRes.value?.data?.summary?.pending_refunds),
+                settled_volume: toNumber(guidePaymentsRes.value?.data?.summary?.settled_volume),
+              },
+            }
+          : {
+              records: [],
+              summary: {
+                total_sessions: 0,
+                successful_count: 0,
+                pending_refunds: 0,
+                settled_volume: 0,
+              },
+            },
+      contact:
+        contactRes.status === "fulfilled"
+          ? {
+              enquiries: Array.isArray(contactRes.value?.data?.enquiries)
+                ? contactRes.value.data.enquiries
+                : [],
+              summary: {
+                total_records: toNumber(contactRes.value?.data?.summary?.total_records),
+                last_24h: toNumber(contactRes.value?.data?.summary?.last_24h),
+                booking_related: toNumber(contactRes.value?.data?.summary?.booking_related),
+                replied_count: toNumber(contactRes.value?.data?.summary?.replied_count),
+                pending_reply_count: toNumber(contactRes.value?.data?.summary?.pending_reply_count),
+              },
+            }
+          : {
+              enquiries: [],
+              summary: {
+                total_records: 0,
+                last_24h: 0,
+                booking_related: 0,
+                replied_count: 0,
+                pending_reply_count: 0,
+              },
+            },
+    });
+
+    setLastUpdated(new Date());
+    setRefreshing(false);
+    setPageLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!getToken() || !authUser) {
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    if (authUser.user_type !== "admin") {
+      navigate("/", { replace: true });
+      return;
+    }
+
+    fetchAnalytics(false);
+  }, [authLoading, authUser, navigate, fetchAnalytics]);
+
+  const pendingHomestays = useMemo(
+    () => analytics.homestays.filter((item) => item.verified_status === "pending").length,
+    [analytics.homestays]
+  );
+
+  const approvedHomestays = useMemo(
+    () => analytics.homestays.filter((item) => item.verified_status === "approved").length,
+    [analytics.homestays]
+  );
+
+  const rejectedHomestays = useMemo(
+    () => analytics.homestays.filter((item) => item.verified_status === "rejected").length,
+    [analytics.homestays]
+  );
+
+  const pendingGuides = useMemo(
+    () => analytics.guides.filter((item) => item.verification_status === "pending").length,
+    [analytics.guides]
+  );
+
+  const approvedGuides = useMemo(
+    () => analytics.guides.filter((item) => item.verification_status === "approved").length,
+    [analytics.guides]
+  );
+
+  const rejectedGuides = useMemo(
+    () => analytics.guides.filter((item) => item.verification_status === "rejected").length,
+    [analytics.guides]
+  );
+
+  const totalPendingRefunds =
+    toNumber(analytics.homestayPayments.summary.pending_refunds) +
+    toNumber(analytics.guidePayments.summary.pending_refunds);
+
+  const unresolvedOperationalAlerts =
+    pendingHomestays + pendingGuides + totalPendingRefunds + toNumber(analytics.contact.summary.pending_reply_count);
+
+  const allPaymentRecords = useMemo(
+    () => [
+      ...analytics.homestayPayments.records.map((record) => ({
+        ...record,
+        booking_type: "homestay",
+      })),
+      ...analytics.guidePayments.records.map((record) => ({
+        ...record,
+        booking_type: "guide",
+      })),
+    ],
+    [analytics.homestayPayments.records, analytics.guidePayments.records]
+  );
+
+  const filteredPaymentRecords = useMemo(
+    () =>
+      allPaymentRecords.filter((record) => {
+        const paymentState = normalizedPaymentState(record);
+        const provider = normalizedPaymentProvider(record);
+        const recordDateKey = toRecordDateKey(
+          record?.verified_at || record?.payment_initiated_at || record?.created_at
+        );
+
+        if (statusFilter !== "all" && paymentState !== statusFilter) {
+          return false;
+        }
+
+        if (providerFilter !== "all" && provider !== providerFilter) {
+          return false;
+        }
+
+        if (dateFrom && (!recordDateKey || recordDateKey < dateFrom)) {
+          return false;
+        }
+
+        if (dateTo && (!recordDateKey || recordDateKey > dateTo)) {
+          return false;
+        }
+
+        return true;
+      }),
+    [allPaymentRecords, dateFrom, dateTo, providerFilter, statusFilter]
+  );
+
+  const filteredPaymentSessions = filteredPaymentRecords.length;
+  const filteredSuccessfulPayments = filteredPaymentRecords.filter(
+    (record) => normalizedPaymentState(record) === "success"
+  ).length;
+  const filteredRevenue = filteredPaymentRecords
+    .filter((record) => normalizedPaymentState(record) === "success")
+    .reduce((sum, record) => sum + toNumber(record?.total_amount ?? record?.amount), 0);
+
+  const paymentSuccessRate =
+    filteredPaymentSessions > 0
+      ? Math.round((filteredSuccessfulPayments / filteredPaymentSessions) * 100)
+      : 0;
+
+  const clearFilters = () => {
+    setDateFrom("");
+    setDateTo("");
+    setProviderFilter("all");
+    setStatusFilter("all");
+  };
+
+  const handleExportCsv = () => {
+    if (!filteredPaymentRecords.length) {
+      window.alert("No payment records available for the selected filters.");
+      return;
+    }
+
+    const headers = [
+      "booking_type",
+      "booking_id",
+      "booking_code",
+      "payment_provider",
+      "payment_status",
+      "refund_status",
+      "payment_state",
+      "total_amount",
+      "payment_initiated_at",
+      "verified_at",
+      "tourist_name",
+      "tourist_email",
+      "counterparty_name",
+      "counterparty_email",
+      "service_or_property",
+    ];
+
+    const escapeCsv = (value) => {
+      const stringified = String(value ?? "");
+      if (/[",\n]/.test(stringified)) {
+        return `"${stringified.replace(/"/g, '""')}"`;
+      }
+      return stringified;
+    };
+
+    const rows = filteredPaymentRecords.map((record) => ({
+      booking_type: record.booking_type,
+      booking_id: record.booking_id ?? "",
+      booking_code: record.booking_code ?? "",
+      payment_provider: normalizedPaymentProvider(record),
+      payment_status: record.payment_status ?? "",
+      refund_status: record.refund_status ?? "",
+      payment_state: normalizedPaymentState(record),
+      total_amount: toNumber(record.total_amount ?? record.amount),
+      payment_initiated_at: record.payment_initiated_at ?? record.created_at ?? "",
+      verified_at: record.verified_at ?? "",
+      tourist_name: record.tourist_name ?? "",
+      tourist_email: record.tourist_email ?? "",
+      counterparty_name: record.host_name ?? record.guide_name ?? "",
+      counterparty_email: record.host_email ?? record.guide_email ?? "",
+      service_or_property: record.homestay_name ?? record.service_title ?? "",
+    }));
+
+    const csv = [
+      headers.join(","),
+      ...rows.map((row) => headers.map((header) => escapeCsv(row[header])).join(",")),
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const fromPart = dateFrom || "start";
+    const toPart = dateTo || "today";
+    anchor.href = url;
+    anchor.download = `admin-payment-report-${fromPart}-to-${toPart}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const paymentMix = useMemo(() => {
+    const counts = {
+      success: 0,
+      pending: 0,
+      refund: 0,
+      failed: 0,
+    };
+
+    filteredPaymentRecords.forEach((record) => {
+      const state = normalizedPaymentState(record);
+      counts[state] += 1;
+    });
+
+    return [
+      { label: "Successful", value: counts.success, color: "#0f766e" },
+      { label: "Pending", value: counts.pending, color: "#d97706" },
+      { label: "Refund", value: counts.refund, color: "#dc2626" },
+      { label: "Failed", value: counts.failed, color: "#475569" },
+    ];
+  }, [filteredPaymentRecords]);
+
+  const donutFillStyle = useMemo(() => {
+    const total = paymentMix.reduce((sum, segment) => sum + segment.value, 0);
+    if (total <= 0) {
+      return "conic-gradient(#e2e8f0 0% 100%)";
+    }
+
+    let cursor = 0;
+    const slices = paymentMix
+      .map((segment) => {
+        const from = cursor;
+        const pct = (segment.value / total) * 100;
+        cursor += pct;
+        return `${segment.color} ${from.toFixed(2)}% ${cursor.toFixed(2)}%`;
+      })
+      .join(", ");
+
+    return `conic-gradient(${slices})`;
+  }, [paymentMix]);
+
+  const revenueSeries = useMemo(() => {
+    const now = new Date();
+    const months = [];
+
+    for (let offset = 5; offset >= 0; offset -= 1) {
+      const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+      months.push({ key: monthKey(date), label: monthLabel(date), total: 0 });
+    }
+
+    const index = months.reduce((acc, item, idx) => {
+      acc[item.key] = idx;
+      return acc;
+    }, {});
+
+    filteredPaymentRecords.forEach((record) => {
+      if (String(record?.payment_status || "").trim().toLowerCase() !== "success") return;
+
+      const sourceDate = record?.verified_at || record?.payment_initiated_at || record?.created_at;
+      if (!sourceDate) return;
+
+      const parsedDate = new Date(sourceDate);
+      if (Number.isNaN(parsedDate.getTime())) return;
+
+      const key = monthKey(parsedDate);
+      if (index[key] === undefined) return;
+
+      const amount = toNumber(record?.total_amount ?? record?.amount);
+      months[index[key]].total += amount;
+    });
+
+    return months;
+  }, [filteredPaymentRecords]);
+
+  const maxRevenuePoint = useMemo(
+    () => Math.max(...revenueSeries.map((item) => item.total), 1),
+    [revenueSeries]
+  );
+
+  const verificationRows = [
+    {
+      label: "Homestays",
+      icon: Home,
+      pending: pendingHomestays,
+      approved: approvedHomestays,
+      rejected: rejectedHomestays,
+    },
+    {
+      label: "Guides",
+      icon: Compass,
+      pending: pendingGuides,
+      approved: approvedGuides,
+      rejected: rejectedGuides,
+    },
+  ];
+
+  const verificationPeak = Math.max(
+    ...verificationRows.map((row) => Math.max(row.pending, row.approved, row.rejected)),
+    1
+  );
+
+  const replyRate =
+    toNumber(analytics.contact.summary.total_records) > 0
+      ? Math.round(
+          (toNumber(analytics.contact.summary.replied_count) /
+            toNumber(analytics.contact.summary.total_records)) *
+            100
+        )
+      : 0;
+
+  if (authLoading || pageLoading) {
+    return (
+      <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center">
+        <div className="inline-flex items-center gap-3 text-gray-600 text-sm font-medium">
+          <Loader2 className="h-5 w-5 animate-spin text-navy" />
+          Loading admin analytics...
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#FDFBF7] font-body">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-7 sm:py-9 space-y-7">
+        <motion.section
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="rounded-3xl border border-navy/10 bg-gradient-to-br from-navy via-navy-light to-[#132447] text-white shadow-[0_18px_45px_rgba(15,23,42,0.24)] overflow-hidden"
+        >
+          <div className="px-6 sm:px-8 py-6 sm:py-8 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-gold text-[11px] tracking-[0.24em] uppercase font-bold">Admin Intelligence</p>
+              <h1 className="text-2xl sm:text-3xl font-heading font-bold mt-2">Reporting and Analysis Dashboard</h1>
+              <p className="text-white/75 text-sm mt-2 max-w-2xl">
+                Live operational reporting for approvals, payments, revenue trend, and communication workload.
+              </p>
+              <p className="text-white/60 text-xs mt-4">
+                Last updated: {lastUpdated ? lastUpdated.toLocaleString("en-US") : "-"}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2.5">
+              <Link
+                to="/admin-dashboard"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold transition-colors"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to Admin
+              </Link>
+              <Link
+                to="/admin-profile"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold transition-colors"
+              >
+                <Shield className="h-4 w-4" />
+                Profile
+              </Link>
+              <button
+                type="button"
+                onClick={() => fetchAnalytics(true)}
+                disabled={refreshing}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gold/50 bg-gold text-navy text-sm font-bold hover:bg-[#f7c95c] transition-colors disabled:opacity-70"
+              >
+                {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={setShowLogoutModal}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-red-300/50 bg-red-50/95 text-red-700 text-sm font-semibold hover:bg-red-100 transition-colors"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </motion.section>
+
+        {error && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900 text-sm font-medium">
+            {error}
+          </div>
+        )}
+
+        <section className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.16em] text-gray-500 font-bold">Payment Filters</p>
+              <p className="text-sm text-gray-600 mt-1">
+                Narrow down charts and revenue insights by date, provider, and status.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-navy/20 bg-navy text-white text-sm font-semibold hover:bg-navy-light transition-colors"
+            >
+              <Download className="h-4 w-4" />
+              Export CSV
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <label className="text-xs font-semibold text-gray-600">
+              Date From
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(event) => setDateFrom(event.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-navy/20"
+              />
+            </label>
+
+            <label className="text-xs font-semibold text-gray-600">
+              Date To
+              <input
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(event) => setDateTo(event.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-navy/20"
+              />
+            </label>
+
+            <label className="text-xs font-semibold text-gray-600">
+              Provider
+              <select
+                value={providerFilter}
+                onChange={(event) => setProviderFilter(event.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-navy/20"
+              >
+                <option value="all">All Providers</option>
+                <option value="esewa">eSewa</option>
+                <option value="stripe">Stripe</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </label>
+
+            <label className="text-xs font-semibold text-gray-600">
+              Status
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-navy/20"
+              >
+                <option value="all">All States</option>
+                <option value="success">Successful</option>
+                <option value="pending">Pending</option>
+                <option value="refund">Refund</option>
+                <option value="failed">Failed</option>
+              </select>
+            </label>
+
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Clear Filters
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <motion.article {...cardAnimation} className="rounded-2xl bg-white border border-gray-200 p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.16em] text-gray-500 font-bold">Filtered Revenue</p>
+            <p className="text-2xl font-heading text-navy font-bold mt-2">NPR {filteredRevenue.toLocaleString()}</p>
+            <p className="text-xs text-gray-500 mt-2">From filtered successful sessions</p>
+          </motion.article>
+          <motion.article {...cardAnimation} className="rounded-2xl bg-white border border-gray-200 p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.16em] text-gray-500 font-bold">Payment Success</p>
+            <p className="text-2xl font-heading text-alpine-dark font-bold mt-2">{paymentSuccessRate}%</p>
+            <p className="text-xs text-gray-500 mt-2">{filteredSuccessfulPayments} successful of {filteredPaymentSessions} filtered sessions</p>
+          </motion.article>
+          <motion.article {...cardAnimation} className="rounded-2xl bg-white border border-gray-200 p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.16em] text-gray-500 font-bold">Communication Queue</p>
+            <p className="text-2xl font-heading text-charcoal font-bold mt-2">{toNumber(analytics.contact.summary.pending_reply_count)}</p>
+            <p className="text-xs text-gray-500 mt-2">Pending enquiry replies</p>
+          </motion.article>
+          <motion.article {...cardAnimation} className="rounded-2xl bg-white border border-gray-200 p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.16em] text-gray-500 font-bold">Operational Alerts</p>
+            <p className="text-2xl font-heading text-red-700 font-bold mt-2">{unresolvedOperationalAlerts}</p>
+            <p className="text-xs text-gray-500 mt-2">Pending approvals, refunds, and replies</p>
+          </motion.article>
+        </section>
+
+        <section className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+          <motion.article
+            {...cardAnimation}
+            className="xl:col-span-2 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm"
+          >
+            <div className="flex items-center justify-between gap-3 mb-5">
+              <div>
+                <h2 className="text-lg font-heading text-navy font-bold">Verification Pipeline</h2>
+                <p className="text-xs text-gray-500 mt-1">Pending vs approved vs rejected profiles</p>
+              </div>
+              <BarChart3 className="h-5 w-5 text-gray-400" />
+            </div>
+
+            <div className="space-y-5">
+              {verificationRows.map((row) => (
+                <div key={row.label} className="rounded-xl border border-gray-100 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <row.icon className="h-4 w-4 text-navy" />
+                    <p className="text-sm font-semibold text-gray-800">{row.label}</p>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {[
+                      { label: "Pending", value: row.pending, color: "bg-amber-500" },
+                      { label: "Approved", value: row.approved, color: "bg-emerald-600" },
+                      { label: "Rejected", value: row.rejected, color: "bg-red-600" },
+                    ].map((item) => (
+                      <div key={`${row.label}-${item.label}`} className="grid grid-cols-[82px_1fr_34px] items-center gap-2">
+                        <span className="text-xs text-gray-500 font-medium">{item.label}</span>
+                        <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
+                          <div
+                            className={`h-full ${item.color} rounded-full`}
+                            style={{ width: `${Math.max((item.value / verificationPeak) * 100, item.value > 0 ? 8 : 0)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-semibold text-gray-700 text-right">{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.article>
+
+          <motion.article
+            {...cardAnimation}
+            className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm"
+          >
+            <h2 className="text-lg font-heading text-navy font-bold">Payment Health</h2>
+            <p className="text-xs text-gray-500 mt-1">State mix from latest sessions</p>
+
+            <div className="mt-6 flex justify-center">
+              <div
+                className="relative h-40 w-40 rounded-full"
+                style={{ backgroundImage: donutFillStyle }}
+              >
+                <div className="absolute inset-[18px] rounded-full bg-white border border-gray-100 flex items-center justify-center text-center">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Success</p>
+                    <p className="text-2xl font-bold text-navy">{paymentSuccessRate}%</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-2">
+              {paymentMix.map((segment) => (
+                <div key={segment.label} className="flex items-center justify-between text-sm">
+                  <div className="inline-flex items-center gap-2 text-gray-600">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: segment.color }}
+                    />
+                    {segment.label}
+                  </div>
+                  <span className="font-semibold text-gray-800">{segment.value}</span>
+                </div>
+              ))}
+            </div>
+          </motion.article>
+        </section>
+
+        <section className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+          <motion.article
+            {...cardAnimation}
+            className="xl:col-span-2 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-heading text-navy font-bold">6-Month Revenue Trend</h2>
+                <p className="text-xs text-gray-500 mt-1">Successful settlements by month (NPR)</p>
+              </div>
+              <TrendingUp className="h-5 w-5 text-emerald-600" />
+            </div>
+
+            <div className="mt-6 grid grid-cols-6 gap-3 items-end h-48">
+              {revenueSeries.map((point) => {
+                const barHeight = Math.max((point.total / maxRevenuePoint) * 100, point.total > 0 ? 6 : 0);
+                return (
+                  <div key={point.key} className="flex flex-col items-center gap-2">
+                    <div className="w-full flex items-end justify-center h-36 bg-gradient-to-b from-[#f5f7fb] to-[#fbfcff] border border-gray-100 rounded-lg p-2">
+                      <div
+                        className="w-8 rounded-md bg-gradient-to-t from-navy to-alpine"
+                        style={{ height: `${barHeight}%` }}
+                        title={`NPR ${point.total.toLocaleString()}`}
+                      />
+                    </div>
+                    <p className="text-[11px] font-semibold text-gray-600">{point.label}</p>
+                    <p className="text-[11px] text-gray-400">{point.total > 0 ? `${Math.round(point.total / 1000)}k` : "0"}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.article>
+
+          <motion.article
+            {...cardAnimation}
+            className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm"
+          >
+            <h2 className="text-lg font-heading text-navy font-bold">Contact Performance</h2>
+            <p className="text-xs text-gray-500 mt-1">Admin communication and response ratio</p>
+
+            <div className="mt-5 space-y-4">
+              <div className="flex items-center justify-between rounded-xl bg-gray-50 border border-gray-100 px-4 py-3">
+                <div className="inline-flex items-center gap-2 text-sm text-gray-600">
+                  <MessageSquare className="h-4 w-4 text-navy" />
+                  Total Enquiries
+                </div>
+                <span className="font-semibold text-gray-800">{toNumber(analytics.contact.summary.total_records)}</span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl bg-gray-50 border border-gray-100 px-4 py-3">
+                <div className="inline-flex items-center gap-2 text-sm text-gray-600">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                  Replied
+                </div>
+                <span className="font-semibold text-gray-800">{toNumber(analytics.contact.summary.replied_count)}</span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl bg-gray-50 border border-gray-100 px-4 py-3">
+                <div className="inline-flex items-center gap-2 text-sm text-gray-600">
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  Pending Reply
+                </div>
+                <span className="font-semibold text-gray-800">{toNumber(analytics.contact.summary.pending_reply_count)}</span>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+                <span>Reply Rate</span>
+                <span>{replyRate}%</span>
+              </div>
+              <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-navy to-alpine" style={{ width: `${replyRate}%` }} />
+              </div>
+              <p className="text-[11px] text-gray-500 mt-2">Booking-related enquiries: {toNumber(analytics.contact.summary.booking_related)}</p>
+            </div>
+          </motion.article>
+        </section>
+
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.16em] text-gray-500 font-bold">Total Trails</p>
+            <p className="text-2xl font-heading text-navy font-bold mt-1">{analytics.trails.length}</p>
+          </article>
+          <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.16em] text-gray-500 font-bold">Homestay Sessions</p>
+            <p className="text-2xl font-heading text-navy font-bold mt-1">{toNumber(analytics.homestayPayments.summary.total_sessions)}</p>
+          </article>
+          <article className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.16em] text-gray-500 font-bold">Guide Sessions</p>
+            <p className="text-2xl font-heading text-navy font-bold mt-1">{toNumber(analytics.guidePayments.summary.total_sessions)}</p>
+          </article>
+        </section>
+      </main>
+
+      <LogoutModal
+        isOpen={showLogoutModal}
+        onConfirm={handleLogout}
+        onCancel={handleStayLoggedIn}
+      />
+    </div>
+  );
+};
+
+export default AdminAnalytics;

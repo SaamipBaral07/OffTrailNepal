@@ -9,7 +9,6 @@ import {
   Star,
   Briefcase,
   Route,
-  Phone,
   Loader2,
   ChevronRight,
   X,
@@ -285,17 +284,9 @@ const GuidesPage = () => {
                   )}
 
                   <div className="mt-4 flex items-center justify-between gap-2 pt-4 border-t border-gray-100">
-                    {guide.phone ? (
-                      <a
-                        href={`tel:${guide.phone}`}
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-navy hover:text-gold"
-                      >
-                        <Phone className="h-3.5 w-3.5" />
-                        Contact Guide
-                      </a>
-                    ) : (
-                      <span className="text-xs text-gray-400">Phone unavailable</span>
-                    )}
+                    <span className="text-xs text-gray-500 font-medium">
+                      Secure booking only through OffTrail package checkout
+                    </span>
 
                     {firstTrailId ? (
                       <Link

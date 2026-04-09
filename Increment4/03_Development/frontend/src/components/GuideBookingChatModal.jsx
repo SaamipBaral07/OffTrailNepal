@@ -56,6 +56,12 @@ const GuideBookingChatModal = ({ isOpen, onClose, booking, currentRole, onChatUp
       : `Guide: ${booking.guide_name || "Guide"}`;
   }, [booking, role]);
 
+  const chatLocked = chatMeta?.can_chat === false || booking?.can_chat === false;
+  const chatLockedReason =
+    chatMeta?.chat_access_reason ||
+    booking?.chat_access_reason ||
+    "Chat window has closed for this booking.";
+
   const scrollToBottom = useCallback(() => {
     if (!bottomRef.current) return;
     bottomRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -110,6 +116,11 @@ const GuideBookingChatModal = ({ isOpen, onClose, booking, currentRole, onChatUp
   );
 
   const sendMessage = useCallback(async () => {
+    if (chatLocked) {
+      setError(chatLockedReason);
+      return;
+    }
+
     const text = String(messageInput || "").trim();
     if (!text) return;
     if (!Number.isInteger(bookingId) || bookingId <= 0) return;
@@ -159,7 +170,7 @@ const GuideBookingChatModal = ({ isOpen, onClose, booking, currentRole, onChatUp
     } finally {
       setSending(false);
     }
-  }, [bookingId, messageInput, onChatUpdated, sendViaHttpFallback]);
+  }, [bookingId, chatLocked, chatLockedReason, messageInput, onChatUpdated, sendViaHttpFallback]);
 
   useEffect(() => {
     if (!isOpen || !Number.isInteger(bookingId) || bookingId <= 0) return;
@@ -338,6 +349,9 @@ const GuideBookingChatModal = ({ isOpen, onClose, booking, currentRole, onChatUp
 
         <div className="border-t border-slate-200 bg-white p-3.5">
           {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
+          {chatLocked && !error && (
+            <p className="text-xs text-amber-700 mb-2">{chatLockedReason}</p>
+          )}
 
           <div className="flex items-end gap-2">
             <textarea
@@ -346,6 +360,7 @@ const GuideBookingChatModal = ({ isOpen, onClose, booking, currentRole, onChatUp
               rows={2}
               maxLength={2000}
               placeholder="Type your message..."
+              disabled={chatLocked}
               className="flex-1 resize-none rounded-2xl border border-slate-300 px-3.5 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
@@ -359,11 +374,11 @@ const GuideBookingChatModal = ({ isOpen, onClose, booking, currentRole, onChatUp
             <button
               type="button"
               onClick={sendMessage}
-              disabled={sending || !String(messageInput || "").trim()}
+              disabled={chatLocked || sending || !String(messageInput || "").trim()}
               className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-gold to-[#D4A43A] px-4 py-2.5 text-sm font-bold text-navy disabled:opacity-60"
             >
               {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
-              Send
+              {chatLocked ? "Chat Closed" : "Send"}
             </button>
           </div>
         </div>

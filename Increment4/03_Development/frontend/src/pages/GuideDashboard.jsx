@@ -33,6 +33,7 @@ import {
   Upload,
   XCircle,
   MessageCircle,
+  Menu,
 } from "lucide-react";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
@@ -191,6 +192,7 @@ const GuideDashboard = () => {
   const { user: authUser, loading } = useAuth();
 
   const [activeTab, setActiveTab] = useState("trails");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // State
   const [trailsList, setTrailsList] = useState([]);
@@ -309,6 +311,26 @@ const GuideDashboard = () => {
     setUser(authUser);
     setIsLoading(false);
   }, [loading, navigate, authUser]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [mobileMenuOpen]);
 
   const fetchDashboardData = useCallback(async () => {
     setFetchingData(true);
@@ -701,59 +723,151 @@ const GuideDashboard = () => {
 
       {/* Main Content */}
       <div className="flex-1 lg:ml-72 flex flex-col min-h-screen">
-        <header className="bg-white/85 backdrop-blur border-b border-navy/10 px-4 sm:px-6 py-4 flex items-center justify-between sticky top-0 z-20 shadow-sm">
-          <div>
-            <button
-              onClick={() => navigate("/")}
-              className="mb-2 inline-flex items-center gap-2 rounded-lg border border-gold/30 bg-white px-3 py-1.5 text-xs font-semibold text-gold-dark hover:bg-gold/10 transition-colors"
-            >
-              <Home className="h-3.5 w-3.5" />
-              Back to Home
-            </button>
-            <Link
-              to="/chats"
-              className="mb-2 ml-2 hidden sm:inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
-            >
-              <MessageCircle className="h-3.5 w-3.5" />
-              Chats
-            </Link>
-            <h1 className="text-charcoal font-bold text-xl tracking-tight capitalize">
-              {activeTab === 'trails' ? 'My Trail Assignments' : activeTab}
+        <header className="bg-white/90 backdrop-blur border-b border-navy/10 px-4 sm:px-6 py-4 sticky top-0 z-20 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate("/")}
+                className="inline-flex items-center gap-2 rounded-lg border border-gold/30 bg-white px-3 py-1.5 text-xs font-semibold text-gold-dark hover:bg-gold/10 transition-colors"
+              >
+                <Home className="h-3.5 w-3.5" />
+                Back to Home
+              </button>
+
+              <Link
+                to="/chats"
+                className="hidden lg:inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+              >
+                <MessageCircle className="h-3.5 w-3.5" />
+                Chats
+              </Link>
+            </div>
+
+            <div className="lg:hidden flex items-center gap-2">
+              <Link
+                to="/chats"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-blue-700"
+                aria-label="Open chats"
+              >
+                <MessageCircle className="h-5 w-5" />
+              </Link>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(true)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-navy/15 bg-white text-navy"
+                aria-label="Open guide navigation"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-3">
+            <h1 className="text-charcoal font-bold text-xl sm:text-2xl tracking-tight capitalize leading-tight">
+              {activeTab === "trails" ? "My Trail Assignments" : activeTab}
             </h1>
             <p className="text-gray-500 text-xs mt-0.5">Manage your marketplace visibility</p>
           </div>
-
-          <div className="lg:hidden flex gap-2">
-            {[
-              { id: "chats", icon: MessageCircle },
-              { id: "trails", icon: Mountain },
-              { id: "services", icon: Package },
-              { id: "bookings", icon: Users },
-              { id: "availability", icon: Calendar },
-              { id: "reviews", icon: Star }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  if (tab.id === "chats") {
-                    navigate("/chats");
-                    return;
-                  }
-                  setActiveTab(tab.id);
-                }}
-                className={`p-2 rounded-xl transition active:scale-95 ${activeTab === tab.id ? "bg-navy/10 text-navy" : "text-gray-400 hover:bg-white"}`}
-              >
-                <tab.icon className="h-5 w-5" />
-              </button>
-            ))}
-            <button
-              onClick={() => setShowLogoutModal(true)}
-              className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition active:scale-95 ml-2 border-l border-gray-200"
-            >
-              <LogOut className="h-5 w-5" />
-            </button>
-          </div>
         </header>
+
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <>
+              <motion.button
+                type="button"
+                className="lg:hidden fixed inset-0 z-40 bg-black/40"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setMobileMenuOpen(false)}
+                aria-label="Close menu overlay"
+              />
+
+              <motion.aside
+                initial={{ x: "100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "100%" }}
+                transition={{ type: "spring", stiffness: 320, damping: 32 }}
+                className="lg:hidden fixed inset-y-0 right-0 z-50 w-[86%] max-w-sm bg-white border-l border-gray-200 shadow-2xl flex flex-col"
+              >
+                <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-navy to-navy-light">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-gold font-bold">Guide Navigation</p>
+                      <h2 className="text-white font-heading font-bold text-lg mt-1">Control Menu</h2>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white"
+                      aria-label="Close guide menu"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+
+                <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+                  {sidebarTabs.map((tab) => (
+                    <button
+                      key={`mobile-${tab.id}`}
+                      type="button"
+                      onClick={() => {
+                        setActiveTab(tab.id);
+                        setMobileMenuOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 rounded-xl border px-3.5 py-3 text-sm font-semibold transition-colors ${
+                        activeTab === tab.id
+                          ? "border-navy bg-navy/5 text-navy"
+                          : "border-gray-200 bg-white text-gray-700"
+                      }`}
+                    >
+                      <tab.icon className="h-4.5 w-4.5" />
+                      <span>{tab.label}</span>
+                      {tab.count ? (
+                        <span className="ml-auto inline-flex min-w-5 justify-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-700">
+                          {tab.count}
+                        </span>
+                      ) : null}
+                    </button>
+                  ))}
+
+                  <Link
+                    to="/guide-profile"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-sm font-semibold text-gray-700"
+                  >
+                    <Compass className="h-4.5 w-4.5" />
+                    My Profile
+                  </Link>
+
+                  <Link
+                    to="/chats"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-sm font-semibold text-gray-700"
+                  >
+                    <MessageCircle className="h-4.5 w-4.5" />
+                    Chats
+                  </Link>
+                </nav>
+
+                <div className="px-4 py-4 border-t border-gray-100 bg-gray-50">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setShowLogoutModal(true);
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign Out
+                  </button>
+                </div>
+              </motion.aside>
+            </>
+          )}
+        </AnimatePresence>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6">
           {isVerificationResolved && !isGuideApproved && (

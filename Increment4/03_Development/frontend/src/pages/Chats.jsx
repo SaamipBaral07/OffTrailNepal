@@ -114,11 +114,12 @@ const Chats = () => {
     });
 
     socketRef.current = socket;
+    const joinedBookings = joinedBookingsRef.current;
 
     const syncSilently = () => fetchChats({ silent: true });
 
     const onConnect = () => {
-      joinedBookingsRef.current.clear();
+      joinedBookings.clear();
       syncSilently();
     };
 
@@ -142,7 +143,7 @@ const Chats = () => {
       socket.off("chat:read:update", onReadUpdate);
       socket.disconnect();
       socketRef.current = null;
-      joinedBookingsRef.current.clear();
+      joinedBookings.clear();
     };
   }, [canUseChatPage, fetchChats, loading]);
 
@@ -173,6 +174,11 @@ const Chats = () => {
   }, [canUseChatPage, fetchChats, loading]);
 
   const openChat = useCallback((chatBooking) => {
+    if (chatBooking?.can_chat === false) {
+      setError(chatBooking?.chat_access_reason || "This chat window is no longer available.");
+      return;
+    }
+
     setActiveChat(chatBooking);
     setChatOpen(true);
     setSearchParams((prev) => {
@@ -273,6 +279,7 @@ const Chats = () => {
             {chats.map((chat) => {
               const unreadCount = Number(chat.unread_count || 0);
               const otherPerson = currentRole === "guide" ? chat.tourist_name : chat.guide_name;
+              const chatLocked = chat?.can_chat === false;
 
               return (
                 <article
@@ -303,14 +310,20 @@ const Chats = () => {
                     </div>
                   )}
 
-                  <div className="mt-4">
+                  <div className="mt-4 space-y-2">
+                    {chatLocked && (
+                      <p className="text-xs text-amber-700 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
+                        {chat.chat_access_reason || "Chat window has closed for this booking."}
+                      </p>
+                    )}
                     <button
                       type="button"
                       onClick={() => openChat(chat)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100"
+                      disabled={chatLocked}
+                      className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-bold ${chatLocked ? "border border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed" : "border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"}`}
                     >
                       <MessageCircle className="h-3.5 w-3.5" />
-                      Open Chat
+                      {chatLocked ? "Chat Closed" : "Open Chat"}
                     </button>
                   </div>
                 </article>

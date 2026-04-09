@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
+import { createPortal } from "react-dom";
 import axios from "axios";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -15,10 +16,11 @@ import {
   Clock,
   Download,
   Briefcase,
-  Phone,
   Award,
   Tent,
   Home,
+  ChevronDown,
+  ChevronUp,
   ChevronRight,
   Users,
   Compass,
@@ -51,6 +53,7 @@ const GUIDE_MIN_ADVANCE_DAYS = Math.max(
   1,
   Number.parseInt(process.env.REACT_APP_GUIDE_MIN_ADVANCE_DAYS || "2", 10) || 2
 );
+const MAX_COMMUNITY_UPLOAD_FILES = 6;
 const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const toDateKey = (value) => {
@@ -147,6 +150,17 @@ const isBetweenLocalDays = (date, from, to) => {
   return dateTs > fromTs && dateTs < toTs;
 };
 
+const formatShortDate = (value) => {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  return parsed.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
+
 const difficultyConfig = {
   Easy: {
     badge: "bg-emerald-50 text-emerald-700 border-emerald-200 ring-emerald-100",
@@ -224,12 +238,25 @@ const getAmenityMeta = (rawAmenity) => {
 ───────────────────────────────────────────── */
 const PhotoGallery = ({ images }) => {
   const [lightbox, setLightbox] = useState(null);
-  if (!images?.length) return null;
-
-  const count = Math.min(images.length, 5);
-  const visible = images.slice(0, count);
+  const safeImages = Array.isArray(images) ? images : [];
+  const count = Math.min(safeImages.length, 5);
+  const visible = safeImages.slice(0, count);
   const src = (img) => `${API}${img.image_path}`;
-  const open = (img) => setLightbox(images.indexOf(img));
+  const open = (img) => setLightbox(safeImages.indexOf(img));
+  const isLightboxOpen = lightbox !== null;
+
+  useEffect(() => {
+    if (!isLightboxOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isLightboxOpen]);
+
+  if (!safeImages.length) return null;
 
   const Tile = ({ img, className = "" }) => (
     <div
@@ -277,66 +304,80 @@ const PhotoGallery = ({ images }) => {
       </div>
     );
   } else {
+    const compactTiles = visible.slice(1, 4);
+    const overflowImage = visible[4];
+    const hiddenCount = Math.max(0, safeImages.length - 5);
+
     layout = (
       <div className="grid grid-cols-4 grid-rows-2 gap-2 h-[420px] rounded-2xl overflow-hidden shadow-2xl">
         <Tile img={visible[0]} className="col-span-2 row-span-2" />
-        {visible.slice(1).map((img, i) => <Tile key={img.image_id} img={img} className="col-span-1 row-span-1" />)}
-        {images.length > 5 && (
+        {compactTiles.map((img) => <Tile key={img.image_id} img={img} className="col-span-1 row-span-1" />)}
+        {overflowImage && (
           <div
             className="col-span-1 row-span-1 relative overflow-hidden cursor-pointer"
-            onClick={() => open(images[4])}
+            onClick={() => open(overflowImage)}
           >
-            <img src={src(images[4])} alt="" className="w-full h-full object-cover" />
-            <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center">
-              <span className="text-white font-bold text-2xl">+{images.length - 4}</span>
-              <span className="text-white/70 text-xs mt-0.5 tracking-wide">more photos</span>
-            </div>
+            <img src={src(overflowImage)} alt="Trail" className="w-full h-full object-cover" />
+            {hiddenCount > 0 && (
+              <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center">
+                <span className="text-white font-bold text-2xl">+{hiddenCount}</span>
+                <span className="text-white/70 text-xs mt-0.5 tracking-wide">more photos</span>
+              </div>
+            )}
           </div>
         )}
       </div>
     );
   }
 
+  const lightboxMountNode = typeof document !== "undefined" ? document.body : null;
+
   return (
     <>
       {layout}
-      <AnimatePresence>
-        {lightbox !== null && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[60] bg-black/95 flex items-center justify-center p-4"
-            onClick={() => setLightbox(null)}
-          >
-            <button
-              className="absolute top-5 right-5 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white text-2xl font-light transition"
+      {lightboxMountNode && createPortal(
+        <AnimatePresence>
+          {lightbox !== null && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center px-2 py-4 sm:p-6"
               onClick={() => setLightbox(null)}
-            >×</button>
-            <button
-              className="absolute left-5 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/25 text-white text-3xl transition"
-              onClick={(e) => { e.stopPropagation(); setLightbox((i) => (i - 1 + images.length) % images.length); }}
-            >‹</button>
-            <button
-              className="absolute right-5 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/25 text-white text-3xl transition"
-              onClick={(e) => { e.stopPropagation(); setLightbox((i) => (i + 1) % images.length); }}
-            >›</button>
-            <motion.img
-              key={lightbox}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.2 }}
-              src={`${API}${images[lightbox]?.image_path}`}
-              alt="Trail"
-              className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            />
-            <p className="absolute bottom-5 left-1/2 -translate-x-1/2 text-white/40 text-xs tracking-[0.2em] font-light">
-              {lightbox + 1} / {images.length}
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            >
+              <button
+                className="absolute top-3 right-3 sm:top-5 sm:right-5 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white text-2xl font-light transition"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightbox(null);
+                }}
+              >×</button>
+              <button
+                className="absolute left-2 sm:left-5 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/25 text-white text-3xl transition"
+                onClick={(e) => { e.stopPropagation(); setLightbox((i) => (i - 1 + safeImages.length) % safeImages.length); }}
+              >‹</button>
+              <button
+                className="absolute right-2 sm:right-5 top-1/2 -translate-y-1/2 w-10 h-10 sm:w-11 sm:h-11 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/25 text-white text-3xl transition"
+                onClick={(e) => { e.stopPropagation(); setLightbox((i) => (i + 1) % safeImages.length); }}
+              >›</button>
+              <motion.img
+                key={lightbox}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.2 }}
+                src={`${API}${safeImages[lightbox]?.image_path}`}
+                alt="Trail"
+                className="max-h-[88vh] max-w-[92vw] sm:max-h-[90vh] sm:max-w-[90vw] rounded-xl object-contain shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              />
+              <p className="absolute bottom-5 left-1/2 -translate-x-1/2 text-white/40 text-xs tracking-[0.2em] font-light">
+                {lightbox + 1} / {safeImages.length}
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        lightboxMountNode
+      )}
     </>
   );
 };
@@ -521,16 +562,14 @@ const HomestayCard = ({
             </a>
           )}
 
-          {homestay.contact_phone && (
-            <a
-              href={`tel:${homestay.contact_phone}`}
-              onClick={(e) => e.stopPropagation()}
-              className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition-all duration-200 ${isSoldOut ? "bg-gray-100 text-gray-400 pointer-events-none border border-gray-200" : "bg-gold/10 text-gold hover:bg-gold hover:text-white border border-gold/30"}`}
-            >
-              <Book className="h-3 w-3" />
-              {isSoldOut ? "Unavailable" : "Book Now"}
-            </a>
-          )}
+          <Link
+            to={`/homestays/${homestay.homestay_id}`}
+            onClick={(e) => e.stopPropagation()}
+            className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition-all duration-200 ${isSoldOut ? "bg-gray-100 text-gray-400 pointer-events-none border border-gray-200" : "bg-gold/10 text-gold hover:bg-gold hover:text-white border border-gold/30"}`}
+          >
+            <Book className="h-3 w-3" />
+            {isSoldOut ? "Unavailable" : "Book Securely"}
+          </Link>
         </div>
       </div>
     </motion.div>
@@ -696,14 +735,11 @@ const GuideServiceCard = ({
               <Book className="h-3.5 w-3.5" />
               {isTourist ? "Book Package" : "Book Package"}
             </button>
-            <a
-              href={`tel:${service.guide_phone}`}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl hover:bg-gray-50 transition-colors shadow-sm"
-            >
-              <Phone className="h-3.5 w-3.5" /> Call
-            </a>
           </div>
         </div>
+        <p className="mt-3 text-[11px] text-gray-500">
+          Guide coordination and contact details are shared securely only through confirmed in-app bookings.
+        </p>
       </div>
     </motion.div>
   );
@@ -737,38 +773,50 @@ const BaseGuideCard = ({
       initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ delay: index * MOTION_STAGGER_TIGHT, duration: MOTION_DURATION, ease: MOTION_CURVE }}
-      className="bg-white rounded-xl p-4 border border-gray-100 flex items-center justify-between hover:border-gold/30 hover:shadow-sm hover:-translate-y-0.5 transition-all duration-300"
+      className="bg-white rounded-2xl p-5 border border-gray-100 hover:border-gold/30 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300"
     >
-      <div className="flex items-center gap-4">
-        <div className="w-12 h-12 rounded-full bg-stone-100 text-gold flex items-center justify-center font-bold text-lg">
-          {guide.full_name.charAt(0)}
-        </div>
-        <div>
-          <h4 className="font-bold text-charcoal">{guide.full_name}</h4>
-          <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-            <span className="flex items-center gap-1"><Briefcase className="h-3 w-3 text-gold" /> {guide.experience_years} yrs exp</span>
-            <span className="flex items-center gap-1"><Award className="h-3 w-3 text-gold" /> <AwardBadge level={guide.experience_level} /></span>
+      <div className="w-full">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="w-12 h-12 rounded-full bg-stone-100 text-gold flex items-center justify-center font-bold text-lg flex-shrink-0">
+              {guide.full_name.charAt(0)}
+            </div>
+            <div className="min-w-0">
+              <h4 className="font-bold text-charcoal truncate">{guide.full_name}</h4>
+              <p className="text-xs text-gray-500 mt-1">Independent base guide</p>
+            </div>
           </div>
-          <div className="mt-2 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
-            <Star className={`h-3 w-3 ${totalReviews > 0 ? "fill-amber-500 text-amber-500" : "text-amber-300"}`} />
-            {totalReviews > 0 ? `${avgRating.toFixed(1)} / 5 (${totalReviews})` : "No reviews yet"}
-          </div>
-        </div>
-      </div>
-      
-      <div className="text-right">
-        {showWishlist && (
-          <div className="mb-2 flex justify-end">
+
+          {showWishlist && (
             <WishlistToggleButton
               active={wishlisted}
               loading={wishlistLoading}
               onClick={onToggleWishlist}
               className="h-8 w-8 border-gray-200 bg-white text-gray-500 hover:text-rose-600"
             />
-          </div>
-        )}
-        <p className="font-bold text-charcoal">Base Guide Profile</p>
-        <p className="text-[10px] text-gray-400 font-normal mt-0.5">Bookings are available only through package cards</p>
+          )}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-600">
+          <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1">
+            <Briefcase className="h-3 w-3 text-gold" /> {guide.experience_years} yrs exp
+          </span>
+          <span className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1">
+            <Award className="h-3 w-3 text-gold" /> <AwardBadge level={guide.experience_level} />
+          </span>
+        </div>
+
+        <div className="mt-3 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+            <Star className={`h-3 w-3 ${totalReviews > 0 ? "fill-amber-500 text-amber-500" : "text-amber-300"}`} />
+            {totalReviews > 0 ? `${avgRating.toFixed(1)} / 5 (${totalReviews})` : "No reviews yet"}
+        </div>
+
+        <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50 px-3.5 py-3">
+          <p className="text-sm font-bold text-charcoal">Base Guide Profile</p>
+          <p className="text-[11px] text-gray-500 mt-1">
+            Bookings are available only through package cards with secure in-app payment.
+          </p>
+        </div>
       </div>
     </motion.div>
   );
@@ -1230,6 +1278,16 @@ const TrailDetail = () => {
   const [guidePaymentMethod, setGuidePaymentMethod] = useState("esewa");
   const [guideBookingSubmitting, setGuideBookingSubmitting] = useState(false);
 
+  const [communitySubmissions, setCommunitySubmissions] = useState([]);
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const [communityError, setCommunityError] = useState("");
+  const [expandedCommunitySubmissionId, setExpandedCommunitySubmissionId] = useState(null);
+  const [communityUploadFiles, setCommunityUploadFiles] = useState([]);
+  const [communityCaption, setCommunityCaption] = useState("");
+  const [communityTrekDate, setCommunityTrekDate] = useState("");
+  const [communitySubmitting, setCommunitySubmitting] = useState(false);
+  const [communityNotice, setCommunityNotice] = useState(null);
+
   const [selectedHomestayId, setSelectedHomestayId] = useState(null);
   const [pendingScrollHomestayId, setPendingScrollHomestayId] = useState(null);
   const [nearTrailHomestayIds, setNearTrailHomestayIds] = useState([]);
@@ -1257,6 +1315,38 @@ const TrailDetail = () => {
   useEffect(() => {
     if (authUser) setUser(authUser);
   }, [authUser]);
+
+  const fetchCommunityPhotos = useCallback(async () => {
+    if (!id) return;
+
+    setCommunityLoading(true);
+    setCommunityError("");
+
+    try {
+      const response = await axios.get(`${API}/api/trails/${id}/community-photos`);
+      const nextSubmissions = Array.isArray(response.data?.submissions)
+        ? response.data.submissions
+        : [];
+
+      setCommunitySubmissions(nextSubmissions);
+      setExpandedCommunitySubmissionId((previous) => {
+        if (previous && nextSubmissions.some((item) => item.submission_id === previous)) {
+          return previous;
+        }
+        return nextSubmissions[0]?.submission_id || null;
+      });
+    } catch (err) {
+      setCommunityError(err.response?.data?.message || "Could not load trekker photo gallery.");
+      setCommunitySubmissions([]);
+      setExpandedCommunitySubmissionId(null);
+    } finally {
+      setCommunityLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchCommunityPhotos();
+  }, [fetchCommunityPhotos]);
 
   useEffect(() => {
     const fetchTrail = async () => {
@@ -1403,6 +1493,101 @@ const TrailDetail = () => {
     }
   };
 
+  const handleCommunityFileChange = (event) => {
+    const selectedFiles = Array.from(event.target.files || []);
+    if (!selectedFiles.length) return;
+
+    if (selectedFiles.length > MAX_COMMUNITY_UPLOAD_FILES) {
+      setCommunityNotice({
+        type: "error",
+        message: `Please select up to ${MAX_COMMUNITY_UPLOAD_FILES} photos per submission.`,
+      });
+      setCommunityUploadFiles(selectedFiles.slice(0, MAX_COMMUNITY_UPLOAD_FILES));
+      return;
+    }
+
+    setCommunityUploadFiles(selectedFiles);
+    setCommunityNotice(null);
+  };
+
+  const handleSubmitCommunityPhotos = async (event) => {
+    event.preventDefault();
+
+    if (!user) {
+      navigate("/login", { replace: false });
+      return;
+    }
+
+    if (user.user_type !== "tourist") {
+      setCommunityNotice({
+        type: "error",
+        message: "Only tourists can submit trail community photos.",
+      });
+      return;
+    }
+
+    if (!communityUploadFiles.length) {
+      setCommunityNotice({ type: "error", message: "Please choose at least one photo." });
+      return;
+    }
+
+    if (communityUploadFiles.length > MAX_COMMUNITY_UPLOAD_FILES) {
+      setCommunityNotice({
+        type: "error",
+        message: `Please limit uploads to ${MAX_COMMUNITY_UPLOAD_FILES} photos.`,
+      });
+      return;
+    }
+
+    if (communityCaption.trim().length > 1200) {
+      setCommunityNotice({
+        type: "error",
+        message: "Caption is too long (max 1200 characters).",
+      });
+      return;
+    }
+
+    setCommunitySubmitting(true);
+    setCommunityNotice(null);
+
+    try {
+      const payload = new FormData();
+      if (communityCaption.trim()) {
+        payload.append("caption", communityCaption.trim());
+      }
+      if (communityTrekDate) {
+        payload.append("trek_date", communityTrekDate);
+      }
+      communityUploadFiles.forEach((file) => {
+        payload.append("photos", file);
+      });
+
+      const response = await api.post(`/api/trails/${id}/community-photos`, payload, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      setCommunityNotice({
+        type: "success",
+        message:
+          response.data?.message ||
+          "Thanks for sharing. Your photos were submitted and are awaiting admin approval.",
+      });
+      setCommunityUploadFiles([]);
+      setCommunityCaption("");
+      setCommunityTrekDate("");
+      await fetchCommunityPhotos();
+    } catch (err) {
+      setCommunityNotice({
+        type: "error",
+        message:
+          err.response?.data?.message ||
+          "Could not submit photos right now. Please try again.",
+      });
+    } finally {
+      setCommunitySubmitting(false);
+    }
+  };
+
   const handleSubmitGuideBooking = async (payload) => {
     setGuideBookingSubmitting(true);
     try {
@@ -1485,7 +1670,7 @@ const TrailDetail = () => {
   const diff = difficultyConfig[trail.difficulty_level] || difficultyConfig["Moderate"];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#f5f2eb] via-[#faf9f6] to-[#f2f0e9]">
+    <div className="min-h-screen bg-gradient-to-b from-[#f5f2eb] via-[#fbfaf7] to-[#f3f1ea]">
       <Header user={user} onLogoutClick={() => setShowLogoutModal(true)} />
 
       {/* ════════════════════════════════
@@ -1611,7 +1796,7 @@ const TrailDetail = () => {
           CONTENT AREA
       ════════════════════════════════ */}
       <div className="max-w-6xl mx-auto px-4 sm:px-8 lg:px-10 py-10">
-        <div className="rounded-3xl border border-white/70 bg-white/70 backdrop-blur-sm shadow-[0_10px_40px_rgba(0,0,0,0.05)] p-5 sm:p-7 lg:p-8">
+        <div className="rounded-3xl border border-stone-200 bg-white shadow-[0_12px_34px_rgba(15,23,42,0.06)] p-5 sm:p-7 lg:p-8">
         <AnimatePresence mode="wait">
 
           {/* ─── OVERVIEW TAB ─── */}
@@ -1674,6 +1859,190 @@ const TrailDetail = () => {
                       <PhotoGallery images={trail.images} />
                     </div>
                   )}
+
+                  <div className="bg-white rounded-2xl border border-gray-100 p-4 sm:p-5 shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+                    <div className="flex items-center justify-between mb-4 gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-1 h-6 rounded-full flex-shrink-0" style={{ background: "linear-gradient(to bottom, #1f7a8c, #4fa3b4)" }} />
+                        <h2 className="text-xl font-bold text-charcoal font-heading tracking-tight">Trekker Community Gallery</h2>
+                        <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">
+                          {communitySubmissions.length} approved
+                        </span>
+                      </div>
+                      <p className="hidden sm:block text-xs text-gray-400">Admin-verified tourist submissions</p>
+                    </div>
+
+                    {communityLoading ? (
+                      <div className="py-12 flex items-center justify-center">
+                        <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <div className="w-5 h-5 rounded-full border-2 border-teal-200 border-t-teal-500 animate-spin" />
+                          Loading approved submissions...
+                        </div>
+                      </div>
+                    ) : communityError ? (
+                      <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        {communityError}
+                      </div>
+                    ) : communitySubmissions.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center">
+                        <p className="text-sm font-semibold text-gray-700">No approved community photos yet</p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Tourist submissions appear here after admin verification.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {communitySubmissions.map((submission) => {
+                          const isExpanded = expandedCommunitySubmissionId === submission.submission_id;
+                          const submissionImages = Array.isArray(submission.images) ? submission.images : [];
+                          return (
+                            <div
+                              key={submission.submission_id}
+                              className="rounded-xl border border-gray-200 bg-white overflow-hidden"
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedCommunitySubmissionId((prev) =>
+                                    prev === submission.submission_id ? null : submission.submission_id
+                                  )
+                                }
+                                className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-gray-50 transition-colors"
+                              >
+                                <div>
+                                  <p className="text-sm font-bold text-charcoal">
+                                    {submission.tourist_name || "Verified Trekker"}
+                                  </p>
+                                  <p className="text-xs text-gray-500 mt-0.5">
+                                    Trek date: {formatShortDate(submission.trek_date)} · Approved: {formatShortDate(submission.approved_at || submission.created_at)}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-[11px] font-semibold px-2 py-1 rounded-full border border-teal-200 bg-teal-50 text-teal-700">
+                                    {submissionImages.length} photo{submissionImages.length === 1 ? "" : "s"}
+                                  </span>
+                                  {isExpanded ? (
+                                    <ChevronUp className="h-4 w-4 text-gray-500" />
+                                  ) : (
+                                    <ChevronDown className="h-4 w-4 text-gray-500" />
+                                  )}
+                                </div>
+                              </button>
+
+                              <AnimatePresence initial={false}>
+                                {isExpanded && (
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{ duration: 0.22 }}
+                                    className="border-t border-gray-100"
+                                  >
+                                    <div className="px-4 py-4 space-y-3">
+                                      {submission.caption && (
+                                        <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">
+                                          {submission.caption}
+                                        </p>
+                                      )}
+                                      {submissionImages.length > 0 && (
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                          {submissionImages.map((image) => (
+                                            <a
+                                              key={image.image_id}
+                                              href={`${API}${image.image_path}`}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="group relative block rounded-lg overflow-hidden border border-gray-200"
+                                            >
+                                              <img
+                                                src={`${API}${image.image_path}`}
+                                                alt="Tourist submitted trail"
+                                                className="h-28 w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                              />
+                                            </a>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                      <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Share your trek moments</p>
+                      {!user ? (
+                        <p className="mt-2 text-sm text-amber-900">
+                          <Link to="/login" className="font-semibold underline underline-offset-2">Log in as a tourist</Link> to submit your trail photos for admin verification.
+                        </p>
+                      ) : user.user_type !== "tourist" ? (
+                        <p className="mt-2 text-sm text-amber-900">
+                          Photo submissions are available for tourist accounts after completing a paid booking on this trail.
+                        </p>
+                      ) : (
+                        <form onSubmit={handleSubmitCommunityPhotos} className="mt-3 space-y-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-semibold text-amber-900 mb-1">Trek Date (Optional)</label>
+                              <input
+                                type="date"
+                                value={communityTrekDate}
+                                onChange={(e) => setCommunityTrekDate(e.target.value)}
+                                className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-amber-900 mb-1">Photos (up to {MAX_COMMUNITY_UPLOAD_FILES})</label>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                onChange={handleCommunityFileChange}
+                                className="block w-full text-xs text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-amber-100 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-amber-900 hover:file:bg-amber-200"
+                              />
+                            </div>
+                          </div>
+
+                          {communityUploadFiles.length > 0 && (
+                            <p className="text-xs text-amber-900">
+                              Selected: {communityUploadFiles.length} file{communityUploadFiles.length === 1 ? "" : "s"}
+                            </p>
+                          )}
+
+                          <div>
+                            <label className="block text-xs font-semibold text-amber-900 mb-1">Caption (Optional)</label>
+                            <textarea
+                              rows={3}
+                              value={communityCaption}
+                              onChange={(e) => setCommunityCaption(e.target.value)}
+                              placeholder="Describe the viewpoint, weather, or trail moment..."
+                              className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                            />
+                          </div>
+
+                          {communityNotice && (
+                            <div className={`rounded-lg border px-3 py-2 text-xs font-medium ${communityNotice.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-red-200 bg-red-50 text-red-700"}`}>
+                              {communityNotice.message}
+                            </div>
+                          )}
+
+                          <div className="flex justify-end">
+                            <button
+                              type="submit"
+                              disabled={communitySubmitting}
+                              className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                            >
+                              {communitySubmitting ? "Submitting..." : "Submit For Verification"}
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Right: Trek Details Card */}
@@ -2051,7 +2420,7 @@ const TrailDetail = () => {
                           <div className="rounded-xl bg-blue-50 border border-blue-100 p-3">
                             <p className="text-[11px] uppercase tracking-wide text-blue-700 font-semibold">Suggestion</p>
                             <p className="text-xs text-blue-700 mt-1 leading-relaxed">
-                              For easier logistics, prefer stays within {distanceThresholdKm} km of the route and call hosts early in peak season.
+                              For easier logistics, prefer stays within {distanceThresholdKm} km of the route and complete all bookings through OffTrail checkout.
                             </p>
                           </div>
                           <div className="rounded-xl bg-stone-50 border border-stone-200 p-3">

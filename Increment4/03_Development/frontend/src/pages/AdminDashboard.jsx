@@ -4,6 +4,7 @@ import api from "../api";
 import {
   LogOut,
   Shield,
+  Menu,
   Plus,
   Pencil,
   Trash2,
@@ -34,12 +35,13 @@ import {
   Building2,
   MessageSquare,
   Send,
+  BarChart3,
 } from "lucide-react";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
 import { useAuth } from "../context/AuthContext";
 import { getToken } from "../tokenStore";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 const API = "http://localhost:5000/api";
 const PAYMENTS_PAGE_SIZE = 8;
@@ -55,18 +57,25 @@ const StatCard = ({ icon: Icon, label, value, accent, delay = 0 }) => {
     charcoal: { bg: "bg-white", iconBg: "bg-charcoal/10", icon: "text-charcoal", text: "text-gray-900" },
   };
   const a = accents[accent] || accents.navy;
+  const valueText = String(value ?? "-");
+  const hasLongValue = valueText.length > 10;
+
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }} 
       animate={{ opacity: 1, y: 0 }} 
       transition={{ delay, duration: 0.4 }}
-      className={`relative ${a.bg} rounded-3xl p-6 border border-gray-100/80 shadow-sm overflow-hidden group hover:shadow-lg transition-all duration-300`}
+      className={`relative ${a.bg} rounded-3xl p-4 sm:p-6 border border-gray-100/80 shadow-sm overflow-hidden group hover:shadow-lg transition-all duration-300`}
     >
-      <div className={`inline-flex p-3 rounded-2xl ${a.iconBg} mb-4 transition-transform duration-300 group-hover:scale-110`}>
-        <Icon className={`h-6 w-6 ${a.icon}`} />
+      <div className={`inline-flex p-2.5 sm:p-3 rounded-2xl ${a.iconBg} mb-3 sm:mb-4 transition-transform duration-300 group-hover:scale-110`}>
+        <Icon className={`h-5 w-5 sm:h-6 sm:w-6 ${a.icon}`} />
       </div>
-      <p className={`text-4xl font-bold ${a.text} font-heading tracking-tight`}>{value}</p>
-      <p className="text-sm text-gray-500 mt-1 font-medium">{label}</p>
+      <p
+        className={`${hasLongValue ? "text-2xl sm:text-3xl leading-tight" : "text-3xl sm:text-4xl"} font-bold ${a.text} font-heading tracking-tight break-words`}
+      >
+        {value}
+      </p>
+      <p className="text-xs sm:text-sm text-gray-500 mt-1 font-medium">{label}</p>
       
       {/* Decorative background element */}
       <div className={`absolute -right-6 -bottom-6 w-24 h-24 rounded-full ${a.iconBg} opacity-50 group-hover:scale-150 transition-transform duration-500 pointer-events-none`} />
@@ -89,6 +98,21 @@ const StatusBadge = ({ status }) => {
     <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] uppercase tracking-wider font-bold border ${c.bg} ${c.text}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
       {c.label}
+    </span>
+  );
+};
+
+const TrailPhotoStatusBadge = ({ status }) => {
+  const normalizedStatus = String(status || "pending").trim().toLowerCase();
+  const config = {
+    pending: "border-amber-200 bg-amber-50 text-amber-700",
+    approved: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    rejected: "border-red-200 bg-red-50 text-red-700",
+  };
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold capitalize ${config[normalizedStatus] || config.pending}`}>
+      {normalizedStatus}
     </span>
   );
 };
@@ -168,6 +192,14 @@ const AdminDashboard = () => {
     replied_count: 0,
     pending_reply_count: 0,
   });
+  const [trailPhotoSubmissions, setTrailPhotoSubmissions] = useState([]);
+  const [trailPhotoSubmissionsLoading, setTrailPhotoSubmissionsLoading] = useState(false);
+  const [trailPhotoSubmissionFilter, setTrailPhotoSubmissionFilter] = useState("pending");
+  const [trailPhotoSubmissionSummary, setTrailPhotoSubmissionSummary] = useState({
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+  });
   const [contactReplyDrafts, setContactReplyDrafts] = useState({});
   const [submittingContactReplyId, setSubmittingContactReplyId] = useState(null);
   const [contactReplyNotice, setContactReplyNotice] = useState(null);
@@ -187,6 +219,7 @@ const AdminDashboard = () => {
   });
   const [hostVerificationQueueModalOpen, setHostVerificationQueueModalOpen] = useState(false);
   const [bankDetailsModalOpen, setBankDetailsModalOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const derivePaymentSummaryFromRecords = useCallback((records) => {
     const safeRecords = Array.isArray(records) ? records : [];
@@ -487,6 +520,33 @@ const AdminDashboard = () => {
     }
   }, []);
 
+  const fetchAdminTrailPhotoSubmissions = useCallback(async (statusFilter = "pending") => {
+    setTrailPhotoSubmissionsLoading(true);
+
+    try {
+      const res = await api.get(`${API}/trails/admin/community-photos`, {
+        params: { status: statusFilter || "pending" },
+      });
+
+      setTrailPhotoSubmissions(Array.isArray(res.data?.submissions) ? res.data.submissions : []);
+      setTrailPhotoSubmissionSummary({
+        pending: Number(res.data?.summary?.pending || 0),
+        approved: Number(res.data?.summary?.approved || 0),
+        rejected: Number(res.data?.summary?.rejected || 0),
+      });
+    } catch (err) {
+      console.error("Error fetching trail photo submissions:", err);
+      setTrailPhotoSubmissions([]);
+      setTrailPhotoSubmissionSummary({
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+      });
+    } finally {
+      setTrailPhotoSubmissionsLoading(false);
+    }
+  }, []);
+
   const goToHomestayPaymentsPage = (nextPage) => {
     if (paymentsLoading) return;
     if (nextPage < 1 || nextPage > Number(homestayPaymentsPagination.total_pages || 1)) return;
@@ -658,8 +718,29 @@ const AdminDashboard = () => {
       fetchAdminPayments();
       fetchAdminGuidePayments();
       fetchAdminContactEnquiries();
+      fetchAdminTrailPhotoSubmissions("pending");
     }
-  }, [isLoading, user, fetchTrails, fetchAdminHomestays, fetchAdminHostVerifications, fetchAdminGuides, fetchAdminPayments, fetchAdminGuidePayments, fetchAdminContactEnquiries]);
+  }, [isLoading, user, fetchTrails, fetchAdminHomestays, fetchAdminHostVerifications, fetchAdminGuides, fetchAdminPayments, fetchAdminGuidePayments, fetchAdminContactEnquiries, fetchAdminTrailPhotoSubmissions]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [mobileMenuOpen]);
 
   const handleHomestayStatus = async (id, status) => {
     try {
@@ -726,6 +807,29 @@ const AdminDashboard = () => {
     } catch (err) {
       console.error("Error updating host verification status:", err);
       alert(err.response?.data?.message || "Failed to update host verification status");
+    }
+  };
+
+  const handleTrailPhotoSubmissionReview = async (submissionId, status) => {
+    try {
+      let reviewNote = "";
+      if (status === "rejected") {
+        reviewNote = window.prompt("Add rejection reason for this photo submission:") || "";
+        if (!reviewNote.trim() || reviewNote.trim().length < 8) {
+          alert("A clear rejection reason (minimum 8 characters) is required.");
+          return;
+        }
+      }
+
+      await api.patch(`${API}/trails/admin/community-photos/${submissionId}/review`, {
+        status,
+        review_note: reviewNote.trim() || null,
+      });
+
+      fetchAdminTrailPhotoSubmissions(trailPhotoSubmissionFilter);
+    } catch (err) {
+      console.error("Error reviewing trail photo submission:", err);
+      alert(err.response?.data?.message || "Failed to review trail photo submission");
     }
   };
 
@@ -812,6 +916,57 @@ const AdminDashboard = () => {
   const bookingContactEnquiries = Number(contactEnquiriesSummary.booking_related || 0);
   const repliedContactEnquiries = Number(contactEnquiriesSummary.replied_count || 0);
   const pendingReplyContactEnquiries = Number(contactEnquiriesSummary.pending_reply_count || 0);
+  const pendingTrailPhotoSubmissions = Number(trailPhotoSubmissionSummary.pending || 0);
+  const approvedTrailPhotoSubmissions = Number(trailPhotoSubmissionSummary.approved || 0);
+  const rejectedTrailPhotoSubmissions = Number(trailPhotoSubmissionSummary.rejected || 0);
+
+  const adminNavItems = [
+    { id: "trails", icon: Mountain, label: "Trekking Trails", title: "Trail Management", count: trails.length },
+    {
+      id: "homestays",
+      icon: Home,
+      label: "Homestay Approvals",
+      title: "Homestay Approvals",
+      count: pendingHomestays + pendingHostVerifications > 0 ? pendingHomestays + pendingHostVerifications : null,
+      countType: "alert",
+    },
+    { id: "guides", icon: Compass, label: "Guides Management", title: "Guides Management" },
+    {
+      id: "contact-enquiries",
+      icon: MessageSquare,
+      label: "Contact Enquiries",
+      title: "Contact Enquiries",
+      count: recentContactEnquiries > 0 ? recentContactEnquiries : null,
+      countType: "alert",
+    },
+    {
+      id: "trail-photos",
+      icon: Image,
+      label: "Trail Photo Reviews",
+      title: "Trail Community Photos",
+      count: pendingTrailPhotoSubmissions > 0 ? pendingTrailPhotoSubmissions : null,
+      countType: "alert",
+    },
+    {
+      id: "homestay-payments",
+      icon: CreditCard,
+      label: "Homestay Payments",
+      title: "Homestay Booking Payments",
+      count: homestayPendingRefunds > 0 ? homestayPendingRefunds : null,
+      countType: "alert",
+    },
+    {
+      id: "guide-payments",
+      icon: Briefcase,
+      label: "Guide Payments",
+      title: "Guide Booking Payments",
+      count: guidePendingRefunds > 0 ? guidePendingRefunds : null,
+      countType: "alert",
+    },
+  ];
+
+  const activeTabTitle =
+    adminNavItems.find((item) => item.id === activeTab)?.title || "Admin Control Center";
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] flex font-body">
@@ -839,14 +994,7 @@ const AdminDashboard = () => {
           <p className="px-4 mb-4 text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">
             Overview
           </p>
-          {[
-            { id: "trails", icon: Mountain, label: "Trekking Trails", count: trails.length },
-              { id: "homestays", icon: Home, label: "Homestay Approvals", count: pendingHomestays + pendingHostVerifications > 0 ? pendingHomestays + pendingHostVerifications : null, countType: "alert" },
-            { id: "guides", icon: Compass, label: "Guides Management" },
-            { id: "contact-enquiries", icon: MessageSquare, label: "Contact Enquiries", count: recentContactEnquiries > 0 ? recentContactEnquiries : null, countType: "alert" },
-            { id: "homestay-payments", icon: CreditCard, label: "Homestay Payments", count: homestayPendingRefunds > 0 ? homestayPendingRefunds : null, countType: "alert" },
-            { id: "guide-payments", icon: Briefcase, label: "Guide Payments", count: guidePendingRefunds > 0 ? guidePendingRefunds : null, countType: "alert" },
-          ].map((item) => (
+          {adminNavItems.map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
@@ -912,18 +1060,174 @@ const AdminDashboard = () => {
       <div className="flex-1 lg:ml-72 flex flex-col min-h-screen relative overflow-hidden">
         {/* Background Decorative Element */}
         <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-gradient-to-br from-gold/5 via-alpine/5 to-transparent rounded-full blur-3xl -z-10 transform translate-x-1/3 -translate-y-1/3 pointer-events-none" />
+
+        <header className="lg:hidden bg-white/95 backdrop-blur border-b border-gray-200/70 px-4 py-4 sticky top-0 z-30 shadow-sm space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h1 className="text-navy font-heading font-bold text-2xl leading-tight">{activeTabTitle}</h1>
+              <p className="text-gray-500 text-xs mt-1 font-medium">
+                {new Date().toLocaleDateString("en-US", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-navy/15 bg-white text-navy shadow-sm"
+              aria-label="Open admin navigation"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+            {adminNavItems.map((item) => (
+              <button
+                key={`mobile-tab-${item.id}`}
+                onClick={() => setActiveTab(item.id)}
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                  activeTab === item.id
+                    ? "bg-navy text-white border-navy"
+                    : "bg-white text-gray-600 border-gray-200"
+                }`}
+              >
+                <item.icon className="h-3.5 w-3.5" />
+                <span>{item.label}</span>
+                {item.count ? (
+                  <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-bold ${activeTab === item.id ? "bg-white/15 text-white" : "bg-gray-100 text-gray-700"}`}>
+                    {item.count}
+                  </span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setBankDetailsModalOpen(true)}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] font-semibold text-blue-700"
+            >
+              <Building2 className="h-4 w-4" />
+              <span>Bank Details</span>
+            </button>
+            <Link
+              to="/admin-analytics"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-gold/50 bg-gold/15 px-3 py-2 text-[11px] font-semibold text-navy"
+            >
+              <BarChart3 className="h-4 w-4" />
+              <span>Reports</span>
+            </Link>
+          </div>
+        </header>
+
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <>
+              <motion.button
+                type="button"
+                className="lg:hidden fixed inset-0 z-40 bg-black/40"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setMobileMenuOpen(false)}
+                aria-label="Close menu overlay"
+              />
+
+              <motion.aside
+                initial={{ x: "100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "100%" }}
+                transition={{ type: "spring", stiffness: 320, damping: 32 }}
+                className="lg:hidden fixed inset-y-0 right-0 z-50 w-[86%] max-w-sm bg-white border-l border-gray-200 shadow-2xl flex flex-col"
+              >
+                <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-navy to-navy-light">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-gold font-bold">Admin Navigation</p>
+                      <h2 className="text-white font-heading font-bold text-lg mt-1">Control Center</h2>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20"
+                      aria-label="Close admin menu"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+
+                <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+                  {adminNavItems.map((item) => (
+                    <button
+                      key={`drawer-${item.id}`}
+                      onClick={() => {
+                        setActiveTab(item.id);
+                        setMobileMenuOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 rounded-xl border px-3.5 py-3 text-sm font-semibold transition-colors ${
+                        activeTab === item.id
+                          ? "border-navy bg-navy/5 text-navy"
+                          : "border-gray-200 bg-white text-gray-700"
+                      }`}
+                    >
+                      <item.icon className="h-4.5 w-4.5" />
+                      <span>{item.label}</span>
+                      {item.count ? (
+                        <span className="ml-auto inline-flex min-w-5 justify-center rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-700">
+                          {item.count}
+                        </span>
+                      ) : null}
+                    </button>
+                  ))}
+
+                  <Link
+                    to="/admin-profile"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-sm font-semibold text-gray-700"
+                  >
+                    <Shield className="h-4.5 w-4.5" />
+                    Admin Profile
+                  </Link>
+
+                  <Link
+                    to="/admin-analytics"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-sm font-semibold text-gray-700"
+                  >
+                    <BarChart3 className="h-4.5 w-4.5" />
+                    Reporting Dashboard
+                  </Link>
+                </nav>
+
+                <div className="px-4 py-4 border-t border-gray-100 bg-gray-50">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setShowLogoutModal(true);
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign Out
+                  </button>
+                </div>
+              </motion.aside>
+            </>
+          )}
+        </AnimatePresence>
         
         {/* Top bar */}
-        <header className="bg-white/80 backdrop-blur-xl border-b border-gray-200/50 px-8 py-5 flex items-center justify-between sticky top-0 z-20 shadow-sm">
+        <header className="hidden lg:flex bg-white/80 backdrop-blur-xl border-b border-gray-200/50 px-8 py-5 items-center justify-between sticky top-0 z-20 shadow-sm">
           <div>
-            <h1 className="text-navy font-heading font-bold text-2xl tracking-tight">
-              {activeTab === "trails" && "Trail Management"}
-              {activeTab === "homestays" && "Homestay Approvals"}
-              {activeTab === "guides" && "Guides Management"}
-              {activeTab === "contact-enquiries" && "Contact Enquiries"}
-              {activeTab === "homestay-payments" && "Homestay Booking Payments"}
-              {activeTab === "guide-payments" && "Guide Booking Payments"}
-            </h1>
+            <h1 className="text-navy font-heading font-bold text-2xl tracking-tight">{activeTabTitle}</h1>
             <p className="text-gray-500 text-sm mt-1 font-medium">
               {new Date().toLocaleDateString("en-US", {
                 weekday: "long",
@@ -951,51 +1255,19 @@ const AdminDashboard = () => {
               </span>
             </button>
 
-            {/* Mobile nav buttons */}
-            <div className="lg:hidden flex gap-1 flex-wrap justify-end">
-              {[
-                { id: "trails", icon: Mountain },
-                { id: "homestays", icon: Home, count: pendingHomestays + pendingHostVerifications },
-                { id: "guides", icon: Compass },
-                { id: "contact-enquiries", icon: MessageSquare, count: recentContactEnquiries },
-                { id: "homestay-payments", icon: CreditCard, count: homestayPendingRefunds },
-                { id: "guide-payments", icon: Briefcase, count: guidePendingRefunds },
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`p-2 rounded-lg transition-all relative shrink-0 ${
-                    activeTab === item.id ? "bg-navy text-gold shadow-md" : "text-gray-400 hover:bg-gray-100"
-                  }`}
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.count > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold shadow-sm">
-                      {item.count}
-                    </span>
-                  )}
-                </button>
-              ))}
-              <button
-                onClick={setShowLogoutModal}
-                className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all border border-transparent hover:border-red-100 shrink-0"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
-              <Link
-                to="/admin-profile"
-                className="p-2 text-navy hover:bg-navy/10 rounded-lg transition-all border border-transparent hover:border-navy/10 shrink-0"
-                title="Admin Profile"
-              >
-                <Shield className="h-4 w-4" />
-              </Link>
-            </div>
+            <Link
+              to="/admin-analytics"
+              className="inline-flex items-center gap-2 rounded-full border border-gold/50 bg-gold/15 px-4 py-2 text-xs font-semibold text-navy hover:bg-gold/25 transition-colors shadow-sm"
+            >
+              <BarChart3 className="h-4 w-4" />
+              <span>Reports</span>
+            </Link>
           </div>
         </header>
 
-        <main className="flex-1 px-8 py-8 space-y-8 z-10 w-full max-w-[1600px] mx-auto">
+        <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8 z-10 w-full max-w-[1600px] mx-auto">
           {/* Stats Row */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
             {activeTab === "trails" && (
               <>
                 <StatCard icon={Mountain} label="Active Trails" value={trails.length} accent="navy" delay={0.1} />
@@ -1029,6 +1301,15 @@ const AdminDashboard = () => {
                 <StatCard icon={Activity} label="Received In 24h" value={recentContactEnquiries} accent="gold" delay={0.2} />
                 <StatCard icon={Briefcase} label="Booking Related" value={bookingContactEnquiries} accent="charcoal" delay={0.3} />
                 <StatCard icon={Mail} label="Shown On Page" value={contactEnquiries.length} accent="alpine" delay={0.4} />
+              </>
+            )}
+
+            {activeTab === "trail-photos" && (
+              <>
+                <StatCard icon={Image} label="Pending Reviews" value={pendingTrailPhotoSubmissions} accent="gold" delay={0.1} />
+                <StatCard icon={CheckCircle} label="Approved" value={approvedTrailPhotoSubmissions} accent="alpine" delay={0.2} />
+                <StatCard icon={XCircle} label="Rejected" value={rejectedTrailPhotoSubmissions} accent="charcoal" delay={0.3} />
+                <StatCard icon={Users} label="Displayed" value={trailPhotoSubmissions.length} accent="navy" delay={0.4} />
               </>
             )}
 
@@ -1564,6 +1845,175 @@ const AdminDashboard = () => {
                         </button>
                       </div>
                     </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "trail-photos" && (
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-teal-50 border border-teal-100">
+                    <Image className="h-4 w-4 text-teal-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-gray-900 font-semibold text-base">Trail Community Photo Submissions</h2>
+                    <p className="text-gray-400 text-xs">Tourist uploads require admin verification before public display.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => fetchAdminTrailPhotoSubmissions(trailPhotoSubmissionFilter)}
+                  disabled={trailPhotoSubmissionsLoading}
+                  className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  {trailPhotoSubmissionsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+                  Refresh
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <p className="text-xs text-amber-700 uppercase tracking-wide">Pending</p>
+                    <p className="mt-1 text-2xl font-bold text-amber-700">{pendingTrailPhotoSubmissions}</p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                    <p className="text-xs text-emerald-700 uppercase tracking-wide">Approved</p>
+                    <p className="mt-1 text-2xl font-bold text-emerald-700">{approvedTrailPhotoSubmissions}</p>
+                  </div>
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                    <p className="text-xs text-red-700 uppercase tracking-wide">Rejected</p>
+                    <p className="mt-1 text-2xl font-bold text-red-700">{rejectedTrailPhotoSubmissions}</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { key: "pending", label: "Pending" },
+                    { key: "approved", label: "Approved" },
+                    { key: "rejected", label: "Rejected" },
+                    { key: "all", label: "All" },
+                  ].map((filterItem) => (
+                    <button
+                      key={filterItem.key}
+                      type="button"
+                      onClick={() => {
+                        setTrailPhotoSubmissionFilter(filterItem.key);
+                        fetchAdminTrailPhotoSubmissions(filterItem.key);
+                      }}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        trailPhotoSubmissionFilter === filterItem.key
+                          ? "border-navy bg-navy text-white"
+                          : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                      }`}
+                    >
+                      {filterItem.label}
+                    </button>
+                  ))}
+                </div>
+
+                {trailPhotoSubmissionsLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                  </div>
+                ) : trailPhotoSubmissions.length === 0 ? (
+                  <div className="flex flex-col items-center py-16 gap-4 rounded-2xl border border-dashed border-gray-200 bg-gray-50">
+                    <div className="w-16 h-16 rounded-2xl bg-white border border-gray-200 flex items-center justify-center">
+                      <Image className="h-8 w-8 text-gray-300" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-gray-700 font-semibold">No submissions in this filter</p>
+                      <p className="text-gray-400 text-sm mt-1">Try switching filters or refresh to load latest submissions.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {trailPhotoSubmissions.map((submission) => (
+                      <div
+                        key={submission.submission_id}
+                        className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm transition-all duration-200 hover:border-gray-300 hover:shadow-md"
+                      >
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-bold text-gray-900">{submission.trail_name}</p>
+                              <TrailPhotoStatusBadge status={submission.status} />
+                            </div>
+                            <p className="text-xs text-gray-500">
+                              By <span className="font-semibold text-gray-700">{submission.tourist_name}</span>
+                              {submission.tourist_email ? ` (${submission.tourist_email})` : ""}
+                            </p>
+
+                            {submission.caption && (
+                              <p className="text-sm leading-relaxed text-gray-600 whitespace-pre-line">
+                                {submission.caption}
+                              </p>
+                            )}
+
+                            {Array.isArray(submission.images) && submission.images.length > 0 && (
+                              <div className="flex gap-2 overflow-x-auto pb-1">
+                                {submission.images.map((img) => (
+                                  <a
+                                    key={img.image_id}
+                                    href={`http://localhost:5000${img.image_path}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="block w-24 h-20 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0"
+                                  >
+                                    <img
+                                      src={`http://localhost:5000${img.image_path}`}
+                                      alt="Submitted trail"
+                                      className="w-full h-full object-cover"
+                                    />
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+
+                            {submission.status === "rejected" && submission.admin_review_note && (
+                              <p className="text-xs text-red-700 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2">
+                                Rejection note: {submission.admin_review_note}
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="text-xs text-gray-500 lg:text-right lg:min-w-[250px] space-y-2">
+                            <p>
+                              Submitted: <span className="font-semibold text-gray-700">{formatDateTime(submission.created_at)}</span>
+                            </p>
+                            <p>
+                              Trek Date: <span className="font-semibold text-gray-700">{submission.trek_date ? formatDateTime(submission.trek_date) : "-"}</span>
+                            </p>
+                            {submission.admin_reviewed_at && (
+                              <p>
+                                Reviewed: <span className="font-semibold text-gray-700">{formatDateTime(submission.admin_reviewed_at)}</span>
+                              </p>
+                            )}
+
+                            {submission.status === "pending" && (
+                              <div className="flex justify-start lg:justify-end gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleTrailPhotoSubmissionReview(submission.submission_id, "approved")}
+                                  className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTrailPhotoSubmissionReview(submission.submission_id, "rejected")}
+                                  className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-600"
+                                >
+                                  Reject
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

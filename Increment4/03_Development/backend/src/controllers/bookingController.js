@@ -1849,7 +1849,7 @@ export const getMyBookings = async (req, res) => {
     const touristId = req.user.user_id;
 
     const result = await pool.query(
-      `SELECT b.*, h.name AS homestay_name, h.location AS homestay_location, h.contact_phone AS homestay_contact_phone,
+      `SELECT b.*, h.name AS homestay_name, h.location AS homestay_location,
               t.trail_id, t.trail_name,
               COALESCE(p.payment_status, ps.payment_status) AS payment_status,
               COALESCE(p.transaction_reference, ps.payment_ref_id) AS payment_ref_id,

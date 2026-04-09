@@ -11,7 +11,11 @@ import {
   updateTrail,
   deleteTrail,
   getPublicTrails,
-  getPublicTrailById
+  getPublicTrailById,
+  getApprovedCommunityPhotosByTrail,
+  submitTrailCommunityPhotos,
+  getAdminTrailPhotoSubmissions,
+  reviewTrailPhotoSubmission,
 } from "../controllers/trailController.js";
 import { getPublicServicesByTrail } from "../controllers/guideServiceController.js";
 
@@ -25,8 +29,10 @@ const srcDir = path.resolve(__dirname, "..");
 // Ensure upload directories exist
 const gpxDir = path.join(srcDir, "uploads", "gpx");
 const trailsDir = path.join(srcDir, "uploads", "trails");
+const trailCommunityDir = path.join(srcDir, "uploads", "trail-community");
 if (!fs.existsSync(gpxDir)) fs.mkdirSync(gpxDir, { recursive: true });
 if (!fs.existsSync(trailsDir)) fs.mkdirSync(trailsDir, { recursive: true });
+if (!fs.existsSync(trailCommunityDir)) fs.mkdirSync(trailCommunityDir, { recursive: true });
 
 // Multer storage config
 const storage = multer.diskStorage({
@@ -35,6 +41,8 @@ const storage = multer.diskStorage({
       cb(null, gpxDir);
     } else if (file.fieldname === "images" || file.fieldname === "replacement_images") {
       cb(null, trailsDir);
+    } else if (file.fieldname === "photos") {
+      cb(null, trailCommunityDir);
     } else {
       cb(new Error(`Unexpected file field: ${file.fieldname}`));
     }
@@ -54,7 +62,11 @@ const fileFilter = (req, file, cb) => {
     } else {
       cb(new Error("Only .gpx files are allowed"), false);
     }
-  } else if (file.fieldname === "images" || file.fieldname === "replacement_images") {
+  } else if (
+    file.fieldname === "images" ||
+    file.fieldname === "replacement_images" ||
+    file.fieldname === "photos"
+  ) {
     // Accept image files
     const allowedTypes = /jpeg|jpg|png|webp/;
     const extValid = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -80,11 +92,19 @@ const uploadFields = upload.fields([
   { name: "images", maxCount: 5 },
   { name: "replacement_images", maxCount: 10 }
 ]);
+const uploadCommunityPhotos = upload.array("photos", 8);
 
 // Admin-only middleware
 const requireAdmin = (req, res, next) => {
   if (req.user.user_type !== "admin") {
     return res.status(403).json({ message: "Admin access only" });
+  }
+  next();
+};
+
+const requireTourist = (req, res, next) => {
+  if (req.user.user_type !== "tourist") {
+    return res.status(403).json({ message: "Tourist access only" });
   }
   next();
 };
@@ -103,12 +123,45 @@ const uploadFieldsSafe = (req, res, next) => {
   });
 };
 
+const uploadCommunityPhotosSafe = (req, res, next) => {
+  uploadCommunityPhotos(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ message: "File too large. Max size is 10 MB per file." });
+    }
+    if (err.code === "LIMIT_UNEXPECTED_FILE") {
+      return res.status(400).json({ message: "Too many photos. Maximum 8 images are allowed." });
+    }
+    return res.status(400).json({ message: err.message || "Photo upload error." });
+  });
+};
+
 // Public routes (no auth required)
 router.get("/public", getPublicTrails);
 router.get("/public/:id", getPublicTrailById);
 
+// Admin moderation routes (must be declared before dynamic :trailId routes)
+router.get("/admin/community-photos", verifyToken, requireAdmin, getAdminTrailPhotoSubmissions);
+router.patch(
+  "/admin/community-photos/:submissionId/review",
+  verifyToken,
+  requireAdmin,
+  reviewTrailPhotoSubmission
+);
+
+router.get("/:trailId/community-photos", getApprovedCommunityPhotosByTrail);
+
 // Public: Get all active guide services for a trail
 router.get("/:trailId/services", getPublicServicesByTrail);
+
+// Tourist routes
+router.post(
+  "/:trailId/community-photos",
+  verifyToken,
+  requireTourist,
+  uploadCommunityPhotosSafe,
+  submitTrailCommunityPhotos
+);
 
 // Admin routes
 router.get("/", verifyToken, requireAdmin, getAllTrails);

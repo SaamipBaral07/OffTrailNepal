@@ -17,7 +17,13 @@ const GUIDE_MIN_ADVANCE_DAYS = Math.max(
   1,
   Number.parseInt(process.env.GUIDE_MIN_ADVANCE_DAYS || "2", 10) || 2
 );
+const GUIDE_BOOKING_CHAT_WINDOW_DAYS = Math.max(
+  0,
+  Number.parseInt(process.env.GUIDE_BOOKING_CHAT_WINDOW_DAYS || "7", 10) || 7
+);
 const ACTIVE_GUIDE_BOOKING_STATUSES = ["pending", "confirmed"];
+const CHAT_ELIGIBLE_PAYMENT_STATUSES = new Set(["success", "refund_requested", "refunded"]);
+const CHAT_INELIGIBLE_BOOKING_STATUSES = new Set(["rejected", "expired"]);
 
 const stripeClient = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 
@@ -25,6 +31,70 @@ const normalizeGuideRefundStatus = (value) => {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "processed") return "refunded";
   return normalized;
+};
+
+const getGuideBookingChatExpiryDate = (endDateValue) => {
+  const parsed = parseDateOnly(endDateValue, "end_date");
+  if (parsed.error || !(parsed.value instanceof Date) || Number.isNaN(parsed.value.getTime())) {
+    return null;
+  }
+
+  const endOfServiceDayUtcMs = Date.UTC(
+    parsed.value.getUTCFullYear(),
+    parsed.value.getUTCMonth(),
+    parsed.value.getUTCDate(),
+    23,
+    59,
+    59,
+    999
+  );
+
+  const expiresAtMs = endOfServiceDayUtcMs + GUIDE_BOOKING_CHAT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  return new Date(expiresAtMs);
+};
+
+const resolveGuideBookingChatAccess = ({ bookingStatus, paymentStatus, endDate }) => {
+  const normalizedBookingStatus = String(bookingStatus || "").trim().toLowerCase();
+  const normalizedPaymentStatus = String(paymentStatus || "").trim().toLowerCase();
+
+  if (!CHAT_ELIGIBLE_PAYMENT_STATUSES.has(normalizedPaymentStatus)) {
+    return {
+      canChat: false,
+      chatExpiresAt: null,
+      reason: "Chat is available only for paid bookings",
+    };
+  }
+
+  if (CHAT_INELIGIBLE_BOOKING_STATUSES.has(normalizedBookingStatus)) {
+    return {
+      canChat: false,
+      chatExpiresAt: null,
+      reason: "Chat is unavailable for this booking status",
+    };
+  }
+
+  const chatExpiresAt = getGuideBookingChatExpiryDate(endDate);
+  if (!chatExpiresAt) {
+    return {
+      canChat: true,
+      chatExpiresAt: null,
+      reason: null,
+    };
+  }
+
+  if (Date.now() > chatExpiresAt.getTime()) {
+    return {
+      canChat: false,
+      chatExpiresAt,
+      reason: `Chat window has closed ${GUIDE_BOOKING_CHAT_WINDOW_DAYS} day(s) after trek completion`,
+    };
+  }
+
+  return {
+    canChat: true,
+    chatExpiresAt,
+    reason: null,
+  };
 };
 
 const logGuideTimelineEvent = async (
@@ -604,7 +674,7 @@ const validateGuidePackageDraft = async ({
 }) => {
   const result = await client.query(
     `SELECT gs.service_id, gs.guide_id, gs.trail_id, gs.title, gs.price_per_day, gs.max_group_size, gs.min_booking_days,
-            g.full_name AS guide_name, g.phone AS guide_phone
+            g.full_name AS guide_name
      FROM guide_services gs
      JOIN guides g ON gs.guide_id = g.guide_id
      JOIN guide_trails gt ON gt.guide_id = gs.guide_id AND gt.trail_id = gs.trail_id
@@ -1690,7 +1760,7 @@ export const getMyGuideBookings = async (req, res) => {
               b.contact_phone, b.special_requests, b.status, b.total_price, b.created_at,
               b.approval_deadline_at, b.decided_at,
               gs.service_id, gs.title AS service_title,
-              g.guide_id, g.full_name AS guide_name, g.phone AS guide_phone,
+              g.guide_id, g.full_name AS guide_name,
               t.trail_id, t.trail_name,
               gr.review_id, gr.rating AS review_rating, gr.comment AS review_comment, gr.created_at AS review_created_at,
               (
@@ -1728,6 +1798,11 @@ export const getMyGuideBookings = async (req, res) => {
       const bookingStatus = String(booking.status || "").trim().toLowerCase();
       const paymentStatus = String(booking.payment_status || "").trim().toLowerCase();
       const refundStatus = normalizeGuideRefundStatus(booking.refund_status);
+      const chatAccess = resolveGuideBookingChatAccess({
+        bookingStatus,
+        paymentStatus,
+        endDate: booking.end_date,
+      });
 
       const policy = evaluateGuideRefundPolicy({
         startDate: booking.start_date,
@@ -1759,6 +1834,9 @@ export const getMyGuideBookings = async (req, res) => {
         refund_amount_preview: policy.refundAmount,
         refund_rate_preview: policy.refundRate,
         hours_until_start_date: policy.hoursUntilStartDate,
+        can_chat: chatAccess.canChat,
+        chat_expires_at: chatAccess.chatExpiresAt ? chatAccess.chatExpiresAt.toISOString() : null,
+        chat_access_reason: chatAccess.reason,
       };
     });
 

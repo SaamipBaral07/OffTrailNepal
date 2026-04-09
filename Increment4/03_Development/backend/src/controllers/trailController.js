@@ -33,6 +33,49 @@ const parseGpxFileToGeoJson = async (absolutePath) => {
   return parsed;
 };
 
+const PHOTO_REVIEW_STATUSES = new Set(["pending", "approved", "rejected"]);
+
+const parsePositiveIntegerParam = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+};
+
+const normalizeDateInput = (value) => {
+  if (value === undefined || value === null) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const ymdMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (ymdMatch) {
+    const year = Number.parseInt(ymdMatch[1], 10);
+    const month = Number.parseInt(ymdMatch[2], 10);
+    const day = Number.parseInt(ymdMatch[3], 10);
+    const normalizedDate = new Date(Date.UTC(year, month - 1, day));
+
+    if (
+      Number.isNaN(normalizedDate.getTime()) ||
+      normalizedDate.getUTCFullYear() !== year ||
+      normalizedDate.getUTCMonth() !== month - 1 ||
+      normalizedDate.getUTCDate() !== day
+    ) {
+      return null;
+    }
+
+    return `${ymdMatch[1]}-${ymdMatch[2]}-${ymdMatch[3]}`;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+};
+
+const cleanupUploadedFiles = (uploadedPaths = []) => {
+  for (const pathValue of uploadedPaths) {
+    safeDeleteUpload(pathValue);
+  }
+};
+
 /* =========================
    GET ALL TRAILS (with itineraries & images)
 ========================= */
@@ -699,5 +742,430 @@ export const getPublicTrailById = async (req, res) => {
   } catch (err) {
     console.error("Error fetching public trail:", err);
     res.status(500).json({ message: "Server error fetching trail" });
+  }
+};
+
+/* =========================
+   PUBLIC: GET APPROVED COMMUNITY PHOTOS BY TRAIL
+========================= */
+export const getApprovedCommunityPhotosByTrail = async (req, res) => {
+  try {
+    const trailId = parsePositiveIntegerParam(req.params.trailId);
+    if (!trailId) {
+      return res.status(400).json({ message: "Invalid trail id" });
+    }
+
+    const trailExistsResult = await pool.query(
+      `SELECT trail_id, trail_name FROM trekking_trails WHERE trail_id = $1`,
+      [trailId]
+    );
+
+    if (trailExistsResult.rows.length === 0) {
+      return res.status(404).json({ message: "Trail not found" });
+    }
+
+    const submissionsResult = await pool.query(
+      `SELECT s.submission_id, s.trail_id, s.tourist_id, s.caption, s.trek_date,
+              s.created_at, s.approved_at,
+              t.full_name AS tourist_name
+       FROM trail_photo_submissions s
+       JOIN tourists t ON t.tourist_id = s.tourist_id
+       WHERE s.trail_id = $1
+         AND s.status = 'approved'
+       ORDER BY COALESCE(s.approved_at, s.created_at) DESC, s.submission_id DESC`,
+      [trailId]
+    );
+
+    const submissions = submissionsResult.rows;
+
+    if (submissions.length === 0) {
+      return res.status(200).json({
+        trail_id: trailId,
+        trail_name: trailExistsResult.rows[0].trail_name,
+        submissions: [],
+      });
+    }
+
+    const submissionIds = submissions.map((row) => row.submission_id);
+    const imagesResult = await pool.query(
+      `SELECT image_id, submission_id, image_path, display_order
+       FROM trail_photo_submission_images
+       WHERE submission_id = ANY($1::int[])
+       ORDER BY submission_id ASC, display_order ASC, image_id ASC`,
+      [submissionIds]
+    );
+
+    const imageMap = new Map();
+    for (const imageRow of imagesResult.rows) {
+      const existing = imageMap.get(imageRow.submission_id) || [];
+      existing.push(imageRow);
+      imageMap.set(imageRow.submission_id, existing);
+    }
+
+    const hydratedSubmissions = submissions.map((submission) => ({
+      ...submission,
+      images: imageMap.get(submission.submission_id) || [],
+    }));
+
+    return res.status(200).json({
+      trail_id: trailId,
+      trail_name: trailExistsResult.rows[0].trail_name,
+      submissions: hydratedSubmissions,
+    });
+  } catch (err) {
+    console.error("Error fetching approved community photos:", err);
+    return res.status(500).json({ message: "Server error fetching community photos" });
+  }
+};
+
+/* =========================
+   TOURIST: SUBMIT COMMUNITY PHOTOS BY TRAIL
+========================= */
+export const submitTrailCommunityPhotos = async (req, res) => {
+  const client = await pool.connect();
+  const uploadedFiles = Array.isArray(req.files) ? req.files : [];
+  const uploadedPaths = uploadedFiles.map((file) => `/uploads/trail-community/${file.filename}`);
+
+  try {
+    const trailId = parsePositiveIntegerParam(req.params.trailId);
+    const touristId = parsePositiveIntegerParam(req.user?.user_id);
+
+    if (!trailId) {
+      cleanupUploadedFiles(uploadedPaths);
+      return res.status(400).json({ message: "Invalid trail id" });
+    }
+
+    if (!touristId || req.user?.user_type !== "tourist") {
+      cleanupUploadedFiles(uploadedPaths);
+      return res.status(403).json({ message: "Tourist access only" });
+    }
+
+    if (uploadedFiles.length === 0) {
+      return res.status(400).json({ message: "Please upload at least one photo" });
+    }
+
+    const caption = String(req.body?.caption || "").trim();
+    const rawTrekDate = String(req.body?.trek_date || "").trim();
+    const trekDate = normalizeDateInput(rawTrekDate);
+
+    if (caption.length > 1200) {
+      cleanupUploadedFiles(uploadedPaths);
+      return res.status(400).json({ message: "Caption is too long (max 1200 characters)" });
+    }
+
+    if (rawTrekDate && !trekDate) {
+      cleanupUploadedFiles(uploadedPaths);
+      return res.status(400).json({ message: "Invalid trek date" });
+    }
+
+    const trailExistsResult = await client.query(
+      `SELECT trail_id FROM trekking_trails WHERE trail_id = $1`,
+      [trailId]
+    );
+
+    if (trailExistsResult.rows.length === 0) {
+      cleanupUploadedFiles(uploadedPaths);
+      return res.status(404).json({ message: "Trail not found" });
+    }
+
+    const eligibilityResult = await client.query(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM homestay_bookings hb
+         JOIN homestays hs ON hs.homestay_id = hb.homestay_id
+         LEFT JOIN LATERAL (
+           SELECT payment_status
+           FROM booking_payment_sessions bps
+           WHERE bps.booking_id = hb.booking_id
+           ORDER BY bps.session_id DESC
+           LIMIT 1
+         ) bps ON TRUE
+         LEFT JOIN payments p ON p.booking_id = hb.booking_id
+         WHERE hb.tourist_id = $1
+           AND hs.trail_id = $2
+           AND hb.status = 'confirmed'
+           AND COALESCE(LOWER(p.payment_status), LOWER(bps.payment_status), '') = 'success'
+           AND CURRENT_DATE > hb.check_out_date
+
+         UNION
+
+         SELECT 1
+         FROM guide_package_bookings gb
+         LEFT JOIN LATERAL (
+           SELECT payment_status
+           FROM guide_package_payment_sessions gps
+           WHERE gps.booking_id = gb.booking_id
+           ORDER BY gps.created_at DESC
+           LIMIT 1
+         ) gps ON TRUE
+         WHERE gb.tourist_id = $1
+           AND gb.trail_id = $2
+           AND gb.status = 'confirmed'
+           AND COALESCE(LOWER(gps.payment_status), '') = 'success'
+           AND CURRENT_DATE > gb.end_date
+       ) AS can_submit`,
+      [touristId, trailId]
+    );
+
+    const canSubmit = Boolean(eligibilityResult.rows[0]?.can_submit);
+    if (!canSubmit) {
+      cleanupUploadedFiles(uploadedPaths);
+      return res.status(403).json({
+        message:
+          "You can submit trail photos only after completing a confirmed and paid booking for this trail.",
+      });
+    }
+
+    await client.query("BEGIN");
+
+    const submissionResult = await client.query(
+      `INSERT INTO trail_photo_submissions (trail_id, tourist_id, caption, trek_date, status)
+       VALUES ($1, $2, $3, $4, 'pending')
+       RETURNING submission_id, trail_id, tourist_id, caption, trek_date, status, created_at`,
+      [trailId, touristId, caption || null, trekDate]
+    );
+
+    const submission = submissionResult.rows[0];
+
+    const imageRows = [];
+    for (let index = 0; index < uploadedFiles.length; index++) {
+      const imagePath = `/uploads/trail-community/${uploadedFiles[index].filename}`;
+      const imageResult = await client.query(
+        `INSERT INTO trail_photo_submission_images (submission_id, image_path, display_order)
+         VALUES ($1, $2, $3)
+         RETURNING image_id, submission_id, image_path, display_order`,
+        [submission.submission_id, imagePath, index]
+      );
+      imageRows.push(imageResult.rows[0]);
+    }
+
+    await client.query("COMMIT");
+
+    return res.status(201).json({
+      message:
+        "Thanks for sharing! Your photos were submitted and will appear after admin verification.",
+      submission: {
+        ...submission,
+        images: imageRows,
+      },
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    cleanupUploadedFiles(uploadedPaths);
+    console.error("Error submitting trail community photos:", err);
+    return res.status(500).json({ message: "Server error submitting photos" });
+  } finally {
+    client.release();
+  }
+};
+
+/* =========================
+   ADMIN: LIST TRAIL PHOTO SUBMISSIONS
+========================= */
+export const getAdminTrailPhotoSubmissions = async (req, res) => {
+  try {
+    const requestedStatus = String(req.query.status || "pending").trim().toLowerCase();
+    if (requestedStatus !== "all" && !PHOTO_REVIEW_STATUSES.has(requestedStatus)) {
+      return res.status(400).json({ message: "Invalid status filter" });
+    }
+
+    const trailIdFilter = req.query.trailId !== undefined
+      ? parsePositiveIntegerParam(req.query.trailId)
+      : null;
+
+    if (req.query.trailId !== undefined && !trailIdFilter) {
+      return res.status(400).json({ message: "Invalid trail id filter" });
+    }
+
+    const whereClauses = [];
+    const values = [];
+
+    if (requestedStatus !== "all") {
+      values.push(requestedStatus);
+      whereClauses.push(`s.status = $${values.length}`);
+    }
+
+    if (trailIdFilter) {
+      values.push(trailIdFilter);
+      whereClauses.push(`s.trail_id = $${values.length}`);
+    }
+
+    const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
+
+    const submissionsResult = await pool.query(
+      `SELECT s.submission_id, s.trail_id, s.tourist_id,
+              s.caption, s.trek_date, s.status,
+              s.admin_review_note, s.created_at, s.admin_reviewed_at, s.approved_at,
+              tr.trail_name,
+              tu.full_name AS tourist_name,
+              tu.email AS tourist_email,
+              ad.full_name AS reviewed_by_name
+       FROM trail_photo_submissions s
+       JOIN trekking_trails tr ON tr.trail_id = s.trail_id
+       JOIN tourists tu ON tu.tourist_id = s.tourist_id
+       LEFT JOIN admins ad ON ad.admin_id = s.admin_reviewed_by
+       ${whereSql}
+       ORDER BY
+         CASE s.status
+           WHEN 'pending' THEN 0
+           WHEN 'rejected' THEN 1
+           WHEN 'approved' THEN 2
+           ELSE 3
+         END,
+         s.created_at DESC`,
+      values
+    );
+
+    const submissions = submissionsResult.rows;
+
+    if (submissions.length === 0) {
+      return res.status(200).json({
+        submissions: [],
+        summary: {
+          pending: 0,
+          approved: 0,
+          rejected: 0,
+        },
+      });
+    }
+
+    const submissionIds = submissions.map((row) => row.submission_id);
+    const imagesResult = await pool.query(
+      `SELECT image_id, submission_id, image_path, display_order
+       FROM trail_photo_submission_images
+       WHERE submission_id = ANY($1::int[])
+       ORDER BY submission_id ASC, display_order ASC, image_id ASC`,
+      [submissionIds]
+    );
+
+    const imageMap = new Map();
+    for (const imageRow of imagesResult.rows) {
+      const existing = imageMap.get(imageRow.submission_id) || [];
+      existing.push(imageRow);
+      imageMap.set(imageRow.submission_id, existing);
+    }
+
+    const summaryWhereClauses = [];
+    const summaryValues = [];
+    if (trailIdFilter) {
+      summaryValues.push(trailIdFilter);
+      summaryWhereClauses.push(`trail_id = $${summaryValues.length}`);
+    }
+
+    const summaryWhereSql = summaryWhereClauses.length
+      ? `WHERE ${summaryWhereClauses.join(" AND ")}`
+      : "";
+
+    const summaryResult = await pool.query(
+      `SELECT status, COUNT(*)::int AS count
+       FROM trail_photo_submissions
+       ${summaryWhereSql}
+       GROUP BY status`,
+      summaryValues
+    );
+
+    const summary = {
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+    };
+
+    for (const row of summaryResult.rows) {
+      const status = String(row.status || "").trim().toLowerCase();
+      if (PHOTO_REVIEW_STATUSES.has(status)) {
+        summary[status] = Number(row.count || 0);
+      }
+    }
+
+    const hydratedSubmissions = submissions.map((submission) => ({
+      ...submission,
+      images: imageMap.get(submission.submission_id) || [],
+    }));
+
+    return res.status(200).json({
+      submissions: hydratedSubmissions,
+      summary,
+    });
+  } catch (err) {
+    console.error("Error fetching admin trail photo submissions:", err);
+    return res.status(500).json({ message: "Server error fetching submissions" });
+  }
+};
+
+/* =========================
+   ADMIN: REVIEW TRAIL PHOTO SUBMISSION
+========================= */
+export const reviewTrailPhotoSubmission = async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const submissionId = parsePositiveIntegerParam(req.params.submissionId);
+    const adminId = parsePositiveIntegerParam(req.user?.user_id);
+    const nextStatus = String(req.body?.status || "").trim().toLowerCase();
+    const reviewNote = String(req.body?.review_note || "").trim();
+
+    if (!submissionId) {
+      return res.status(400).json({ message: "Invalid submission id" });
+    }
+
+    if (!adminId || req.user?.user_type !== "admin") {
+      return res.status(403).json({ message: "Admin access only" });
+    }
+
+    if (nextStatus !== "approved" && nextStatus !== "rejected") {
+      return res.status(400).json({ message: "Status must be approved or rejected" });
+    }
+
+    if (nextStatus === "rejected" && reviewNote.length < 8) {
+      return res.status(400).json({ message: "Please provide a clear rejection reason (min 8 characters)" });
+    }
+
+    await client.query("BEGIN");
+
+    const updateResult = await client.query(
+      `UPDATE trail_photo_submissions
+       SET status = $1::varchar,
+           admin_review_note = $2,
+           admin_reviewed_by = $3,
+           admin_reviewed_at = CURRENT_TIMESTAMP,
+         approved_at = CASE WHEN $1::varchar = 'approved'::varchar THEN CURRENT_TIMESTAMP ELSE NULL END,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE submission_id = $4
+       RETURNING submission_id, trail_id, tourist_id, caption, trek_date, status,
+                 admin_review_note, admin_reviewed_at, approved_at, created_at`,
+      [nextStatus, reviewNote || null, adminId, submissionId]
+    );
+
+    if (updateResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Photo submission not found" });
+    }
+
+    const imagesResult = await client.query(
+      `SELECT image_id, submission_id, image_path, display_order
+       FROM trail_photo_submission_images
+       WHERE submission_id = $1
+       ORDER BY display_order ASC, image_id ASC`,
+      [submissionId]
+    );
+
+    await client.query("COMMIT");
+
+    return res.status(200).json({
+      message:
+        nextStatus === "approved"
+          ? "Submission approved and now visible in the public trail gallery."
+          : "Submission rejected.",
+      submission: {
+        ...updateResult.rows[0],
+        images: imagesResult.rows,
+      },
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error reviewing trail photo submission:", err);
+    return res.status(500).json({ message: "Server error reviewing submission" });
+  } finally {
+    client.release();
   }
 };

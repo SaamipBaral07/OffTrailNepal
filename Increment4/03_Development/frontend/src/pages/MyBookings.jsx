@@ -332,6 +332,11 @@ const MyBookings = () => {
   };
 
   const openGuideBookingChat = (booking) => {
+    if (booking?.can_chat === false) {
+      showNotice(booking?.chat_access_reason || "Chat window has closed for this booking.", "error");
+      return;
+    }
+
     setActiveChatBooking(booking);
     setChatModalOpen(true);
   };
@@ -798,7 +803,10 @@ const MyBookings = () => {
                       paymentStatus === "success";
                     const canRequestGuideRefund =
                       canAttemptGuideRefund && (backendRefundEligible ?? !serviceDateStarted);
-                    const canUseChat = ["success", "refund_requested", "refunded"].includes(paymentStatus) && !["rejected", "expired"].includes(bookingStatus);
+                    const canUseChat =
+                      typeof booking.can_chat === "boolean"
+                        ? booking.can_chat
+                        : ["success", "refund_requested", "refunded"].includes(paymentStatus) && !["rejected", "expired"].includes(bookingStatus);
 
                     const statusClass = isRefunded
                       ? "border-blue-200 bg-blue-50 text-blue-700"
@@ -895,6 +903,12 @@ const MyBookings = () => {
                           </div>
                         )}
 
+                        {!canUseChat && booking.chat_access_reason && (
+                          <p className="mt-2 text-xs text-amber-700 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
+                            {booking.chat_access_reason}
+                          </p>
+                        )}
+
                         {booking.special_requests && (
                           <p className="mt-3 text-xs text-gray-500">Special request: {booking.special_requests}</p>
                         )}
@@ -984,7 +998,10 @@ const MyBookings = () => {
                       const isRefunded = bookingStatus === "refunded" || paymentStatus === "refunded";
                       const isRefundProcessing = refundStatus === "processing";
                       const isRefundRejected = refundStatus === "rejected";
-                      const canUseChat = ["success", "refund_requested", "refunded"].includes(paymentStatus) && !["rejected", "expired"].includes(bookingStatus);
+                      const canUseChat =
+                        typeof booking.can_chat === "boolean"
+                          ? booking.can_chat
+                          : ["success", "refund_requested", "refunded"].includes(paymentStatus) && !["rejected", "expired"].includes(bookingStatus);
 
                       const statusClass = isRefunded
                         ? "border-blue-200 bg-blue-50 text-blue-700"
@@ -1079,6 +1096,12 @@ const MyBookings = () => {
                                 </button>
                               )}
                             </div>
+                          )}
+
+                          {!canUseChat && booking.chat_access_reason && (
+                            <p className="mt-2 text-xs text-amber-700 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
+                              {booking.chat_access_reason}
+                            </p>
                           )}
 
                           {booking.special_requests && (
