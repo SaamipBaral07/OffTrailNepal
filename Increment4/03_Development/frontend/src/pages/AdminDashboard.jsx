@@ -192,9 +192,18 @@ const AdminDashboard = () => {
     replied_count: 0,
     pending_reply_count: 0,
   });
+  const [platformReviewsAdmin, setPlatformReviewsAdmin] = useState([]);
+  const [platformReviewsAdminLoading, setPlatformReviewsAdminLoading] = useState(false);
+  const [platformReviewsAdminSummary, setPlatformReviewsAdminSummary] = useState({
+    total_reviews: 0,
+    featured_count: 0,
+    average_rating: 0,
+  });
+  const [updatingFeaturedReviewId, setUpdatingFeaturedReviewId] = useState(null);
+  const [platformReviewNotice, setPlatformReviewNotice] = useState(null);
   const [trailPhotoSubmissions, setTrailPhotoSubmissions] = useState([]);
   const [trailPhotoSubmissionsLoading, setTrailPhotoSubmissionsLoading] = useState(false);
-  const [trailPhotoSubmissionFilter, setTrailPhotoSubmissionFilter] = useState("pending");
+  const [trailPhotoSubmissionFilter, setTrailPhotoSubmissionFilter] = useState("all");
   const [trailPhotoSubmissionSummary, setTrailPhotoSubmissionSummary] = useState({
     pending: 0,
     approved: 0,
@@ -520,12 +529,41 @@ const AdminDashboard = () => {
     }
   }, []);
 
-  const fetchAdminTrailPhotoSubmissions = useCallback(async (statusFilter = "pending") => {
+  const fetchAdminPlatformReviews = useCallback(async () => {
+    setPlatformReviewsAdminLoading(true);
+    try {
+      const res = await api.get(`${API}/contact/testimonials/admin`, {
+        params: {
+          page: 1,
+          limit: 20,
+        },
+      });
+
+      setPlatformReviewsAdmin(Array.isArray(res.data?.reviews) ? res.data.reviews : []);
+      setPlatformReviewsAdminSummary({
+        total_reviews: Number(res.data?.summary?.total_reviews || 0),
+        featured_count: Number(res.data?.summary?.featured_count || 0),
+        average_rating: Number(res.data?.summary?.average_rating || 0),
+      });
+    } catch (err) {
+      console.error("Error fetching platform reviews for admin:", err);
+      setPlatformReviewsAdmin([]);
+      setPlatformReviewsAdminSummary({
+        total_reviews: 0,
+        featured_count: 0,
+        average_rating: 0,
+      });
+    } finally {
+      setPlatformReviewsAdminLoading(false);
+    }
+  }, []);
+
+  const fetchAdminTrailPhotoSubmissions = useCallback(async (statusFilter = "all") => {
     setTrailPhotoSubmissionsLoading(true);
 
     try {
       const res = await api.get(`${API}/trails/admin/community-photos`, {
-        params: { status: statusFilter || "pending" },
+        params: { status: statusFilter || "all" },
       });
 
       setTrailPhotoSubmissions(Array.isArray(res.data?.submissions) ? res.data.submissions : []);
@@ -574,6 +612,15 @@ const AdminDashboard = () => {
     }, 7000);
   }, []);
 
+  const pushPlatformReviewNotice = useCallback((type, message) => {
+    const noticeId = Date.now();
+    setPlatformReviewNotice({ id: noticeId, type, message });
+
+    window.setTimeout(() => {
+      setPlatformReviewNotice((prev) => (prev?.id === noticeId ? null : prev));
+    }, 7000);
+  }, []);
+
   const handleAdminContactReply = async (entry) => {
     const enquiryId = Number(entry?.enquiry_id);
     if (!Number.isInteger(enquiryId) || enquiryId <= 0) return;
@@ -607,6 +654,29 @@ const AdminDashboard = () => {
       pushContactReplyNotice("error", err.response?.data?.message || "Failed to send reply.");
     } finally {
       setSubmittingContactReplyId(null);
+    }
+  };
+
+  const handleTogglePlatformReviewFeatured = async (reviewId, shouldFeature) => {
+    const parsedReviewId = Number(reviewId);
+    if (!Number.isInteger(parsedReviewId) || parsedReviewId <= 0) return;
+
+    setUpdatingFeaturedReviewId(parsedReviewId);
+    try {
+      const res = await api.patch(`${API}/contact/testimonials/${parsedReviewId}/featured`, {
+        featured: Boolean(shouldFeature),
+      });
+
+      pushPlatformReviewNotice("success", res.data?.message || "Review selection updated.");
+      await fetchAdminPlatformReviews();
+    } catch (err) {
+      console.error("Error updating featured platform review:", err);
+      pushPlatformReviewNotice(
+        "error",
+        err.response?.data?.message || "Failed to update testimonial selection."
+      );
+    } finally {
+      setUpdatingFeaturedReviewId(null);
     }
   };
 
@@ -718,9 +788,10 @@ const AdminDashboard = () => {
       fetchAdminPayments();
       fetchAdminGuidePayments();
       fetchAdminContactEnquiries();
-      fetchAdminTrailPhotoSubmissions("pending");
+      fetchAdminPlatformReviews();
+      fetchAdminTrailPhotoSubmissions("all");
     }
-  }, [isLoading, user, fetchTrails, fetchAdminHomestays, fetchAdminHostVerifications, fetchAdminGuides, fetchAdminPayments, fetchAdminGuidePayments, fetchAdminContactEnquiries, fetchAdminTrailPhotoSubmissions]);
+  }, [isLoading, user, fetchTrails, fetchAdminHomestays, fetchAdminHostVerifications, fetchAdminGuides, fetchAdminPayments, fetchAdminGuidePayments, fetchAdminContactEnquiries, fetchAdminPlatformReviews, fetchAdminTrailPhotoSubmissions]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return undefined;
@@ -914,7 +985,6 @@ const AdminDashboard = () => {
   const totalContactEnquiries = Number(contactEnquiriesSummary.total_records || 0);
   const recentContactEnquiries = Number(contactEnquiriesSummary.last_24h || 0);
   const bookingContactEnquiries = Number(contactEnquiriesSummary.booking_related || 0);
-  const repliedContactEnquiries = Number(contactEnquiriesSummary.replied_count || 0);
   const pendingReplyContactEnquiries = Number(contactEnquiriesSummary.pending_reply_count || 0);
   const pendingTrailPhotoSubmissions = Number(trailPhotoSubmissionSummary.pending || 0);
   const approvedTrailPhotoSubmissions = Number(trailPhotoSubmissionSummary.approved || 0);
@@ -971,7 +1041,7 @@ const AdminDashboard = () => {
   return (
     <div className="min-h-screen bg-[#FDFBF7] flex font-body">
       {/* ── Sidebar ── */}
-      <aside className="hidden lg:flex flex-col w-72 bg-navy border-r border-navy-light/30 fixed inset-y-0 shadow-2xl z-50">
+      <aside className="hidden lg:flex flex-col w-72 bg-navy border-r border-navy-light/30 fixed inset-y-0 shadow-2xl z-50 overflow-hidden">
         {/* Brand */}
         <div className="px-8 py-8 border-b border-white/5">
           <div className="flex items-center gap-4">
@@ -990,7 +1060,7 @@ const AdminDashboard = () => {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-4 py-8 space-y-2">
+        <nav className="flex-1 min-h-0 overflow-y-auto px-4 py-8 pr-2 space-y-2">
           <p className="px-4 mb-4 text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">
             Overview
           </p>
@@ -1300,7 +1370,7 @@ const AdminDashboard = () => {
                 <StatCard icon={MessageSquare} label="Total Enquiries" value={totalContactEnquiries} accent="navy" delay={0.1} />
                 <StatCard icon={Activity} label="Received In 24h" value={recentContactEnquiries} accent="gold" delay={0.2} />
                 <StatCard icon={Briefcase} label="Booking Related" value={bookingContactEnquiries} accent="charcoal" delay={0.3} />
-                <StatCard icon={Mail} label="Shown On Page" value={contactEnquiries.length} accent="alpine" delay={0.4} />
+                <StatCard icon={Mail} label="Awaiting Reply" value={pendingReplyContactEnquiries} accent="alpine" delay={0.4} />
               </>
             )}
 
@@ -1654,39 +1724,19 @@ const AdminDashboard = () => {
                   </div>
                 </div>
                 <button
-                  onClick={() => fetchAdminContactEnquiries(contactEnquiriesPagination.page || 1)}
-                  disabled={contactEnquiriesLoading}
+                  onClick={() => Promise.all([
+                    fetchAdminContactEnquiries(contactEnquiriesPagination.page || 1),
+                    fetchAdminPlatformReviews(),
+                  ])}
+                  disabled={contactEnquiriesLoading || platformReviewsAdminLoading}
                   className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-60"
                 >
-                  {contactEnquiriesLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+                  {contactEnquiriesLoading || platformReviewsAdminLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
                   Refresh
                 </button>
               </div>
 
               <div className="p-6 space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Total Enquiries</p>
-                    <p className="mt-1 text-2xl font-bold text-gray-900">{totalContactEnquiries}</p>
-                  </div>
-                  <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                    <p className="text-xs text-blue-600 uppercase tracking-wide">In Last 24 Hours</p>
-                    <p className="mt-1 text-2xl font-bold text-blue-700">{recentContactEnquiries}</p>
-                  </div>
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                    <p className="text-xs text-amber-700 uppercase tracking-wide">Booking Related</p>
-                    <p className="mt-1 text-2xl font-bold text-amber-700">{bookingContactEnquiries}</p>
-                  </div>
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                    <p className="text-xs text-emerald-700 uppercase tracking-wide">Replied</p>
-                    <p className="mt-1 text-2xl font-bold text-emerald-700">{repliedContactEnquiries}</p>
-                  </div>
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
-                    <p className="text-xs text-rose-700 uppercase tracking-wide">Awaiting Reply</p>
-                    <p className="mt-1 text-2xl font-bold text-rose-700">{pendingReplyContactEnquiries}</p>
-                  </div>
-                </div>
-
                 {contactReplyNotice && (
                   <div
                     className={`rounded-xl border px-4 py-3 text-sm font-medium ${
@@ -1698,6 +1748,123 @@ const AdminDashboard = () => {
                     {contactReplyNotice.message}
                   </div>
                 )}
+
+                <div className="rounded-2xl border border-gold/25 bg-gold/5 p-4 sm:p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wide text-gold-dark">Testimonials Selection</p>
+                      <p className="text-sm text-gray-700 mt-1">Select up to 3 tourist reviews for landing page testimonial cards.</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="inline-flex rounded-full border border-gold/40 bg-white px-2.5 py-1 font-bold text-gold-dark">
+                        Featured: {Number(platformReviewsAdminSummary.featured_count || 0)}/3
+                      </span>
+                      <span className="inline-flex rounded-full border border-gray-200 bg-white px-2.5 py-1 font-semibold text-gray-600">
+                        Avg Rating: {Number(platformReviewsAdminSummary.average_rating || 0).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {platformReviewNotice && (
+                    <div
+                      className={`mt-3 rounded-xl border px-4 py-2.5 text-sm font-medium ${
+                        platformReviewNotice.type === "success"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : "border-red-200 bg-red-50 text-red-700"
+                      }`}
+                    >
+                      {platformReviewNotice.message}
+                    </div>
+                  )}
+
+                  {platformReviewsAdminLoading ? (
+                    <div className="mt-4 flex items-center justify-center rounded-xl border border-gray-200 bg-white py-8">
+                      <Loader2 className="h-5 w-5 animate-spin text-gold-dark" />
+                    </div>
+                  ) : platformReviewsAdmin.length === 0 ? (
+                    <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">
+                      No tourist platform reviews submitted yet.
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-3">
+                      {platformReviewsAdmin.map((review) => {
+                        const normalizedRating = Math.min(5, Math.max(1, Number(review.rating || 1)));
+                        const isFeatured = Boolean(review.is_featured);
+                        const isUpdating = updatingFeaturedReviewId === Number(review.review_id);
+                        const featuredLimitReached =
+                          Number(platformReviewsAdminSummary.featured_count || 0) >= 3;
+                        const reviewerLocation =
+                          String(review.reviewer_location || "").trim() || "Verified Trekker";
+
+                        return (
+                          <div
+                            key={review.review_id}
+                            className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
+                          >
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-3">
+                                  <div className="h-11 w-11 rounded-full overflow-hidden bg-gradient-to-br from-navy to-navy-light text-white font-bold text-sm flex items-center justify-center">
+                                    {review.profile_image_path ? (
+                                      <img
+                                        src={`http://localhost:5000${review.profile_image_path}`}
+                                        alt={review.tourist_name || "Trekker"}
+                                        className="h-full w-full object-cover"
+                                      />
+                                    ) : (
+                                      String(review.tourist_name || "T").charAt(0).toUpperCase()
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-bold text-gray-900 truncate">{review.tourist_name}</p>
+                                    <p className="text-xs text-gray-500 truncate">{review.tourist_email}</p>
+                                    <p className="text-xs text-gray-500 mt-0.5">{reviewerLocation}</p>
+                                  </div>
+                                </div>
+
+                                <div className="mt-2 flex items-center gap-1">
+                                  {Array.from({ length: 5 }).map((_, idx) => (
+                                    <Star
+                                      key={`${review.review_id}-star-${idx}`}
+                                      className={`h-3.5 w-3.5 ${idx < normalizedRating ? "text-gold fill-gold" : "text-gray-200"}`}
+                                    />
+                                  ))}
+                                </div>
+
+                                <p className="mt-2 text-sm leading-relaxed text-gray-700 whitespace-pre-line">
+                                  &ldquo;{review.review_text}&rdquo;
+                                </p>
+                              </div>
+
+                              <div className="flex flex-col items-start sm:items-end gap-2">
+                                <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${
+                                  isFeatured
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    : "border-gray-200 bg-gray-50 text-gray-600"
+                                }`}>
+                                  {isFeatured ? "Featured" : "Not Featured"}
+                                </span>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleTogglePlatformReviewFeatured(review.review_id, !isFeatured)}
+                                  disabled={
+                                    isUpdating ||
+                                    (!isFeatured && featuredLimitReached)
+                                  }
+                                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Star className="h-3.5 w-3.5" />}
+                                  {isFeatured ? "Remove from Landing" : "Feature on Landing"}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
 
                 {contactEnquiriesLoading ? (
                   <div className="flex items-center justify-center py-16">
@@ -1874,21 +2041,6 @@ const AdminDashboard = () => {
               </div>
 
               <div className="p-6 space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                    <p className="text-xs text-amber-700 uppercase tracking-wide">Pending</p>
-                    <p className="mt-1 text-2xl font-bold text-amber-700">{pendingTrailPhotoSubmissions}</p>
-                  </div>
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                    <p className="text-xs text-emerald-700 uppercase tracking-wide">Approved</p>
-                    <p className="mt-1 text-2xl font-bold text-emerald-700">{approvedTrailPhotoSubmissions}</p>
-                  </div>
-                  <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-                    <p className="text-xs text-red-700 uppercase tracking-wide">Rejected</p>
-                    <p className="mt-1 text-2xl font-bold text-red-700">{rejectedTrailPhotoSubmissions}</p>
-                  </div>
-                </div>
-
                 <div className="flex flex-wrap gap-2">
                   {[
                     { key: "pending", label: "Pending" },
@@ -2043,25 +2195,6 @@ const AdminDashboard = () => {
               </div>
 
               <div className="p-6 space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Total Sessions</p>
-                    <p className="mt-1 text-2xl font-bold text-gray-900">{homestayPaymentsSummary.total_sessions}</p>
-                  </div>
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                    <p className="text-xs text-emerald-600 uppercase tracking-wide">Successful</p>
-                    <p className="mt-1 text-2xl font-bold text-emerald-700">{homestaySuccessfulPayments}</p>
-                  </div>
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                    <p className="text-xs text-amber-700 uppercase tracking-wide">Refund Queue</p>
-                    <p className="mt-1 text-2xl font-bold text-amber-700">{homestayPendingRefunds}</p>
-                  </div>
-                  <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                    <p className="text-xs text-blue-600 uppercase tracking-wide">Settled Volume</p>
-                    <p className="mt-1 text-2xl font-bold text-blue-700">NPR {homestayRevenue.toLocaleString()}</p>
-                  </div>
-                </div>
-
                 {paymentsLoading ? (
                   <div className="flex items-center justify-center py-16">
                     <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
@@ -2228,25 +2361,6 @@ const AdminDashboard = () => {
               </div>
 
               <div className="p-6 space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Total Sessions</p>
-                    <p className="mt-1 text-2xl font-bold text-gray-900">{guidePaymentsSummary.total_sessions}</p>
-                  </div>
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                    <p className="text-xs text-emerald-600 uppercase tracking-wide">Successful</p>
-                    <p className="mt-1 text-2xl font-bold text-emerald-700">{guideSuccessfulPayments}</p>
-                  </div>
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                    <p className="text-xs text-amber-700 uppercase tracking-wide">Refund Queue</p>
-                    <p className="mt-1 text-2xl font-bold text-amber-700">{guidePendingRefunds}</p>
-                  </div>
-                  <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                    <p className="text-xs text-blue-600 uppercase tracking-wide">Settled Volume</p>
-                    <p className="mt-1 text-2xl font-bold text-blue-700">NPR {guideRevenue.toLocaleString()}</p>
-                  </div>
-                </div>
-
                 {guidePaymentsLoading ? (
                   <div className="flex items-center justify-center py-16">
                     <Loader2 className="h-8 w-8 animate-spin text-blue-500" />

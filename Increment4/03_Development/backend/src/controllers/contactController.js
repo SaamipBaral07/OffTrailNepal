@@ -10,6 +10,7 @@ const ALLOWED_CATEGORIES = new Set([
 
 const ALLOWED_USER_TYPES = new Set(["tourist", "host", "guide", "admin"]);
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const REVIEW_MIN_LENGTH = 20;
 
 const getClientIp = (req) => {
   const forwardedFor = req.headers["x-forwarded-for"];
@@ -17,6 +18,301 @@ const getClientIp = (req) => {
     return String(forwardedFor).split(",")[0].trim();
   }
   return String(req.ip || "").trim() || null;
+};
+
+export const submitTouristPlatformReview = async (req, res) => {
+  try {
+    const touristId = Number(req.user?.user_id);
+    const userType = String(req.user?.user_type || "").trim().toLowerCase();
+    const rating = Number.parseInt(String(req.body?.rating || ""), 10);
+    const reviewText = String(req.body?.reviewText || "").trim();
+    const reviewerLocation = String(req.body?.reviewerLocation || "").trim();
+
+    if (userType !== "tourist" || !Number.isInteger(touristId) || touristId <= 0) {
+      return res.status(403).json({ message: "Only tourists can submit platform reviews" });
+    }
+
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ message: "Rating must be between 1 and 5" });
+    }
+
+    if (reviewText.length < REVIEW_MIN_LENGTH) {
+      return res.status(400).json({
+        message: `Review must be at least ${REVIEW_MIN_LENGTH} characters`,
+      });
+    }
+
+    if (reviewerLocation.length > 120) {
+      return res.status(400).json({ message: "Location cannot exceed 120 characters" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO tourist_platform_reviews
+        (tourist_id, rating, review_text, reviewer_location, is_featured, featured_by_admin_id, featured_at)
+       VALUES ($1, $2, $3, $4, FALSE, NULL, NULL)
+       RETURNING
+         review_id,
+         tourist_id,
+         rating,
+         review_text,
+         reviewer_location,
+         is_featured,
+         featured_at,
+         created_at,
+         updated_at`,
+      [touristId, rating, reviewText, reviewerLocation || null]
+    );
+
+    return res.status(200).json({
+      message: "Your review has been submitted. You can submit another one anytime.",
+      review: result.rows[0],
+    });
+  } catch (err) {
+    console.error("Error submitting tourist platform review:", err);
+    return res.status(500).json({ message: "Server error while submitting review" });
+  }
+};
+
+export const getMyTouristPlatformReview = async (req, res) => {
+  try {
+    const touristId = Number(req.user?.user_id);
+    const userType = String(req.user?.user_type || "").trim().toLowerCase();
+
+    if (userType !== "tourist" || !Number.isInteger(touristId) || touristId <= 0) {
+      return res.status(403).json({ message: "Only tourists can access their review" });
+    }
+
+    const result = await pool.query(
+      `SELECT
+         review_id,
+         tourist_id,
+         rating,
+         review_text,
+         reviewer_location,
+         is_featured,
+         featured_at,
+         created_at,
+         updated_at
+       FROM tourist_platform_reviews
+       WHERE tourist_id = $1
+       ORDER BY created_at DESC, review_id DESC
+       LIMIT 1`,
+      [touristId]
+    );
+
+    return res.status(200).json({ review: result.rows[0] || null });
+  } catch (err) {
+    console.error("Error fetching tourist platform review:", err);
+    return res.status(500).json({ message: "Server error while fetching review" });
+  }
+};
+
+export const getAdminTouristPlatformReviews = async (_req, res) => {
+  try {
+    const requestedPage = Number.parseInt(String(_req.query?.page || "1"), 10);
+    const requestedLimit = Number.parseInt(String(_req.query?.limit || "20"), 10);
+
+    const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const limit = Number.isInteger(requestedLimit)
+      ? Math.min(Math.max(requestedLimit, 1), 100)
+      : 20;
+    const offset = (page - 1) * limit;
+
+    const [rowsResult, countResult, summaryResult] = await Promise.all([
+      pool.query(
+        `SELECT
+           r.review_id,
+           r.tourist_id,
+           r.rating,
+           r.review_text,
+           r.reviewer_location,
+           r.is_featured,
+           r.featured_at,
+           r.created_at,
+           r.updated_at,
+           t.full_name AS tourist_name,
+           t.email AS tourist_email,
+           t.profile_image_path
+         FROM tourist_platform_reviews r
+         JOIN tourists t ON t.tourist_id = r.tourist_id
+         ORDER BY
+           r.is_featured DESC,
+           COALESCE(r.featured_at, r.updated_at, r.created_at) DESC
+         LIMIT $1 OFFSET $2`,
+        [limit, offset]
+      ),
+      pool.query(`SELECT COUNT(*)::int AS total_records FROM tourist_platform_reviews`),
+      pool.query(
+        `SELECT
+           COUNT(*)::int AS total_reviews,
+           COUNT(*) FILTER (WHERE is_featured = TRUE)::int AS featured_count,
+           ROUND(AVG(rating)::numeric, 2) AS average_rating
+         FROM tourist_platform_reviews`
+      ),
+    ]);
+
+    const totalRecords = Number(countResult.rows[0]?.total_records || 0);
+    const totalPages = Math.max(1, Math.ceil(totalRecords / limit));
+
+    return res.status(200).json({
+      reviews: rowsResult.rows,
+      pagination: {
+        page,
+        limit,
+        total_records: totalRecords,
+        total_pages: totalPages,
+        has_prev: page > 1,
+        has_next: page < totalPages,
+      },
+      summary: {
+        total_reviews: Number(summaryResult.rows[0]?.total_reviews || 0),
+        featured_count: Number(summaryResult.rows[0]?.featured_count || 0),
+        average_rating: Number(summaryResult.rows[0]?.average_rating || 0),
+      },
+    });
+  } catch (err) {
+    console.error("Error fetching platform reviews for admin:", err);
+    return res.status(500).json({ message: "Server error while fetching platform reviews" });
+  }
+};
+
+export const toggleFeaturedTouristPlatformReview = async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const reviewId = Number.parseInt(String(req.params?.reviewId || ""), 10);
+    const adminUserId = Number(req.user?.user_id);
+    const requestedFeatured = req.body?.featured;
+
+    if (!Number.isInteger(reviewId) || reviewId <= 0) {
+      return res.status(400).json({ message: "Invalid review id" });
+    }
+
+    if (!Number.isInteger(adminUserId) || adminUserId <= 0) {
+      return res.status(400).json({ message: "Invalid admin context" });
+    }
+
+    if (typeof requestedFeatured !== "boolean") {
+      return res.status(400).json({ message: "featured must be true or false" });
+    }
+
+    await client.query("BEGIN");
+
+    const currentReviewResult = await client.query(
+      `SELECT review_id, is_featured
+       FROM tourist_platform_reviews
+       WHERE review_id = $1
+       FOR UPDATE`,
+      [reviewId]
+    );
+
+    if (currentReviewResult.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ message: "Review not found" });
+    }
+
+    const alreadyFeatured = Boolean(currentReviewResult.rows[0].is_featured);
+
+    if (requestedFeatured && !alreadyFeatured) {
+      const featuredRowsResult = await client.query(
+        `SELECT review_id
+         FROM tourist_platform_reviews
+         WHERE is_featured = TRUE
+         FOR UPDATE`
+      );
+
+      if (featuredRowsResult.rowCount >= 3) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Only 3 reviews can be featured in testimonials at a time.",
+        });
+      }
+    }
+
+    await client.query(
+      `UPDATE tourist_platform_reviews
+       SET
+         is_featured = $1::boolean,
+         featured_by_admin_id = CASE WHEN $1::boolean THEN $2::integer ELSE NULL::integer END,
+         featured_at = CASE WHEN $1::boolean THEN CURRENT_TIMESTAMP ELSE NULL END,
+         updated_at = CURRENT_TIMESTAMP
+       WHERE review_id = $3`,
+      [requestedFeatured, adminUserId, reviewId]
+    );
+
+    const updatedReviewResult = await client.query(
+      `SELECT
+         r.review_id,
+         r.tourist_id,
+         r.rating,
+         r.review_text,
+         r.reviewer_location,
+         r.is_featured,
+         r.featured_at,
+         r.created_at,
+         r.updated_at,
+         t.full_name AS tourist_name,
+         t.email AS tourist_email,
+         t.profile_image_path
+       FROM tourist_platform_reviews r
+       JOIN tourists t ON t.tourist_id = r.tourist_id
+       WHERE r.review_id = $1
+       LIMIT 1`,
+      [reviewId]
+    );
+
+    const featuredCountResult = await client.query(
+      `SELECT COUNT(*)::int AS featured_count
+       FROM tourist_platform_reviews
+       WHERE is_featured = TRUE`
+    );
+
+    await client.query("COMMIT");
+
+    return res.status(200).json({
+      message: requestedFeatured
+        ? "Review selected for landing page testimonials."
+        : "Review removed from landing page testimonials.",
+      review: updatedReviewResult.rows[0],
+      featured_count: Number(featuredCountResult.rows[0]?.featured_count || 0),
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error toggling featured platform review:", err);
+    return res.status(500).json({ message: "Server error while updating featured review" });
+  } finally {
+    client.release();
+  }
+};
+
+export const getFeaturedTouristPlatformReviews = async (_req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT
+         r.review_id AS testimonial_id,
+         r.rating,
+         r.review_text,
+         r.reviewer_location,
+         r.featured_at,
+         t.full_name AS reviewer_name,
+         t.profile_image_path
+       FROM tourist_platform_reviews r
+       JOIN tourists t ON t.tourist_id = r.tourist_id
+       WHERE r.is_featured = TRUE
+       ORDER BY COALESCE(r.featured_at, r.updated_at, r.created_at) DESC
+       LIMIT 3`
+    );
+
+    const testimonials = result.rows.map((row) => ({
+      ...row,
+      reviewer_location: String(row.reviewer_location || "").trim() || "Verified Trekker",
+    }));
+
+    return res.status(200).json({ testimonials });
+  } catch (err) {
+    console.error("Error fetching featured platform reviews:", err);
+    return res.status(500).json({ message: "Server error while fetching testimonials" });
+  }
 };
 
 export const submitContactEnquiry = async (req, res) => {

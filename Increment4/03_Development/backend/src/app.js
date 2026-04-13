@@ -12,6 +12,8 @@ import guideBookingRoutes from "./routes/guideBookingRoutes.js";
 import invoiceRoutes from "./routes/invoiceRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
 import contactRoutes from "./routes/contactRoutes.js";
+import tripPlannerRoutes from "./routes/tripPlannerRoutes.js";
+import aiChatRoutes from "./routes/aiChatRoutes.js";
 import { csrfProtection } from "./middleware/csrfMiddleware.js";
 import { refreshTokenLimiter, authLimiter } from "./middleware/rateLimitMiddleware.js";
 import { fileURLToPath } from "url";
@@ -58,6 +60,8 @@ app.use("/api/guide-bookings", guideBookingRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/contact", contactRoutes);
+app.use("/api/trip-planner", tripPlannerRoutes);
+app.use("/api/ai-chat", aiChatRoutes);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname=path.dirname(__filename);

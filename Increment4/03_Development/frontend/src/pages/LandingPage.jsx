@@ -36,10 +36,22 @@ const API = "http://localhost:5000";
    ═══════════════════════════════════════════════ */
 
 const difficultyTag = {
-  Easy: "Beginner Friendly",
-  Moderate: "Most Popular",
-  Difficult: "Challenging",
-  Extreme: "Expert Only",
+  Easy: {
+    label: "Easy",
+    className: "bg-emerald-100/95 text-emerald-900",
+  },
+  Moderate: {
+    label: "Moderate",
+    className: "bg-amber-100/95 text-amber-900",
+  },
+  Difficult: {
+    label: "Difficult",
+    className: "bg-orange-100/95 text-orange-900",
+  },
+  Extreme: {
+    label: "Extreme",
+    className: "bg-rose-100/95 text-rose-900",
+  },
 };
 
 const features = [
@@ -76,51 +88,24 @@ const features = [
 const steps = [
   {
     number: "01",
-    title: "Choose Your Trail",
+    title: "Choose Trail & Region",
     description:
-      "Browse curated treks across Nepal's diverse landscapes — from lush jungles to towering peaks above the clouds.",
+      "Explore listed routes by difficulty, duration, altitude, and region to find a trail that matches your time and fitness level.",
     gradient: "from-gold to-gold-light",
   },
   {
     number: "02",
-    title: "Book a Local Guide",
+    title: "Book Guides & Stays",
     description:
-      "Select from verified, experienced guides with deep knowledge of local terrain, culture, and hidden spots.",
+      "Compare verified local guides and nearby homestays, then book the support you need for a smooth off-trail experience.",
     gradient: "from-navy to-navy-light",
   },
   {
     number: "03",
-    title: "Start Your Adventure",
+    title: "Trek with Confidence",
     description:
-      "Pack your bags and hit the trail. We handle all logistics so you can focus on the experience of a lifetime.",
+      "Use your dashboard to track bookings, chats, and trip details so you can focus on the mountains and local culture.",
     gradient: "from-alpine to-alpine-light",
-  },
-];
-
-const testimonials = [
-  {
-    name: "Sarah Mitchell",
-    location: "London, UK",
-    avatar: "S",
-    rating: 5,
-    quote:
-      "OffTrail Nepal gave me the most authentic trekking experience of my life. Our guide Pemba knew every hidden waterfall and viewpoint. Absolutely life-changing!",
-  },
-  {
-    name: "James Chen",
-    location: "San Francisco, USA",
-    avatar: "J",
-    rating: 5,
-    quote:
-      "The Manaslu Circuit trek was incredible. Zero crowds, stunning views, and the homestay experience was beyond anything I could've imagined. 10/10 recommend.",
-  },
-  {
-    name: "Anita Sharma",
-    location: "Mumbai, India",
-    avatar: "A",
-    rating: 5,
-    quote:
-      "As a solo female traveler, safety was my top concern. OffTrail's verified guide system and 24/7 support made me feel completely secure throughout the journey.",
   },
 ];
 
@@ -251,6 +236,8 @@ const LandingPage = () => {
   const [sortBy, setSortBy] = useState("recent");
   const [availableRegions, setAvailableRegions] = useState([]);
   const [availableDifficulties, setAvailableDifficulties] = useState([]);
+  const [featuredTestimonials, setFeaturedTestimonials] = useState([]);
+  const [testimonialsLoading, setTestimonialsLoading] = useState(false);
   const navigate = useNavigate();
   const { user: authUser } = useAuth();
   const {
@@ -268,6 +255,45 @@ const LandingPage = () => {
   useEffect(() => {
     if (authUser) setUser(authUser);
   }, [authUser]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchFeaturedTestimonials = async () => {
+      setTestimonialsLoading(true);
+      try {
+        const res = await axios.get(`${API}/api/contact/testimonials/featured`);
+        const rows = Array.isArray(res.data?.testimonials) ? res.data.testimonials : [];
+
+        if (!isMounted) return;
+
+        setFeaturedTestimonials(
+          rows.map((row) => ({
+            testimonial_id: row.testimonial_id,
+            reviewer_name: row.reviewer_name,
+            reviewer_location: row.reviewer_location,
+            rating: Math.min(5, Math.max(1, Number(row.rating || 1))),
+            review_text: String(row.review_text || "").trim(),
+            profile_image_path: row.profile_image_path || null,
+          }))
+        );
+      } catch (err) {
+        console.error("Error fetching featured testimonials:", err);
+        if (isMounted) {
+          setFeaturedTestimonials([]);
+        }
+      } finally {
+        if (isMounted) {
+          setTestimonialsLoading(false);
+        }
+      }
+    };
+
+    fetchFeaturedTestimonials();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Fetch trails from API
   useEffect(() => {
@@ -337,7 +363,7 @@ const LandingPage = () => {
         {/* Parallax Background Image */}
         <motion.div className="absolute inset-0" style={{ y: heroImageY }}>
           <img
-            src="https://images.unsplash.com/photo-1544735716-392fe2489ffa?w=1920&q=80"
+            src="/images/landing/hero-himalayas.jpg"
             alt="Nepal Himalayas"
             className="w-full h-[120%] object-cover"
           />
@@ -448,13 +474,13 @@ const LandingPage = () => {
               Start Your Adventure
               <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
             </Link>
-            <a
-              href="#destinations"
+            <Link
+              to="/trails"
               className="inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-semibold text-white border-2 border-white/20 rounded-xl hover:bg-white/10 hover:border-gold/30 backdrop-blur-sm transition-all duration-300"
             >
               View Trails
               <Footprints className="h-5 w-5" />
-            </a>
+            </Link>
           </motion.div>
 
           {/* Trust Indicators */}
@@ -462,21 +488,21 @@ const LandingPage = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 1.2, duration: 0.8 }}
-            className="flex flex-wrap items-center justify-center gap-6 mt-12"
+            className="mt-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 max-w-4xl mx-auto"
           >
-            <div className="flex items-center gap-2 text-white/50 text-sm">
+            <div className="inline-flex items-center justify-center gap-2 rounded-full border border-white/25 bg-navy/45 px-4 py-2.5 text-white/90 text-sm backdrop-blur-md shadow-lg shadow-black/20">
               <CheckCircle2 className="h-4 w-4 text-gold-light" />
               Verified Guides
             </div>
-            <div className="flex items-center gap-2 text-white/50 text-sm">
+            <div className="inline-flex items-center justify-center gap-2 rounded-full border border-white/25 bg-navy/45 px-4 py-2.5 text-white/90 text-sm backdrop-blur-md shadow-lg shadow-black/20">
               <CheckCircle2 className="h-4 w-4 text-gold-light" />
               24/7 Support
             </div>
-            <div className="flex items-center gap-2 text-white/50 text-sm">
+            <div className="inline-flex items-center justify-center gap-2 rounded-full border border-white/25 bg-navy/45 px-4 py-2.5 text-white/90 text-sm backdrop-blur-md shadow-lg shadow-black/20">
               <CheckCircle2 className="h-4 w-4 text-gold-light" />
               Free Cancellation
             </div>
-            <div className="flex items-center gap-2 text-white/50 text-sm">
+            <div className="inline-flex items-center justify-center gap-2 rounded-full border border-white/25 bg-navy/45 px-4 py-2.5 text-white/90 text-sm backdrop-blur-md shadow-lg shadow-black/20">
               <div className="flex -space-x-1">
                 {[...Array(5)].map((_, i) => (
                   <Star
@@ -656,7 +682,11 @@ const LandingPage = () => {
                 const imageUrl = primaryImage
                   ? `${API}${primaryImage.image_path}`
                   : "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=600&q=80";
-                const tag = difficultyTag[trail.difficulty_level] || trail.difficulty_level;
+                const difficultyKey = String(trail.difficulty_level || "").trim();
+                const tagMeta = difficultyTag[difficultyKey] || {
+                  label: difficultyKey || "Trail",
+                  className: "bg-white/90 text-navy",
+                };
 
                 return (
                   <div
@@ -674,13 +704,9 @@ const LandingPage = () => {
                         <div className="absolute inset-0 bg-gradient-to-t from-navy/60 via-transparent to-transparent" />
                         {/* Tag */}
                         <span
-                          className="absolute top-4 left-4 px-3 py-1 text-navy text-xs font-bold rounded-full backdrop-blur-sm"
-                          style={{
-                            background:
-                              "linear-gradient(135deg, rgba(200,147,42,0.9), rgba(224,176,74,0.9))",
-                          }}
+                          className={`absolute top-4 left-4 px-3 py-1 text-xs font-bold rounded-full backdrop-blur-sm ${tagMeta.className}`}
                         >
-                          {tag}
+                          {tagMeta.label}
                         </span>
                         {/* Altitude badge */}
                         {trail.max_altitude && (
@@ -797,7 +823,7 @@ const LandingPage = () => {
               badge="Simple Process"
               badgeColor="gold"
               title="How It Works"
-              subtitle="From choosing your dream trail to reaching the summit — we make it effortless."
+              subtitle="Find the right trail, book verified guides and stays, then manage your full trek journey in one place."
             />
           </motion.div>
 
@@ -872,46 +898,76 @@ const LandingPage = () => {
             viewport={{ once: true, margin: "-60px" }}
             className="grid md:grid-cols-3 gap-8"
           >
-            {testimonials.map((t) => (
-              <motion.div
-                key={t.name}
-                variants={fadeUpItem}
-                whileHover={{ y: -6, transition: { duration: 0.25 } }}
-                className="relative bg-cream rounded-2xl p-8 border border-gray-100 hover:shadow-xl hover:shadow-navy/5 hover:border-gold/20 transition-all duration-500"
-              >
-                {/* Quote Icon */}
-                <Quote className="h-8 w-8 text-gold/20 mb-4" />
+            {testimonialsLoading ? (
+              <div className="md:col-span-3 flex flex-col items-center py-10 gap-3">
+                <Loader2 className="h-7 w-7 animate-spin text-gold" />
+                <p className="text-sm text-gray-500">Loading trekker testimonials...</p>
+              </div>
+            ) : featuredTestimonials.length === 0 ? (
+              <div className="md:col-span-3 rounded-2xl border border-dashed border-gray-200 bg-cream p-10 text-center">
+                <p className="text-gray-600">No testimonials are featured yet.</p>
+              </div>
+            ) : (
+              featuredTestimonials.map((t) => {
+                const profileImageSrc = t.profile_image_path
+                  ? t.profile_image_path.startsWith("http")
+                    ? t.profile_image_path
+                    : `${API}${t.profile_image_path}`
+                  : null;
+                const reviewerName = String(t.reviewer_name || "Verified Trekker").trim();
+                const reviewerLocation = String(t.reviewer_location || "Verified Trekker").trim();
+                const avatarLetter = reviewerName.charAt(0).toUpperCase() || "T";
 
-                {/* Stars */}
-                <div className="flex gap-0.5 mb-4">
-                  {[...Array(t.rating)].map((_, j) => (
-                    <Star
-                      key={j}
-                      className="h-4 w-4 text-gold fill-gold"
-                    />
-                  ))}
-                </div>
+                return (
+                  <motion.div
+                    key={t.testimonial_id}
+                    variants={fadeUpItem}
+                    whileHover={{ y: -6, transition: { duration: 0.25 } }}
+                    className="relative bg-cream rounded-2xl p-8 border border-gray-100 hover:shadow-xl hover:shadow-navy/5 hover:border-gold/20 transition-all duration-500"
+                  >
+                    {/* Quote Icon */}
+                    <Quote className="h-8 w-8 text-gold/20 mb-4" />
 
-                {/* Quote Text */}
-                <p className="text-gray-600 text-[15px] leading-relaxed mb-6 italic">
-                  &ldquo;{t.quote}&rdquo;
-                </p>
+                    {/* Stars */}
+                    <div className="flex gap-0.5 mb-4">
+                      {Array.from({ length: 5 }).map((_, j) => (
+                        <Star
+                          key={`${t.testimonial_id}-star-${j}`}
+                          className={`h-4 w-4 ${j < t.rating ? "text-gold fill-gold" : "text-gray-200"}`}
+                        />
+                      ))}
+                    </div>
 
-                {/* Author */}
-                <div className="flex items-center gap-3 pt-4 border-t border-gray-200">
-                  <div className="h-11 w-11 rounded-full flex items-center justify-center text-white font-bold text-sm bg-gradient-to-br from-navy to-navy-light">
-                    {t.avatar}
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-charcoal">{t.name}</p>
-                    <p className="text-xs text-gray-400 flex items-center gap-1">
-                      <MapPin className="h-3 w-3" />
-                      {t.location}
+                    {/* Quote Text */}
+                    <p className="text-gray-600 text-[15px] leading-relaxed mb-6 italic">
+                      &ldquo;{t.review_text}&rdquo;
                     </p>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
+
+                    {/* Author */}
+                    <div className="flex items-center gap-3 pt-4 border-t border-gray-200">
+                      <div className="h-11 w-11 rounded-full overflow-hidden flex items-center justify-center text-white font-bold text-sm bg-gradient-to-br from-navy to-navy-light">
+                        {profileImageSrc ? (
+                          <img
+                            src={profileImageSrc}
+                            alt={reviewerName}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          avatarLetter
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-charcoal">{reviewerName}</p>
+                        <p className="text-xs text-gray-400 flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          {reviewerLocation}
+                        </p>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })
+            )}
           </motion.div>
         </div>
       </section>

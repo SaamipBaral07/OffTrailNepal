@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import { verifyToken } from "../middleware/authMiddleware.js";
+import { captureAdminActivity } from "../middleware/adminActivityMiddleware.js";
 import {
   getTrailsForGuide,
   addGuideToTrail,
@@ -98,7 +99,7 @@ const requireAdmin = (req, res, next) => {
   if (req.user.user_type !== "admin") {
     return res.status(403).json({ message: "Admin access only" });
   }
-  next();
+  return captureAdminActivity(req, res, next);
 };
 
 /* ─── PUBLIC ROUTES (no auth) ─── */

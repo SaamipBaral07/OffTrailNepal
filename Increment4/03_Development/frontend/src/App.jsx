@@ -16,6 +16,8 @@ import HomestayDetail from "./pages/HomestayDetail";
 import MyBookings from "./pages/MyBookings";
 import TouristProfile from "./pages/TouristProfile";
 import TouristSettings from "./pages/TouristSettings";
+import TripPlanner from "./pages/TripPlanner";
+import AIAssistant from "./pages/AIAssistant";
 import WishlistPage from "./pages/WishlistPage";
 import HostProfile from "./pages/HostProfile";
 import GuideProfile from "./pages/GuideProfile";
@@ -121,6 +123,24 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["tourist"]}>
                 <WishlistPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/trip-planner"
+            element={
+              <ProtectedRoute allowedRoles={["tourist"]}>
+                <TripPlanner />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/ai-assistant"
+            element={
+              <ProtectedRoute allowedRoles={["tourist"]}>
+                <AIAssistant />
               </ProtectedRoute>
             }
           />

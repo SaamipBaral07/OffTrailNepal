@@ -25,10 +25,22 @@ import WishlistToggleButton from "../components/wishlist/WishlistToggleButton";
 const API = "http://localhost:5000";
 
 const difficultyTag = {
-  Easy: "Beginner Friendly",
-  Moderate: "Most Popular",
-  Difficult: "Challenging",
-  Extreme: "Expert Only",
+  Easy: {
+    label: "Easy",
+    className: "bg-emerald-100/95 text-emerald-900",
+  },
+  Moderate: {
+    label: "Moderate",
+    className: "bg-amber-100/95 text-amber-900",
+  },
+  Difficult: {
+    label: "Difficult",
+    className: "bg-orange-100/95 text-orange-900",
+  },
+  Extreme: {
+    label: "Extreme",
+    className: "bg-rose-100/95 text-rose-900",
+  },
 };
 
 const TrailsPage = () => {
@@ -232,7 +244,11 @@ const TrailsPage = () => {
               const imageUrl = primaryImage
                 ? `${API}${primaryImage.image_path}`
                 : "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=900&q=80";
-              const tag = difficultyTag[trail.difficulty_level] || trail.difficulty_level;
+              const difficultyKey = String(trail.difficulty_level || "").trim();
+              const tagMeta = difficultyTag[difficultyKey] || {
+                label: difficultyKey || "Trail",
+                className: "bg-white/90 text-navy",
+              };
 
               return (
                 <motion.article
@@ -250,12 +266,9 @@ const TrailsPage = () => {
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-navy/60 via-transparent to-transparent" />
                       <span
-                        className="absolute top-4 left-4 px-3 py-1 text-navy text-xs font-bold rounded-full backdrop-blur-sm"
-                        style={{
-                          background: "linear-gradient(135deg, rgba(200,147,42,0.9), rgba(224,176,74,0.9))",
-                        }}
+                        className={`absolute top-4 left-4 px-3 py-1 text-xs font-bold rounded-full backdrop-blur-sm ${tagMeta.className}`}
                       >
-                        {tag}
+                        {tagMeta.label}
                       </span>
                       {trail.max_altitude && (
                         <div className="absolute bottom-4 right-4 flex items-center gap-1 px-2.5 py-1 bg-white/90 backdrop-blur-sm rounded-full">

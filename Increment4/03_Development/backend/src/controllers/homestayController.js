@@ -1221,6 +1221,12 @@ export const getPublicHomestaysByTrail = async (req, res) => {
     }
     res.status(200).json({ homestays });
   } catch (err) {
+    if (err?.code === "53300") {
+      return res.status(503).json({
+        message: "Database is temporarily busy. Please retry in a few seconds.",
+      });
+    }
+
     console.error("Error fetching public homestays:", err);
     res.status(500).json({ message: "Server error fetching homestays" });
   }

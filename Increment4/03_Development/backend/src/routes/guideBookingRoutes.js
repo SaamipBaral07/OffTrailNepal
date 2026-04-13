@@ -1,5 +1,6 @@
 import express from "express";
 import { verifyToken } from "../middleware/authMiddleware.js";
+import { captureAdminActivity } from "../middleware/adminActivityMiddleware.js";
 import {
   initiateGuideEsewaPayment,
   initiateGuideStripePayment,
@@ -45,7 +46,7 @@ const requireAdmin = (req, res, next) => {
   if (req.user.user_type !== "admin") {
     return res.status(403).json({ message: "Admin access only" });
   }
-  next();
+  return captureAdminActivity(req, res, next);
 };
 
 const requireTouristOrGuide = (req, res, next) => {

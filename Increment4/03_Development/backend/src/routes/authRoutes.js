@@ -24,6 +24,7 @@ import {
   updateGuideBankDetails,
   updateProfilePhoto,
 } from "../controllers/authController.js";
+import { getAdminActivityLogs } from "../controllers/adminActivityController.js";
 import { verifyToken } from "../middleware/authMiddleware.js";
 import { getMe } from "../controllers/authController.js";
 import { verifyRefreshToken } from "../middleware/refreshTokenMiddleware.js";
@@ -65,6 +66,13 @@ const profileUpload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
+const requireAdmin = (req, res, next) => {
+  if (req.user.user_type !== "admin") {
+    return res.status(403).json({ message: "Admin access only" });
+  }
+  return next();
+};
+
 // CSRF token endpoint (must be GET, no CSRF check needed)
 router.get("/csrf-token", getCsrfToken);
 
@@ -84,6 +92,7 @@ router.patch("/host/profile", verifyToken, updateHostProfile);
 router.patch("/host/bank-details", verifyToken, updateHostBankDetails);
 router.get("/guide/profile", verifyToken, getGuideProfile);
 router.get("/admin/profile", verifyToken, getAdminProfile);
+router.get("/admin/activity-logs", verifyToken, requireAdmin, getAdminActivityLogs);
 router.patch("/guide/profile", verifyToken, updateGuideProfile);
 router.patch("/guide/bank-details", verifyToken, updateGuideBankDetails);
 router.patch("/profile-photo", verifyToken, profileUpload.single("profile_photo"), updateProfilePhoto);

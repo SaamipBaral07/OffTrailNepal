@@ -239,6 +239,12 @@ export const getWishlistIds = async (req, res) => {
 
     return res.status(200).json({ ids });
   } catch (err) {
+    if (err?.code === "53300") {
+      return res.status(503).json({
+        message: "Database is temporarily busy. Please retry in a few seconds.",
+      });
+    }
+
     console.error("Error fetching wishlist ids:", err);
     return res.status(500).json({ message: "Server error fetching wishlist ids" });
   }
@@ -333,6 +339,12 @@ export const getWishlistItems = async (req, res) => {
         has_next: normalizedPage < totalPages,
       },
     });
+      if (err?.code === "53300") {
+        return res.status(503).json({
+          message: "Database is temporarily busy. Please retry in a few seconds.",
+        });
+      }
+
   } catch (err) {
     console.error("Error fetching wishlist items:", err);
     return res.status(500).json({ message: "Server error fetching wishlist" });

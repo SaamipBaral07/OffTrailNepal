@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -11,29 +12,23 @@ import {
   ArrowRight,
   Heart,
   Mountain,
-  Send,
   Compass,
-  ExternalLink,
+  Route,
+  Tent,
+  Users,
 } from "lucide-react";
 
 /* ── Static Data ── */
 
-const quickLinks = [
-  { name: "Home", href: "#home" },
-  { name: "Destinations", href: "#destinations" },
-  { name: "Our Guides", href: "#features" },
-  { name: "How It Works", href: "#how-it-works" },
-  { name: "Testimonials", href: "#testimonials" },
-  { name: "Contact", href: "/contact" },
-];
+const API = "http://localhost:5000";
 
-const destinations = [
-  "Annapurna Circuit",
-  "Everest Base Camp",
-  "Langtang Valley",
-  "Upper Mustang",
-  "Manaslu Circuit",
-  "Rara Lake",
+const productLinks = [
+  { name: "Home", href: "/" },
+  { name: "Trails", href: "/trails", icon: Route },
+  { name: "Homestays", href: "/homestays", icon: Tent },
+  { name: "Guides", href: "/guides", icon: Users },
+  { name: "Contact", href: "/contact", icon: Mail },
+  { name: "Sign In", href: "/login", icon: ArrowRight },
 ];
 
 const socials = [
@@ -60,12 +55,42 @@ const fadeUp = {
    ═══════════════════════════════════════════════ */
 
 export const Footer = () => {
-  const scrollToSection = (href) => {
-    if (href.startsWith("#")) {
-      const el = document.querySelector(href);
-      if (el) el.scrollIntoView({ behavior: "smooth" });
-    }
-  };
+  const [listedTrails, setListedTrails] = useState([]);
+  const [trailsLoading, setTrailsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchListedTrails = async () => {
+      try {
+        const response = await fetch(`${API}/api/trails/public?sort=name_asc`);
+        if (!response.ok) {
+          throw new Error("Unable to load listed trails");
+        }
+
+        const data = await response.json();
+        const trails = Array.isArray(data?.trails) ? data.trails : [];
+
+        if (!isMounted) return;
+        setListedTrails(trails.slice(0, 6));
+      } catch (error) {
+        console.error("Footer trails load error:", error);
+        if (isMounted) {
+          setListedTrails([]);
+        }
+      } finally {
+        if (isMounted) {
+          setTrailsLoading(false);
+        }
+      }
+    };
+
+    fetchListedTrails();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   return (
     <footer className="relative overflow-hidden -mt-8 sm:-mt-12">
@@ -143,40 +168,39 @@ export const Footer = () => {
                     }}
                   >
                     <Mountain className="h-3 w-3" />
-                    Trail Updates
+                    OffTrail Nepal
                   </motion.span>
                   <h3 className="text-2xl sm:text-3xl font-bold text-white mb-2 font-heading leading-tight">
-                    Never Miss a New Trail
+                    Start Planning Your Next Trek
                   </h3>
                   <p className="text-white/40 text-sm sm:text-base leading-relaxed">
-                    Monthly route insights, seasonal weather windows, and expert
-                    guide tips — straight from the Himalayas to your inbox.
+                    Discover verified trails, trusted local guides, and authentic
+                    homestays across Nepal - all in one place.
                   </p>
                 </div>
 
-                <div className="w-full lg:w-auto">
-                  <div className="flex rounded-xl overflow-hidden shadow-lg shadow-black/20 border border-white/[0.08]">
-                    <input
-                      type="email"
-                      placeholder="Enter your email"
-                      className="flex-1 lg:w-64 px-5 py-4 bg-white/[0.06] text-white placeholder-white/30 text-sm focus:outline-none focus:bg-white/[0.1] transition-colors border-r border-white/[0.06]"
-                    />
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="px-6 py-4 font-semibold text-sm text-navy flex items-center gap-2 shrink-0 transition-all duration-300"
-                      style={{
-                        background:
-                          "linear-gradient(135deg, #C8932A 0%, #E0B04A 100%)",
-                      }}
-                    >
-                      <Send className="h-4 w-4" />
-                      <span className="hidden sm:inline">Subscribe</span>
-                    </motion.button>
+                <div className="w-full lg:w-auto flex flex-col sm:flex-row items-center gap-3">
+                  <Link
+                    to="/trails"
+                    className="inline-flex w-full sm:w-auto items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-semibold text-sm text-navy transition-all duration-300 hover:brightness-105"
+                    style={{
+                      background:
+                        "linear-gradient(135deg, #C8932A 0%, #E0B04A 100%)",
+                    }}
+                  >
+                    View Listed Trails
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                  <Link
+                    to="/contact"
+                    className="inline-flex w-full sm:w-auto items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-semibold text-sm text-white border border-white/15 hover:border-gold/35 hover:text-gold transition-all duration-300"
+                  >
+                    Contact Team
+                    <Mail className="h-4 w-4" />
+                  </Link>
+                  <div className="text-white/25 text-[11px] text-center sm:text-left">
+                    Based in Lakeside, Pokhara
                   </div>
-                  <p className="text-white/20 text-[11px] mt-2.5 text-center lg:text-left">
-                    No spam, ever. Unsubscribe anytime.
-                  </p>
                 </div>
               </div>
             </div>
@@ -255,64 +279,63 @@ export const Footer = () => {
             </motion.div>
 
             {/* ── Quick Links (3 cols) ── */}
-            <motion.div variants={fadeUp} className="lg:col-span-2">
+            <motion.div variants={fadeUp} className="lg:col-span-3">
               <h4 className="text-xs font-bold uppercase tracking-[0.2em] mb-5 text-white/60">
-                Quick Links
+                Platform Links
               </h4>
               <ul className="space-y-3">
-                {quickLinks.map((link) => (
+                {productLinks.map((link) => (
                   <li key={link.name}>
-                    {link.href.startsWith("#") ? (
-                      <button
-                        onClick={() => scrollToSection(link.href)}
-                        className="text-white/35 hover:text-gold text-sm transition-all duration-300 flex items-center gap-2 group hover:translate-x-1"
-                      >
-                        <ArrowRight className="h-3 w-3 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 text-gold" />
-                        {link.name}
-                      </button>
-                    ) : (
-                      <Link
-                        to={link.href}
-                        className="text-white/35 hover:text-gold text-sm transition-all duration-300 flex items-center gap-2 group hover:translate-x-1"
-                      >
-                        <ArrowRight className="h-3 w-3 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 text-gold" />
-                        {link.name}
-                      </Link>
-                    )}
-                  </li>
-                ))}
-                <li>
                   <Link
-                    to="/login"
+                    to={link.href}
                     className="text-white/35 hover:text-gold text-sm transition-all duration-300 flex items-center gap-2 group hover:translate-x-1"
                   >
                     <ArrowRight className="h-3 w-3 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 text-gold" />
-                    Login
+                    {link.name}
                   </Link>
                 </li>
+                ))}
               </ul>
             </motion.div>
 
             {/* ── Top Destinations (3 cols) ── */}
             <motion.div variants={fadeUp} className="lg:col-span-3">
               <h4 className="text-xs font-bold uppercase tracking-[0.2em] mb-5 text-white/60">
-                Top Destinations
+                Listed Trails
               </h4>
               <ul className="space-y-3">
-                {destinations.map((dest) => (
-                  <li key={dest}>
-                    <button className="text-white/35 hover:text-gold text-sm transition-all duration-300 flex items-center gap-2.5 group hover:translate-x-1">
+                {trailsLoading && (
+                  <li className="text-white/25 text-sm">Loading listed trails...</li>
+                )}
+
+                {!trailsLoading && listedTrails.length === 0 && (
+                  <li>
+                    <Link
+                      to="/trails"
+                      className="text-white/35 hover:text-gold text-sm transition-all duration-300 flex items-center gap-2.5 group hover:translate-x-1"
+                    >
                       <Mountain className="h-3 w-3 text-white/15 group-hover:text-gold transition-colors shrink-0" />
-                      {dest}
-                      <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-60 transition-opacity text-gold" />
-                    </button>
+                      Explore all trails
+                    </Link>
+                  </li>
+                )}
+
+                {listedTrails.map((trail) => (
+                  <li key={trail.trail_id}>
+                    <Link
+                      to={`/trails/${trail.trail_id}`}
+                      className="text-white/35 hover:text-gold text-sm transition-all duration-300 flex items-center gap-2.5 group hover:translate-x-1"
+                    >
+                      <Mountain className="h-3 w-3 text-white/15 group-hover:text-gold transition-colors shrink-0" />
+                      <span className="line-clamp-1">{trail.trail_name}</span>
+                    </Link>
                   </li>
                 ))}
               </ul>
             </motion.div>
 
             {/* ── Contact (3 cols) ── */}
-            <motion.div variants={fadeUp} className="lg:col-span-3">
+            <motion.div variants={fadeUp} className="lg:col-span-2">
               <h4 className="text-xs font-bold uppercase tracking-[0.2em] mb-5 text-white/60">
                 Contact Us
               </h4>
@@ -322,9 +345,9 @@ export const Footer = () => {
                     <MapPin className="h-4 w-4 text-gold" />
                   </div>
                   <span className="text-white/35 text-sm leading-relaxed pt-1.5">
-                    Thamel, Kathmandu
+                    Lakeside, Pokhara
                     <br />
-                    Nepal 44600
+                    Nepal 33700
                   </span>
                 </li>
                 <li className="flex items-center gap-3 group">
@@ -332,10 +355,10 @@ export const Footer = () => {
                     <Phone className="h-4 w-4 text-gold" />
                   </div>
                   <a
-                    href="tel:+97714XXXXXX"
+                    href="tel:+977614XXXXXX"
                     className="text-white/35 hover:text-gold text-sm transition-colors duration-300"
                   >
-                    +977-01-4XXXXXX
+                    +977-61-4XXXXXX
                   </a>
                 </li>
                 <li className="flex items-center gap-3 group">
@@ -361,13 +384,13 @@ export const Footer = () => {
                 reserved.
               </p>
               <div className="flex items-center gap-5 text-xs text-white/20">
-                <button className="hover:text-gold/60 transition-colors">
+                <Link to="/contact" className="hover:text-gold/60 transition-colors">
                   Privacy Policy
-                </button>
+                </Link>
                 <span className="w-1 h-1 rounded-full bg-white/10" />
-                <button className="hover:text-gold/60 transition-colors">
+                <Link to="/contact" className="hover:text-gold/60 transition-colors">
                   Terms of Service
-                </button>
+                </Link>
                 <span className="w-1 h-1 rounded-full bg-white/10" />
                 <span className="flex items-center gap-1.5">
                   Made with

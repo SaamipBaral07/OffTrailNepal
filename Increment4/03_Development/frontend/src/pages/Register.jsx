@@ -2,6 +2,10 @@ import { useState } from "react";
 import axios from "axios";
 import { Link, useNavigate } from "react-router-dom";
 import {
+  COUNTRY_PHONE_OPTIONS,
+  DEFAULT_COUNTRY_PHONE_OPTION,
+} from "../utils/countryPhoneOptions";
+import {
   User,
   Mail,
   Lock,
@@ -21,6 +25,9 @@ import {
   ImagePlus
 } from "lucide-react";
 
+const DEFAULT_DIAL_CODE = DEFAULT_COUNTRY_PHONE_OPTION?.dialCode || "+977";
+const DEFAULT_NATIONALITY = DEFAULT_COUNTRY_PHONE_OPTION?.name || "Nepal";
+
 const Register = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
@@ -28,10 +35,11 @@ const Register = () => {
     email: "",
     password: "",
     confirmPassword: "",
+    phone_country_code: DEFAULT_DIAL_CODE,
     phone: "",
     user_type: "",
     // Additional fields based on user type
-    nationality: "",
+    nationality: DEFAULT_NATIONALITY,
     address: "",
     pan_number: "",
     license_no: "",
@@ -49,6 +57,16 @@ const Register = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+
+    if (name === "phone") {
+      const digitsOnly = String(value || "").replace(/\D/g, "");
+      setFormData(prev => ({
+        ...prev,
+        [name]: digitsOnly
+      }));
+      return;
+    }
+
     setFormData(prev => ({
       ...prev,
       [name]: value
@@ -70,7 +88,7 @@ const Register = () => {
       ...prev,
       user_type,
       // Reset additional fields when changing user type
-      nationality: user_type === "tourist" ? prev.nationality : "",
+      nationality: user_type === "tourist" ? (prev.nationality || DEFAULT_NATIONALITY) : "",
       address: (user_type === "host" || user_type === "guide") ? prev.address : "",
       pan_number: user_type === "host" ? prev.pan_number : "",
       license_no: user_type === "guide" ? prev.license_no : "",
@@ -117,9 +135,25 @@ const Register = () => {
     return "Strong";
   };
 
-  const validatePhone = (phone) => {
-    const phoneRegex = /^[0-9]{10}$/;
-    return phoneRegex.test(phone);
+  const validatePhoneLocalPart = (phoneDigits) => {
+    const phoneRegex = /^[0-9]{6,14}$/;
+    return phoneRegex.test(phoneDigits);
+  };
+
+  const getFullPhoneNumber = () => {
+    const code = String(formData.phone_country_code || "").trim();
+    const local = String(formData.phone || "").trim();
+    return `${code}${local}`;
+  };
+
+  const handleNationalityChange = (value) => {
+    const selected = COUNTRY_PHONE_OPTIONS.find((item) => item.name === value);
+
+    setFormData((prev) => ({
+      ...prev,
+      nationality: value,
+      phone_country_code: selected?.dialCode || prev.phone_country_code,
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -128,8 +162,8 @@ const Register = () => {
     setSuccess("");
 
     // Validation
-    if (!formData.phone || !validatePhone(formData.phone)) {
-      setError("Please enter a valid 10-digit phone number");
+    if (!formData.phone_country_code || !formData.phone || !validatePhoneLocalPart(formData.phone)) {
+      setError("Please select a country code and enter a valid phone number (6 to 14 digits)");
       return;
     }
 
@@ -187,7 +221,7 @@ const Register = () => {
       dataToSend.append("full_name", formData.full_name);
       dataToSend.append("email", formData.email);
       dataToSend.append("password", formData.password);
-      dataToSend.append("phone", formData.phone);
+      dataToSend.append("phone", getFullPhoneNumber());
       dataToSend.append("user_type", formData.user_type);
 
       // Add additional fields based on user type
@@ -407,22 +441,45 @@ const Register = () => {
                 <label className="block text-gray-700 text-sm font-medium mb-2">
                   Phone Number *
                 </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Phone className="h-5 w-5 text-gray-400" />
+                <div className="grid grid-cols-12 gap-2">
+                  <div className="col-span-5 sm:col-span-4 relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Globe className="h-4 w-4 text-gray-400" />
+                    </div>
+                    <select
+                      name="phone_country_code"
+                      value={formData.phone_country_code}
+                      onChange={handleChange}
+                      className="w-full pl-9 pr-2 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold transition-all text-sm"
+                      required
+                    >
+                      {COUNTRY_PHONE_OPTIONS.map((item) => (
+                        <option key={`${item.iso2}-${item.dialCode}`} value={item.dialCode}>
+                          {item.flag} {item.name} ({item.dialCode})
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold transition-all"
-                    placeholder="98XXXXXXXX"
-                    required
-                    maxLength="10"
-                  />
+                  <div className="col-span-7 sm:col-span-8 relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Phone className="h-5 w-5 text-gray-400" />
+                    </div>
+                    <input
+                      type="tel"
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleChange}
+                      className="w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold transition-all"
+                      placeholder="Enter phone number"
+                      required
+                      minLength={6}
+                      maxLength={14}
+                    />
+                  </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">10-digit Nepal phone number</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  International format supported. Stored as: {getFullPhoneNumber() || "<country-code><number>"}
+                </p>
               </div>
             </div>
 
@@ -615,18 +672,22 @@ const Register = () => {
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <Globe className="h-5 w-5 text-gray-400" />
                     </div>
-                    <input
-                      type="text"
+                    <select
                       name="nationality"
                       value={formData.nationality}
-                      onChange={handleChange}
+                      onChange={(e) => handleNationalityChange(e.target.value)}
                       className="w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold transition-all"
-                      placeholder="e.g., American, British, Indian, etc."
                       required
-                    />
+                    >
+                      {COUNTRY_PHONE_OPTIONS.map((item) => (
+                        <option key={`nationality-${item.iso2}`} value={item.name}>
+                          {item.flag} {item.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    This helps us provide relevant travel information
+                    Country selection auto-updates phone code for tourist registration.
                   </p>
                 </div>
               </div>
