@@ -19,38 +19,23 @@ const pool = new Pool({
 });
 
 const run = async () => {
-  const migrationPath = path.resolve(__dirname, "../migrations/create_tourist_wishlists.sql");
+  const migrationPath = path.resolve(
+    __dirname,
+    "../migrations/alter_tourist_wishlists_add_guide_package_type.sql"
+  );
   const sql = fs.readFileSync(migrationPath, "utf8");
 
   try {
     await pool.query(sql);
 
-    const requiredColumns = await pool.query(
-      `SELECT column_name
-       FROM information_schema.columns
-       WHERE table_schema = 'public'
-         AND table_name = 'tourist_wishlists'
-         AND column_name IN ('wishlist_id', 'tourist_id', 'item_type', 'item_id', 'created_at')`
-    );
-
-    const hasUniqueConstraint = await pool.query(
-      `SELECT constraint_name
-       FROM information_schema.table_constraints
-       WHERE table_schema = 'public'
-         AND table_name = 'tourist_wishlists'
-         AND constraint_type = 'UNIQUE'`
-    );
-
-    const hasTypeCheck = await pool.query(
+    const checkConstraints = await pool.query(
       `SELECT pg_get_constraintdef(c.oid) AS def
        FROM pg_constraint c
        WHERE c.conrelid = 'tourist_wishlists'::regclass
          AND c.contype = 'c'`
     );
 
-    const hasColumns = requiredColumns.rows.length >= 5;
-    const hasUnique = hasUniqueConstraint.rows.length > 0;
-    const typeCheckOk = hasTypeCheck.rows.some((row) => {
+    const typeCheckOk = checkConstraints.rows.some((row) => {
       const def = String(row.def || "").toLowerCase();
       return (
         def.includes("item_type") &&
@@ -60,15 +45,13 @@ const run = async () => {
       );
     });
 
-    if (hasColumns && hasUnique && typeCheckOk) {
-      console.log("Migration applied: tourist wishlist schema is ready.");
+    if (typeCheckOk) {
+      console.log("Migration applied: tourist wishlist supports guide_package type.");
       return;
     }
 
-    console.error("Migration executed, but expected wishlist schema was not fully found.", {
-      columns_found: requiredColumns.rows,
-      unique_constraints: hasUniqueConstraint.rows,
-      check_constraints: hasTypeCheck.rows,
+    console.error("Migration executed, but expected wishlist type check was not found.", {
+      check_constraints: checkConstraints.rows,
     });
     process.exitCode = 1;
   } catch (err) {

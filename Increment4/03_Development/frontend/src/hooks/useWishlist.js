@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
 
-const VALID_TYPES = new Set(["trail", "homestay", "guide"]);
+const VALID_TYPES = new Set(["trail", "homestay", "guide_package"]);
 
 const normalizeType = (value) => String(value || "").trim().toLowerCase();
 
@@ -19,7 +19,7 @@ export const useWishlist = () => {
   const [idsByType, setIdsByType] = useState({
     trail: [],
     homestay: [],
-    guide: [],
+    guide_package: [],
   });
   const [loadingIds, setLoadingIds] = useState(false);
   const [updatingKeys, setUpdatingKeys] = useState({});
@@ -30,14 +30,14 @@ export const useWishlist = () => {
     () => ({
       trail: new Set(idsByType.trail || []),
       homestay: new Set(idsByType.homestay || []),
-      guide: new Set(idsByType.guide || []),
+      guide_package: new Set(idsByType.guide_package || []),
     }),
     [idsByType]
   );
 
   const fetchWishlistIds = useCallback(async () => {
     if (!isTourist) {
-      setIdsByType({ trail: [], homestay: [], guide: [] });
+      setIdsByType({ trail: [], homestay: [], guide_package: [] });
       return;
     }
 
@@ -48,7 +48,9 @@ export const useWishlist = () => {
       setIdsByType({
         trail: Array.isArray(nextIds.trail) ? nextIds.trail.map((id) => Number(id)).filter(Boolean) : [],
         homestay: Array.isArray(nextIds.homestay) ? nextIds.homestay.map((id) => Number(id)).filter(Boolean) : [],
-        guide: Array.isArray(nextIds.guide) ? nextIds.guide.map((id) => Number(id)).filter(Boolean) : [],
+        guide_package: Array.isArray(nextIds.guide_package)
+          ? nextIds.guide_package.map((id) => Number(id)).filter(Boolean)
+          : [],
       });
     } catch (err) {
       console.error("Error loading wishlist ids:", err);

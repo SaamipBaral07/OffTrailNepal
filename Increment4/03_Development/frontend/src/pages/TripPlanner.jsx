@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Sparkles, Route, Wallet, ListChecks, CalendarDays } from "lucide-react";
+import { Loader2, Sparkles, Route, Wallet, ListChecks, CalendarDays, Trash2 } from "lucide-react";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import LogoutModal from "../components/LogoutModal";
@@ -243,6 +243,22 @@ const TripPlanner = () => {
       setIsPlanLoading(false);
     }
   };
+
+  const deleteTripPlan = useCallback(async (planId) => {
+    const confirmed = window.confirm("Are you sure you want to delete this saved plan? This action cannot be undone.");
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`/api/trip-planner/${planId}`);
+      setHistoryPlans((prev) => prev.filter((p) => p.plan_id !== planId));
+      if (activePlanContainer?.plan_id === planId) {
+        setActivePlanContainer(null);
+      }
+      pushNotice("Saved plan deleted successfully.", "success");
+    } catch (error) {
+      pushNotice(error.response?.data?.message || "Failed to delete saved plan", "error");
+    }
+  }, [activePlanContainer, pushNotice]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#f4f2ee] via-[#faf8f4] to-[#f2efe8]">
@@ -521,13 +537,23 @@ const TripPlanner = () => {
                       <td className="py-3 pr-4">{formatMoney(plan.total_estimated_cost)}</td>
                       <td className="py-3 pr-4">{formatDateTime(plan.created_at)}</td>
                       <td className="py-3">
-                        <button
-                          type="button"
-                          onClick={() => openHistoryPlan(plan.plan_id)}
-                          className="rounded-lg bg-[#0C2340] px-3 py-1.5 text-white hover:opacity-90"
-                        >
-                          Open
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openHistoryPlan(plan.plan_id)}
+                            className="rounded-lg bg-[#0C2340] px-3 py-1.5 text-white text-xs hover:opacity-90"
+                          >
+                            Open
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteTripPlan(plan.plan_id)}
+                            className="rounded-lg border border-red-300 bg-red-50 px-2.5 py-1.5 text-red-600 text-xs hover:bg-red-100"
+                            title="Delete plan"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

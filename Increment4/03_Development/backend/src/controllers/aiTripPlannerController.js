@@ -234,3 +234,50 @@ export const submitTripPlanFeedback = async (req, res) => {
     return res.status(500).json({ message: "Server error saving trip plan feedback" });
   }
 };
+
+export const deleteTripPlan = async (req, res) => {
+  if (!requireTourist(req, res)) return;
+
+  try {
+    const planId = parsePlanId(req.params.planId);
+    if (!planId) {
+      return res.status(400).json({ message: "Invalid plan id" });
+    }
+
+    // Check ownership first
+    const ownershipResult = await pool.query(
+      `SELECT plan_id 
+       FROM ai_trip_plans 
+       WHERE plan_id = $1 AND requester_user_id = $2 AND requester_user_type = $3`,
+      [planId, req.user.user_id, req.user.user_type]
+    );
+
+    if (!ownershipResult.rows.length) {
+      return res.status(404).json({ message: "Trip plan not found" });
+    }
+
+    // Delete related feedback first
+    await pool.query(`DELETE FROM ai_trip_plan_feedback WHERE plan_id = $1`, [planId]);
+
+    // Delete plan
+    const deleteResult = await pool.query(
+      `DELETE FROM ai_trip_plans WHERE plan_id = $1 RETURNING plan_id`,
+      [planId]
+    );
+
+    if (!deleteResult.rows.length) {
+      return res.status(404).json({ message: "Trip plan not found" });
+    }
+
+    return res.status(200).json({ message: "Trip plan deleted successfully" });
+  } catch (error) {
+    if (error?.code === "53300") {
+      return res.status(503).json({
+        message: "Database is temporarily busy (too many connections). Please try again in a few seconds.",
+      });
+    }
+
+    console.error("Error deleting trip plan:", error);
+    return res.status(500).json({ message: "Server error deleting trip plan" });
+  }
+};

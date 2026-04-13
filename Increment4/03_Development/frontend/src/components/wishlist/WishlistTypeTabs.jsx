@@ -1,7 +1,7 @@
 const TAB_CONFIG = [
   { id: "trail", label: "Trails" },
   { id: "homestay", label: "Homestays" },
-  { id: "guide", label: "Guides" },
+  { id: "guide_package", label: "Guide Services" },
 ];
 
 const WishlistTypeTabs = ({ activeType, counts, onChange }) => {

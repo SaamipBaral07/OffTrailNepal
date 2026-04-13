@@ -322,7 +322,10 @@ export const getPublicGuides = async (req, res) => {
        JOIN guide_verifications gv ON gv.guide_id = g.guide_id
        LEFT JOIN guide_trails gt ON gt.guide_id = g.guide_id AND gt.is_active = true
        LEFT JOIN trekking_trails t ON t.trail_id = gt.trail_id
-       LEFT JOIN guide_services gs ON gs.guide_id = g.guide_id AND gs.is_active = true
+      LEFT JOIN guide_services gs
+        ON gs.guide_id = g.guide_id
+            AND gs.is_active = true
+            AND gs.approval_status = 'approved'
        LEFT JOIN guide_reviews gr ON gr.guide_id = g.guide_id
        WHERE gv.verification_status = 'approved'
        GROUP BY g.guide_id

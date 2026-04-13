@@ -14,7 +14,7 @@ import api from "../api";
 const TYPE_LABEL = {
   trail: "trails",
   homestay: "homestays",
-  guide: "guides",
+  guide_package: "guide services",
 };
 
 const WishlistPage = () => {
@@ -24,7 +24,7 @@ const WishlistPage = () => {
 
   const [activeType, setActiveType] = useState("trail");
   const [items, setItems] = useState([]);
-  const [counts, setCounts] = useState({ trail: 0, homestay: 0, guide: 0 });
+  const [counts, setCounts] = useState({ trail: 0, homestay: 0, guide_package: 0 });
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 9,
@@ -62,7 +62,7 @@ const WishlistPage = () => {
       });
 
       setItems(Array.isArray(res.data?.items) ? res.data.items : []);
-      setCounts(res.data?.counts || { trail: 0, homestay: 0, guide: 0 });
+      setCounts(res.data?.counts || { trail: 0, homestay: 0, guide_package: 0 });
       setPagination((prev) => ({
         ...prev,
         ...(res.data?.pagination || {}),
@@ -115,11 +115,11 @@ const WishlistPage = () => {
             <div>
               <p className="uppercase text-[11px] tracking-[0.24em] text-gold-dark font-semibold mb-2">Tourist Wishlist</p>
               <h1 className="text-3xl sm:text-4xl font-heading text-charcoal">My Wishlist</h1>
-              <p className="text-gray-500 mt-2">Keep trails, homestays, and guides in one place before booking.</p>
+              <p className="text-gray-500 mt-2">Keep trails, homestays, and guide services in one place before booking.</p>
             </div>
             <span className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700">
               <Heart className="h-4 w-4 fill-current" />
-              {counts.trail + counts.homestay + counts.guide} saved
+              {counts.trail + counts.homestay + counts.guide_package} saved
             </span>
           </div>
 

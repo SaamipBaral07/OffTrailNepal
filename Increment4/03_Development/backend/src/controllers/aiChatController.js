@@ -269,3 +269,45 @@ export const sendChatMessage = async (req, res) => {
     if (client) client.release();
   }
 };
+
+export const deleteConversation = async (req, res) => {
+  try {
+    const touristId = req.user.user_id;
+    const conversationId = parseConversationId(req.params.conversationId);
+
+    if (!conversationId) {
+      return res.status(400).json({ message: "Invalid conversation id" });
+    }
+
+    // Check ownership first
+    const ownershipResult = await pool.query(
+      `SELECT conversation_id FROM ai_chat_conversations WHERE conversation_id = $1 AND tourist_id = $2`,
+      [conversationId, touristId]
+    );
+
+    if (!ownershipResult.rows.length) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    // Delete related messages first
+    await pool.query(`DELETE FROM ai_chat_messages WHERE conversation_id = $1`, [conversationId]);
+
+    // Delete conversation
+    const deleteResult = await pool.query(
+      `DELETE FROM ai_chat_conversations WHERE conversation_id = $1 RETURNING conversation_id`,
+      [conversationId]
+    );
+
+    if (!deleteResult.rows.length) {
+      return res.status(404).json({ message: "Conversation not found" });
+    }
+
+    return res.status(200).json({ message: "Conversation deleted successfully" });
+  } catch (error) {
+    if (error?.code === "53300") {
+      return res.status(503).json({ message: "Database is temporarily busy. Please retry shortly." });
+    }
+    console.error("Error deleting AI chat conversation:", error);
+    return res.status(500).json({ message: "Server error deleting conversation" });
+  }
+};

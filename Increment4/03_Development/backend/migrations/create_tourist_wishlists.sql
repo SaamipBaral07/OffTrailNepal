@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS tourist_wishlists (
   wishlist_id SERIAL PRIMARY KEY,
   tourist_id INT NOT NULL REFERENCES tourists(tourist_id) ON DELETE CASCADE,
-  item_type VARCHAR(20) NOT NULL CHECK (item_type IN ('trail', 'homestay', 'guide')),
+  item_type VARCHAR(20) NOT NULL CHECK (item_type IN ('trail', 'homestay', 'guide_package')),
   item_id INT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (tourist_id, item_type, item_id)

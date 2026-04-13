@@ -2530,9 +2530,9 @@ const TrailDetail = () => {
                           user={user}
                           onBookPackage={handleOpenGuidePackageBooking}
                           showWishlist={isTourist}
-                          wishlisted={isWishlisted("guide", service.guide_id)}
-                          wishlistLoading={isUpdating("guide", service.guide_id)}
-                          onToggleWishlist={() => handleWishlistToggle("guide", service.guide_id)}
+                          wishlisted={isWishlisted("guide_package", service.service_id)}
+                          wishlistLoading={isUpdating("guide_package", service.service_id)}
+                          onToggleWishlist={() => handleWishlistToggle("guide_package", service.service_id)}
                         />
                       ))}
                     </div>
@@ -2562,10 +2562,7 @@ const TrailDetail = () => {
                           key={guide.id}
                           guide={guide}
                           index={i}
-                          showWishlist={isTourist}
-                          wishlisted={isWishlisted("guide", guide.guide_id || guide.id)}
-                          wishlistLoading={isUpdating("guide", guide.guide_id || guide.id)}
-                          onToggleWishlist={() => handleWishlistToggle("guide", guide.guide_id || guide.id)}
+                          showWishlist={false}
                         />
                         ))}
                      </div>

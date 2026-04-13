@@ -1,6 +1,6 @@
 import pool from "../config/db.js";
 
-const ALLOWED_ITEM_TYPES = new Set(["trail", "homestay", "guide"]);
+const ALLOWED_ITEM_TYPES = new Set(["trail", "homestay", "guide_package"]);
 
 const parsePositiveInt = (value) => {
   const parsed = Number.parseInt(value, 10);
@@ -43,12 +43,16 @@ const validateWishlistTarget = async (itemType, itemId) => {
     return result.rows.length > 0;
   }
 
-  if (itemType === "guide") {
+  if (itemType === "guide_package") {
     const result = await pool.query(
-      `SELECT g.guide_id AS item_id
-       FROM guides g
-       JOIN guide_verifications gv ON gv.guide_id = g.guide_id
-       WHERE g.guide_id = $1
+      `SELECT gs.service_id AS item_id
+       FROM guide_services gs
+       JOIN guide_trails gt ON gt.guide_id = gs.guide_id AND gt.trail_id = gs.trail_id
+       JOIN guide_verifications gv ON gv.guide_id = gs.guide_id
+       WHERE gs.service_id = $1
+         AND gs.is_active = true
+         AND gs.approval_status = 'approved'
+         AND gt.is_active = true
          AND gv.verification_status = 'approved'`,
       [itemId]
     );
@@ -58,8 +62,8 @@ const validateWishlistTarget = async (itemType, itemId) => {
   return false;
 };
 
-const getWishlistDetailMaps = async ({ trailIds, homestayIds, guideIds }) => {
-  const [trailResult, homestayResult, guideResult] = await Promise.all([
+const getWishlistDetailMaps = async ({ trailIds, homestayIds, guidePackageIds }) => {
+  const [trailResult, homestayResult, guidePackageResult] = await Promise.all([
     trailIds.length
       ? pool.query(
           `SELECT t.trail_id AS item_id,
@@ -115,16 +119,27 @@ const getWishlistDetailMaps = async ({ trailIds, homestayIds, guideIds }) => {
           [homestayIds]
         )
       : Promise.resolve({ rows: [] }),
-    guideIds.length
+    guidePackageIds.length
       ? pool.query(
-          `SELECT g.guide_id AS item_id,
-                  g.full_name AS title,
+          `SELECT gs.service_id AS item_id,
+                  gs.title,
+                  gs.description,
+                  gs.price_per_day,
+                  gs.max_group_size,
+                  gs.min_booking_days,
+                  gs.trail_id,
+                  g.guide_id,
+                  g.full_name AS guide_name,
                   g.experience_years,
-                  g.phone,
                   g.profile_image_path AS image_path,
+                  t.trail_name,
+                  t.region,
                   COALESCE(gr.avg_rating, 0) AS avg_rating,
                   COALESCE(gr.total_reviews, 0) AS total_reviews
-           FROM guides g
+           FROM guide_services gs
+           JOIN guides g ON g.guide_id = gs.guide_id
+           JOIN trekking_trails t ON t.trail_id = gs.trail_id
+           JOIN guide_trails gt ON gt.guide_id = gs.guide_id AND gt.trail_id = gs.trail_id
            JOIN guide_verifications gv ON gv.guide_id = g.guide_id
            LEFT JOIN LATERAL (
              SELECT ROUND(AVG(r.rating)::numeric, 1) AS avg_rating,
@@ -132,9 +147,12 @@ const getWishlistDetailMaps = async ({ trailIds, homestayIds, guideIds }) => {
              FROM guide_reviews r
              WHERE r.guide_id = g.guide_id
            ) gr ON true
-           WHERE g.guide_id = ANY($1::int[])
+           WHERE gs.service_id = ANY($1::int[])
+             AND gs.is_active = true
+             AND gs.approval_status = 'approved'
+             AND gt.is_active = true
              AND gv.verification_status = 'approved'`,
-          [guideIds]
+          [guidePackageIds]
         )
       : Promise.resolve({ rows: [] }),
   ]);
@@ -142,7 +160,7 @@ const getWishlistDetailMaps = async ({ trailIds, homestayIds, guideIds }) => {
   return {
     trailMap: new Map(trailResult.rows.map((row) => [row.item_id, row])),
     homestayMap: new Map(homestayResult.rows.map((row) => [row.item_id, row])),
-    guideMap: new Map(guideResult.rows.map((row) => [row.item_id, row])),
+    guidePackageMap: new Map(guidePackageResult.rows.map((row) => [row.item_id, row])),
   };
 };
 
@@ -198,18 +216,36 @@ const toCardItem = ({ record, detail }) => {
     };
   }
 
+  if (record.item_type === "guide_package") {
+    return {
+      ...base,
+      title: detail.title,
+      subtitle: `${detail.guide_name} · ${detail.trail_name}`,
+      href: `/trails/${detail.trail_id}`,
+      image_path: detail.image_path || null,
+      metadata: {
+        guide_id: detail.guide_id,
+        guide_name: detail.guide_name,
+        trail_id: detail.trail_id,
+        trail_name: detail.trail_name,
+        region: detail.region,
+        experience_years: detail.experience_years,
+        price_per_day: detail.price_per_day,
+        max_group_size: detail.max_group_size,
+        min_booking_days: detail.min_booking_days,
+        avg_rating: detail.avg_rating,
+        total_reviews: detail.total_reviews,
+      },
+    };
+  }
+
   return {
     ...base,
-    title: detail.title,
-    subtitle: `${detail.experience_years || 0} years experience`,
+    title: "Item unavailable",
+    subtitle: "This listing may have been removed or is no longer publicly visible.",
     href: null,
-    image_path: detail.image_path || null,
-    metadata: {
-      experience_years: detail.experience_years,
-      phone: detail.phone,
-      avg_rating: detail.avg_rating,
-      total_reviews: detail.total_reviews,
-    },
+    image_path: null,
+    metadata: {},
   };
 };
 
@@ -228,7 +264,7 @@ export const getWishlistIds = async (req, res) => {
     const ids = {
       trail: [],
       homestay: [],
-      guide: [],
+      guide_package: [],
     };
 
     for (const row of result.rows) {
@@ -257,17 +293,21 @@ export const getWishlistItems = async (req, res) => {
     const hasTypeFilter = Boolean(requestedType);
 
     if (hasTypeFilter && !ALLOWED_ITEM_TYPES.has(requestedType)) {
-      return res.status(400).json({ message: "type must be one of trail, homestay, or guide" });
+      return res.status(400).json({ message: "type must be one of trail, homestay, or guide_package" });
     }
 
     const { page, limit } = getPagination(req);
     const whereClauses = ["tourist_id = $1"];
     const values = [touristId];
+    const visibleTypes = Array.from(ALLOWED_ITEM_TYPES);
 
     if (hasTypeFilter) {
       values.push(requestedType);
       whereClauses.push(`item_type = $${values.length}`);
     }
+
+    values.push(visibleTypes);
+    whereClauses.push(`item_type = ANY($${values.length}::text[])`);
 
     const whereSql = `WHERE ${whereClauses.join(" AND ")}`;
 
@@ -296,12 +336,14 @@ export const getWishlistItems = async (req, res) => {
     const records = recordsResult.rows;
     const trailIds = records.filter((row) => row.item_type === "trail").map((row) => row.item_id);
     const homestayIds = records.filter((row) => row.item_type === "homestay").map((row) => row.item_id);
-    const guideIds = records.filter((row) => row.item_type === "guide").map((row) => row.item_id);
+    const guidePackageIds = records
+      .filter((row) => row.item_type === "guide_package")
+      .map((row) => row.item_id);
 
-    const { trailMap, homestayMap, guideMap } = await getWishlistDetailMaps({
+    const { trailMap, homestayMap, guidePackageMap } = await getWishlistDetailMaps({
       trailIds,
       homestayIds,
-      guideIds,
+      guidePackageIds,
     });
 
     const items = records.map((record) => {
@@ -310,7 +352,9 @@ export const getWishlistItems = async (req, res) => {
           ? trailMap.get(record.item_id)
           : record.item_type === "homestay"
             ? homestayMap.get(record.item_id)
-            : guideMap.get(record.item_id);
+            : record.item_type === "guide_package"
+              ? guidePackageMap.get(record.item_id)
+              : null;
       return toCardItem({ record, detail });
     });
 
@@ -318,11 +362,12 @@ export const getWishlistItems = async (req, res) => {
       `SELECT item_type, COUNT(*)::int AS total
        FROM tourist_wishlists
        WHERE tourist_id = $1
+         AND item_type = ANY($2::text[])
        GROUP BY item_type`,
-      [touristId]
+      [touristId, visibleTypes]
     );
 
-    const counts = { trail: 0, homestay: 0, guide: 0 };
+    const counts = { trail: 0, homestay: 0, guide_package: 0 };
     for (const row of countsResult.rows) {
       counts[row.item_type] = Number(row.total || 0);
     }
@@ -339,13 +384,14 @@ export const getWishlistItems = async (req, res) => {
         has_next: normalizedPage < totalPages,
       },
     });
-      if (err?.code === "53300") {
-        return res.status(503).json({
-          message: "Database is temporarily busy. Please retry in a few seconds.",
-        });
-      }
 
   } catch (err) {
+    if (err?.code === "53300") {
+      return res.status(503).json({
+        message: "Database is temporarily busy. Please retry in a few seconds.",
+      });
+    }
+
     console.error("Error fetching wishlist items:", err);
     return res.status(500).json({ message: "Server error fetching wishlist" });
   }
@@ -358,7 +404,7 @@ export const toggleWishlistItem = async (req, res) => {
     const itemId = parsePositiveInt(req.body?.item_id);
 
     if (!ALLOWED_ITEM_TYPES.has(itemType)) {
-      return res.status(400).json({ message: "item_type must be trail, homestay, or guide" });
+      return res.status(400).json({ message: "item_type must be trail, homestay, or guide_package" });
     }
 
     if (!itemId) {
@@ -418,7 +464,7 @@ export const removeWishlistItem = async (req, res) => {
     const itemId = parsePositiveInt(req.params.itemId);
 
     if (!ALLOWED_ITEM_TYPES.has(itemType)) {
-      return res.status(400).json({ message: "itemType must be trail, homestay, or guide" });
+      return res.status(400).json({ message: "itemType must be trail, homestay, or guide_package" });
     }
 
     if (!itemId) {

@@ -681,6 +681,7 @@ const validateGuidePackageDraft = async ({
      JOIN guide_verifications gv ON gv.guide_id = gs.guide_id
      WHERE gs.service_id = $1
        AND gs.is_active = true
+       AND gs.approval_status = 'approved'
        AND gt.is_active = true
        AND gv.verification_status = 'approved'`,
     [serviceId]

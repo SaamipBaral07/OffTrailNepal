@@ -29,6 +29,9 @@ import {
   updateService,
   deleteService,
   toggleServiceActive,
+  getAdminGuideServices,
+  updateGuideServiceApprovalStatus,
+  getPublicServicesByGuide,
 } from "../controllers/guideServiceController.js";
 
 const router = express.Router();
@@ -107,6 +110,7 @@ const requireAdmin = (req, res, next) => {
 // Get active guides for a specific trail
 router.get("/public", getPublicGuides);
 router.get("/public/trail/:trailId", getGuidesByTrail);
+router.get("/public/:guideId/services", getPublicServicesByGuide);
 
 /* ─── GUIDE TRAIL ROUTES ─── */
 
@@ -161,6 +165,8 @@ router.get("/reviews", verifyToken, requireGuide, getMyReviews);
 /* ─── ADMIN ROUTES ─── */
 router.get("/admin/all", verifyToken, requireAdmin, getAllGuidesAdmin);
 router.patch("/admin/:guideId/verification-status", verifyToken, requireAdmin, updateGuideVerificationStatus);
+router.get("/admin/services", verifyToken, requireAdmin, getAdminGuideServices);
+router.patch("/admin/services/:id/approval-status", verifyToken, requireAdmin, updateGuideServiceApprovalStatus);
 
 export default router;
 

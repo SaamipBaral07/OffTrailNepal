@@ -59,7 +59,7 @@ const run = async () => {
     );
 
     const insertResult = await client.query(
-      `INSERT INTO payments (booking_id, amount, payment_method, payment_status, transaction_reference, paid_at)
+      `INSERT INTO payments (booking_id, amount, payment_method, payment_status, transaction_reference, paid_at) 
        SELECT
          ps.booking_id,
          ROUND(COALESCE(ps.total_amount, ps.amount)::numeric, 2) AS amount,

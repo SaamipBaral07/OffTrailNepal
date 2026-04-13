@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bot, Loader2, MessageCircle, Plus, Send } from "lucide-react";
+import { Bot, Loader2, MessageCircle, Plus, Send, Trash2 } from "lucide-react";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
 import LogoutModal from "../components/LogoutModal";
@@ -16,6 +16,13 @@ const formatDateTime = (value) => {
     hour: "2-digit",
     minute: "2-digit",
   });
+};
+
+const truncateTitle = (text, wordCount = 3) => {
+  if (!text) return "New Chat";
+  const words = text.split(" ");
+  if (words.length <= wordCount) return text;
+  return `${words.slice(0, wordCount).join(" ")}...`;
 };
 
 const AIAssistant = () => {
@@ -93,6 +100,23 @@ const AIAssistant = () => {
     setMessages([]);
     setDraft("");
   };
+
+  const deleteConversation = useCallback(async (conversationId) => {
+    const confirmed = window.confirm("Are you sure you want to delete this chat? This action cannot be undone.");
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`/api/ai-chat/conversations/${conversationId}`);
+      setConversations((prev) => prev.filter((c) => c.conversation_id !== conversationId));
+      if (activeConversationId === conversationId) {
+        setActiveConversationId(null);
+        setMessages([]);
+      }
+      pushNotice("Chat deleted successfully.", "success");
+    } catch (error) {
+      pushNotice(error.response?.data?.message || "Failed to delete chat");
+    }
+  }, [activeConversationId, pushNotice]);
 
   const sendMessage = async (event) => {
     event.preventDefault();
@@ -203,24 +227,38 @@ const AIAssistant = () => {
             ) : conversations.length === 0 ? (
               <p className="text-sm text-[#0C2340]/65">No chats yet. Start by asking your first question.</p>
             ) : (
-              <div className="space-y-2 max-h-[520px] overflow-auto pr-1">
+              <div className="space-y-2 max-h-[520px] overflow-y-auto pr-2">
                 {conversations.map((item) => {
                   const isActive = item.conversation_id === activeConversationId;
                   return (
-                    <button
+                    <div
                       key={item.conversation_id}
-                      type="button"
-                      onClick={() => setActiveConversationId(item.conversation_id)}
-                      className={`w-full text-left rounded-xl border px-3 py-2 transition ${
+                      className={`flex items-center gap-2 rounded-xl border px-3 py-2 transition group min-w-0 ${
                         isActive
                           ? "border-[#0C2340] bg-[#0C2340]/5"
                           : "border-[#0C2340]/12 hover:bg-[#F9FBFE]"
                       }`}
                     >
-                      <p className="text-sm font-semibold text-[#0C2340] truncate">{item.title || `Chat ${item.conversation_id}`}</p>
-                      <p className="text-xs text-[#0C2340]/65 mt-1 truncate">{item.last_message_preview || "No messages yet"}</p>
-                      <p className="text-[11px] text-[#0C2340]/50 mt-1">{formatDateTime(item.last_message_at || item.updated_at)}</p>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveConversationId(item.conversation_id)}
+                        className="flex-1 text-left min-w-0"
+                      >
+                        <p className="text-sm font-semibold text-[#0C2340] truncate">{truncateTitle(item.title || `Chat ${item.conversation_id}`)}</p>
+                        <p className="text-xs text-[#0C2340]/65 mt-0.5 truncate">{formatDateTime(item.last_message_at || item.updated_at)}</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteConversation(item.conversation_id);
+                        }}
+                        className="flex-shrink-0 inline-flex items-center justify-center rounded-lg p-1.5 text-[#0C2340]/50 hover:bg-red-50 hover:text-red-600"
+                        title="Delete chat"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   );
                 })}
               </div>

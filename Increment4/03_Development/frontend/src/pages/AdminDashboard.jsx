@@ -102,6 +102,23 @@ const StatusBadge = ({ status }) => {
   );
 };
 
+const ServiceApprovalBadge = ({ status }) => {
+  const normalizedStatus = String(status || "pending").trim().toLowerCase();
+  const config = {
+    pending: { bg: "bg-amber-50 border-amber-200", text: "text-amber-700", dot: "bg-amber-500", label: "Pending" },
+    approved: { bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700", dot: "bg-emerald-500", label: "Approved" },
+    rejected: { bg: "bg-red-50 border-red-200", text: "text-red-700", dot: "bg-red-500", label: "Rejected" },
+  };
+  const c = config[normalizedStatus] || config.pending;
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${c.bg} ${c.text}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />
+      {c.label}
+    </span>
+  );
+};
+
 const TrailPhotoStatusBadge = ({ status }) => {
   const normalizedStatus = String(status || "pending").trim().toLowerCase();
   const config = {
@@ -141,6 +158,8 @@ const AdminDashboard = () => {
   // Guides for admin view
   const [guidesAdmin, setGuidesAdmin] = useState([]);
   const [guidesLoading, setGuidesLoading] = useState(false);
+  const [guideServicesAdmin, setGuideServicesAdmin] = useState([]);
+  const [guideServicesLoading, setGuideServicesLoading] = useState(false);
   const [hostVerificationsAdmin, setHostVerificationsAdmin] = useState([]);
   const [hostVerificationsLoading, setHostVerificationsLoading] = useState(false);
   const [paymentRecords, setPaymentRecords] = useState([]);
@@ -304,6 +323,19 @@ const AdminDashboard = () => {
       console.error("Error fetching guides for admin:", err);
     } finally {
       setGuidesLoading(false);
+    }
+  }, []);
+
+  const fetchAdminGuideServices = useCallback(async () => {
+    setGuideServicesLoading(true);
+    try {
+      const res = await api.get(`${API}/guides/admin/services`);
+      setGuideServicesAdmin(Array.isArray(res.data?.services) ? res.data.services : []);
+    } catch (err) {
+      console.error("Error fetching guide services for admin:", err);
+      setGuideServicesAdmin([]);
+    } finally {
+      setGuideServicesLoading(false);
     }
   }, []);
 
@@ -785,13 +817,14 @@ const AdminDashboard = () => {
       fetchAdminHomestays();
       fetchAdminHostVerifications();
       fetchAdminGuides();
+      fetchAdminGuideServices();
       fetchAdminPayments();
       fetchAdminGuidePayments();
       fetchAdminContactEnquiries();
       fetchAdminPlatformReviews();
       fetchAdminTrailPhotoSubmissions("all");
     }
-  }, [isLoading, user, fetchTrails, fetchAdminHomestays, fetchAdminHostVerifications, fetchAdminGuides, fetchAdminPayments, fetchAdminGuidePayments, fetchAdminContactEnquiries, fetchAdminPlatformReviews, fetchAdminTrailPhotoSubmissions]);
+  }, [isLoading, user, fetchTrails, fetchAdminHomestays, fetchAdminHostVerifications, fetchAdminGuides, fetchAdminGuideServices, fetchAdminPayments, fetchAdminGuidePayments, fetchAdminContactEnquiries, fetchAdminPlatformReviews, fetchAdminTrailPhotoSubmissions]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return undefined;
@@ -851,9 +884,34 @@ const AdminDashboard = () => {
         rejection_reason,
       });
       fetchAdminGuides();
+      fetchAdminGuideServices();
     } catch (err) {
       console.error("Error updating guide verification status:", err);
       alert(err.response?.data?.message || "Failed to update guide verification status");
+    }
+  };
+
+  const handleGuideServiceApprovalStatus = async (serviceId, status) => {
+    try {
+      let rejection_reason = "";
+      if (status === "rejected") {
+        rejection_reason = window.prompt("Add rejection reason for this guide service:") || "";
+        if (!rejection_reason.trim()) {
+          alert("Rejection reason is required.");
+          return;
+        }
+      }
+
+      await api.patch(`${API}/guides/admin/services/${serviceId}/approval-status`, {
+        approval_status: status,
+        rejection_reason,
+      });
+
+      fetchAdminGuideServices();
+      fetchAdminGuides();
+    } catch (err) {
+      console.error("Error updating guide service approval status:", err);
+      alert(err.response?.data?.message || "Failed to update guide service approval status");
     }
   };
 
@@ -1620,6 +1678,19 @@ const AdminDashboard = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {guidesAdmin.map((g) => (
                       <div key={g.guide_id} className="bg-gray-50 border border-gray-200 rounded-2xl p-5 hover:shadow-md transition-shadow">
+                        {(() => {
+                          const guideServices = guideServicesAdmin.filter(
+                            (service) => Number(service.guide_id) === Number(g.guide_id)
+                          );
+                          const pendingServices = guideServices.filter(
+                            (service) => String(service.approval_status || "").toLowerCase() === "pending"
+                          );
+                          const approvedServices = guideServices.filter(
+                            (service) => String(service.approval_status || "").toLowerCase() === "approved"
+                          );
+
+                          return (
+                            <>
                         <div className="flex items-center gap-3 mb-4">
                           <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-bold text-lg shadow-sm">
                             {g.full_name.charAt(0)}
@@ -1693,6 +1764,64 @@ const AdminDashboard = () => {
                           <p className="text-xs text-red-600 mb-4">Reason: {g.rejection_reason}</p>
                         )}
 
+                        <div className="mb-4 rounded-xl border border-gray-200 bg-white p-3">
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Guide Services</p>
+                            <span className="text-[11px] font-semibold text-amber-700">
+                              {pendingServices.length} pending
+                            </span>
+                          </div>
+
+                          {guideServicesLoading ? (
+                            <p className="text-xs text-gray-400">Loading guide service approvals...</p>
+                          ) : guideServices.length === 0 ? (
+                            <p className="text-xs text-gray-500">No guide services created yet.</p>
+                          ) : (
+                            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                              {guideServices.map((service) => (
+                                <div key={service.service_id} className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-semibold text-gray-800 truncate">{service.title}</p>
+                                      <p className="text-[11px] text-gray-500 truncate">
+                                        {service.trail_name} · NPR {Number(service.price_per_day || 0).toLocaleString()}/day
+                                      </p>
+                                    </div>
+                                    <ServiceApprovalBadge status={service.approval_status} />
+                                  </div>
+
+                                  {String(service.approval_status || "").toLowerCase() === "pending" && (
+                                    <div className="mt-2 flex gap-2">
+                                      <button
+                                        onClick={() => handleGuideServiceApprovalStatus(service.service_id, "approved")}
+                                        className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-500 hover:bg-emerald-600 text-white rounded-md"
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        onClick={() => handleGuideServiceApprovalStatus(service.service_id, "rejected")}
+                                        className="px-2.5 py-1 text-[11px] font-semibold bg-red-500 hover:bg-red-600 text-white rounded-md"
+                                      >
+                                        Reject
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  {String(service.approval_status || "").toLowerCase() === "rejected" && service.approval_rejection_reason && (
+                                    <p className="mt-1 text-[11px] text-red-600">Reason: {service.approval_rejection_reason}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {!guideServicesLoading && guideServices.length > 0 && (
+                            <p className="mt-2 text-[10px] text-gray-500">
+                              Approved: {approvedServices.length} / Total: {guideServices.length}
+                            </p>
+                          )}
+                        </div>
+
                         <div className="flex pt-4 border-t border-gray-200 gap-4">
                           <div className="flex-1">
                             <p className="text-[10px] text-gray-400 uppercase font-semibold">Assigned Trails</p>
@@ -1703,6 +1832,9 @@ const AdminDashboard = () => {
                             <p className="text-lg font-bold text-emerald-600">{g.total_services}</p>
                           </div>
                         </div>
+                            </>
+                          );
+                        })()}
                       </div>
                     ))}
                   </div>

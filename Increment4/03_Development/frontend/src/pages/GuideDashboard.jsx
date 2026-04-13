@@ -207,11 +207,13 @@ const GuideDashboard = () => {
   const [fetchingData, setFetchingData] = useState(false);
   const [verification, setVerification] = useState(undefined);
   const [verificationSubmitting, setVerificationSubmitting] = useState(false);
+  const [showGuideApprovalNotice, setShowGuideApprovalNotice] = useState(false);
   const [availabilityNotice, setAvailabilityNotice] = useState(null);
   const [updatingAvailabilityDate, setUpdatingAvailabilityDate] = useState(null);
   const [selectedAvailabilityDateKey, setSelectedAvailabilityDateKey] = useState(null);
   const [chatModalOpen, setChatModalOpen] = useState(false);
   const [activeChatBooking, setActiveChatBooking] = useState(null);
+  const [expandedBookingDetails, setExpandedBookingDetails] = useState({});
 
   const profileImageUrl = user?.profile_image_path
     ? (String(user.profile_image_path).startsWith("http")
@@ -331,6 +333,29 @@ const GuideDashboard = () => {
       window.removeEventListener("resize", handleResize);
     };
   }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    if (!isVerificationResolved || !verification || verification.verification_status !== "approved" || !authUser?.user_id) {
+      setShowGuideApprovalNotice(false);
+      return;
+    }
+
+    const approvalMarker = String(verification.reviewed_at || verification.updated_at || "approved");
+    const noticeKey = `guideApprovalNoticeSeen:${authUser.user_id}:${approvalMarker}`;
+
+    try {
+      const alreadySeen = window.localStorage.getItem(noticeKey) === "1";
+      if (alreadySeen) {
+        setShowGuideApprovalNotice(false);
+        return;
+      }
+
+      setShowGuideApprovalNotice(true);
+      window.localStorage.setItem(noticeKey, "1");
+    } catch {
+      setShowGuideApprovalNotice(true);
+    }
+  }, [isVerificationResolved, verification, authUser?.user_id]);
 
   const fetchDashboardData = useCallback(async () => {
     setFetchingData(true);
@@ -520,6 +545,13 @@ const GuideDashboard = () => {
   const openGuideBookingChat = (booking) => {
     setActiveChatBooking(booking);
     setChatModalOpen(true);
+  };
+
+  const toggleBookingDetails = (bookingId) => {
+    setExpandedBookingDetails((prev) => ({
+      ...prev,
+      [bookingId]: !prev[bookingId],
+    }));
   };
 
   const closeGuideBookingChat = () => {
@@ -927,7 +959,7 @@ const GuideDashboard = () => {
             </div>
           )}
 
-          {isVerificationResolved && isGuideApproved && (
+          {showGuideApprovalNotice && (
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex items-center gap-3">
               <CheckCircle2 className="h-5 w-5 text-emerald-600" />
               <p className="text-sm font-semibold text-emerald-800">
@@ -1053,6 +1085,27 @@ const GuideDashboard = () => {
                             <h3 className="font-bold text-charcoal text-lg">{s.title}</h3>
                             <span className="text-xs font-semibold px-2 py-1 bg-gold/10 text-gold-dark rounded-lg border border-gold/20">{s.trail_name}</span>
                           </div>
+                          {(() => {
+                            const approvalStatus = String(s.approval_status || "pending").toLowerCase();
+                            const approvalStyles =
+                              approvalStatus === "approved"
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                : approvalStatus === "rejected"
+                                  ? "border-red-200 bg-red-50 text-red-700"
+                                  : "border-amber-200 bg-amber-50 text-amber-700";
+                            const approvalText =
+                              approvalStatus === "approved"
+                                ? "Approved: visible to tourists when active."
+                                : approvalStatus === "rejected"
+                                  ? `Rejected: ${s.approval_rejection_reason || "Please update details and resubmit."}`
+                                  : "Pending admin approval: hidden from tourist listings until approved.";
+
+                            return (
+                              <div className={`mb-3 rounded-lg border px-2.5 py-2 text-[11px] font-semibold ${approvalStyles}`}>
+                                {approvalText}
+                              </div>
+                            );
+                          })()}
                           <p className="text-sm text-gray-500 mb-4 line-clamp-2 flex-1">{s.description}</p>
 
                           <div className="flex justify-between items-center mb-4">
@@ -1346,6 +1399,7 @@ const GuideDashboard = () => {
                       const bookingStatus = String(booking.status || "").toLowerCase();
                       const paymentStatus = String(booking.payment_status || "").toLowerCase();
                       const refundStatus = String(booking.refund_status || "").toLowerCase();
+                      const isExpanded = Boolean(expandedBookingDetails[booking.booking_id]);
                       const bookingStarted = hasBookingStarted(booking);
                       const isPending = bookingStatus === "pending";
                       const isConfirmed = bookingStatus === "confirmed";
@@ -1390,8 +1444,44 @@ const GuideDashboard = () => {
                               }`}>
                                 {bookingStatus.replace("_", " ")}
                               </span>
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleBookingDetails(booking.booking_id)}
+                                  className="mt-2 inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-100"
+                                >
+                                  {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                                  {isExpanded ? "Hide details" : "View details"}
+                                </button>
+                              </div>
                             </div>
                           </div>
+
+                          {isExpanded && (
+                            <div className="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-3">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-700">
+                                <p><span className="font-semibold text-gray-500">Booking ID:</span> {booking.booking_id}</p>
+                                <p><span className="font-semibold text-gray-500">Booking Code:</span> {booking.booking_code || "-"}</p>
+                                <p><span className="font-semibold text-gray-500">Tourist:</span> {booking.tourist_name || "-"}</p>
+                                <p><span className="font-semibold text-gray-500">Contact Phone:</span> {booking.contact_phone || "-"}</p>
+                                <p><span className="font-semibold text-gray-500">Payment:</span> {(booking.payment_status || "pending").toString().replace("_", " ")}</p>
+                                <p><span className="font-semibold text-gray-500">Refund:</span> {(booking.refund_status || "none").toString().replace("_", " ")}</p>
+                                <p><span className="font-semibold text-gray-500">Created At:</span> {booking.created_at ? new Date(booking.created_at).toLocaleString() : "-"}</p>
+                                <p><span className="font-semibold text-gray-500">Decided At:</span> {booking.decided_at ? new Date(booking.decided_at).toLocaleString() : "-"}</p>
+                              </div>
+                              {booking.special_requests && (
+                                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-800">
+                                  <span className="font-semibold">Special requests:</span> {booking.special_requests}
+                                </div>
+                              )}
+                              {booking.review_id && (
+                                <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-2 text-xs text-blue-800">
+                                  <span className="font-semibold">Tourist review:</span> {Number(booking.review_rating || 0).toFixed(1)} / 5
+                                  {booking.review_comment ? ` - ${booking.review_comment}` : ""}
+                                </div>
+                              )}
+                            </div>
+                          )}
 
                           {!isLocked && (
                             <div className="mt-4 flex flex-wrap gap-2">
@@ -1462,6 +1552,7 @@ const GuideDashboard = () => {
                     <div className="space-y-2">
                       {historyGuideBookings.map((booking) => {
                         const bookingStatus = String(booking.status || "").toLowerCase();
+                        const isExpanded = Boolean(expandedBookingDetails[`history-${booking.booking_id}`]);
                         return (
                           <div key={`history-${booking.booking_id}`} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
                             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1475,6 +1566,35 @@ const GuideDashboard = () => {
                                 {bookingStatus.replace("_", " ")}
                               </span>
                             </div>
+                            <div className="mt-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleBookingDetails(`history-${booking.booking_id}`)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-100"
+                              >
+                                {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                                {isExpanded ? "Hide details" : "View details"}
+                              </button>
+                            </div>
+                            {isExpanded && (
+                              <div className="mt-2 rounded-lg border border-gray-200 bg-white p-2.5">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-700">
+                                  <p><span className="font-semibold text-gray-500">Booking ID:</span> {booking.booking_id}</p>
+                                  <p><span className="font-semibold text-gray-500">Booking Code:</span> {booking.booking_code || "-"}</p>
+                                  <p><span className="font-semibold text-gray-500">Tourist:</span> {booking.tourist_name || "-"}</p>
+                                  <p><span className="font-semibold text-gray-500">Contact Phone:</span> {booking.contact_phone || "-"}</p>
+                                  <p><span className="font-semibold text-gray-500">Participants:</span> {booking.participants_count || "-"}</p>
+                                  <p><span className="font-semibold text-gray-500">Total:</span> NPR {Number(booking.total_price || 0).toLocaleString()}</p>
+                                  <p><span className="font-semibold text-gray-500">Payment:</span> {(booking.payment_status || "pending").toString().replace("_", " ")}</p>
+                                  <p><span className="font-semibold text-gray-500">Refund:</span> {(booking.refund_status || "none").toString().replace("_", " ")}</p>
+                                </div>
+                                {booking.special_requests && (
+                                  <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+                                    <span className="font-semibold">Special requests:</span> {booking.special_requests}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })}

@@ -9,6 +9,10 @@ import {
   Star,
   Briefcase,
   Route,
+  Users,
+  Clock,
+  DollarSign,
+  MapPin,
   Loader2,
   ChevronRight,
   X,
@@ -18,8 +22,6 @@ import { Footer } from "../components/Footer";
 import { useAuth } from "../context/AuthContext";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
-import { useWishlist } from "../hooks/useWishlist";
-import WishlistToggleButton from "../components/wishlist/WishlistToggleButton";
 
 const API = "http://localhost:5000";
 
@@ -42,8 +44,11 @@ const GuidesPage = () => {
   const [selectedRegion, setSelectedRegion] = useState("");
   const [minRating, setMinRating] = useState("");
   const [sortBy, setSortBy] = useState("experience_desc");
-
-  const { isTourist, isWishlisted, isUpdating, toggleWishlist } = useWishlist();
+  const [showServicesModal, setShowServicesModal] = useState(false);
+  const [selectedGuide, setSelectedGuide] = useState(null);
+  const [guideServices, setGuideServices] = useState([]);
+  const [guideServicesLoading, setGuideServicesLoading] = useState(false);
+  const [guideServicesError, setGuideServicesError] = useState("");
 
   useEffect(() => {
     if (authUser) setUser(authUser);
@@ -91,15 +96,30 @@ const GuidesPage = () => {
     setSortBy("experience_desc");
   };
 
-  const handleToggleGuideWishlist = async (guideId) => {
-    const result = await toggleWishlist("guide", guideId);
-    if (!result.ok && result.reason === "login-required") {
-      navigate("/login", { replace: false });
-      return;
+  const handleOpenGuideServices = async (guide) => {
+    setSelectedGuide(guide);
+    setShowServicesModal(true);
+    setGuideServices([]);
+    setGuideServicesError("");
+    setGuideServicesLoading(true);
+
+    try {
+      const res = await axios.get(`${API}/api/guides/public/${guide.guide_id}/services`);
+      setGuideServices(Array.isArray(res.data?.services) ? res.data.services : []);
+    } catch (err) {
+      setGuideServicesError(err.response?.data?.message || "Failed to load guide services");
+      setGuideServices([]);
+    } finally {
+      setGuideServicesLoading(false);
     }
-    if (!result.ok && result.message) {
-      window.alert(result.message);
-    }
+  };
+
+  const closeGuideServicesModal = () => {
+    setShowServicesModal(false);
+    setSelectedGuide(null);
+    setGuideServices([]);
+    setGuideServicesError("");
+    setGuideServicesLoading(false);
   };
 
   return (
@@ -206,7 +226,6 @@ const GuidesPage = () => {
             guides.map((guide) => {
               const trails = Array.isArray(guide.trails) ? guide.trails : [];
               const topTrails = trails.slice(0, 3);
-              const firstTrailId = topTrails[0]?.trail_id;
 
               return (
                 <motion.article
@@ -229,14 +248,6 @@ const GuidesPage = () => {
                       </div>
                     </div>
 
-                    {isTourist && (
-                      <WishlistToggleButton
-                        active={isWishlisted("guide", guide.guide_id)}
-                        loading={isUpdating("guide", guide.guide_id)}
-                        onClick={() => handleToggleGuideWishlist(guide.guide_id)}
-                        className="h-9 w-9 border-gray-200 bg-white text-gray-500 hover:text-rose-600"
-                      />
-                    )}
                   </div>
 
                   <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
@@ -288,16 +299,17 @@ const GuidesPage = () => {
                       Secure booking only through OffTrail package checkout
                     </span>
 
-                    {firstTrailId ? (
-                      <Link
-                        to={`/trails/${firstTrailId}`}
+                    {Number(guide.total_services || 0) > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenGuideServices(guide)}
                         className="inline-flex items-center gap-1.5 text-sm font-semibold text-gold hover:text-gold-dark"
                       >
-                        View Packages
+                        View Services
                         <ChevronRight className="h-4 w-4" />
-                      </Link>
+                      </button>
                     ) : (
-                      <span className="text-xs text-gray-400">No trail linked yet</span>
+                      <span className="text-xs text-gray-400">No active services</span>
                     )}
                   </div>
                 </motion.article>
@@ -306,6 +318,93 @@ const GuidesPage = () => {
           )}
         </section>
       </main>
+
+      {showServicesModal && (
+        <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm px-4 py-6 sm:py-10 overflow-y-auto">
+          <div className="mx-auto w-full max-w-4xl rounded-3xl border border-gray-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-6 py-5">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-gold-dark font-semibold">Guide Services</p>
+                <div className="flex items-center gap-3 mt-1">
+                  <h3 className="text-2xl font-bold text-charcoal">{selectedGuide?.full_name || "Guide"}</h3>
+                  {selectedGuide?.avg_rating && (
+                    <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200">
+                      <Star className="h-4 w-4 fill-amber-500 text-amber-500" />
+                      <span className="text-sm font-semibold text-amber-700">{Number(selectedGuide.avg_rating).toFixed(1)}</span>
+                      <span className="text-xs text-amber-600">({selectedGuide.total_reviews || 0})</span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-sm text-gray-500 mt-1">All approved active services across assigned trails</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeGuideServicesModal}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
+                aria-label="Close services modal"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5">
+              {guideServicesLoading ? (
+                <div className="flex items-center justify-center py-12 text-gray-500 gap-2">
+                  <Loader2 className="h-5 w-5 animate-spin" /> Loading services...
+                </div>
+              ) : guideServicesError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {guideServicesError}
+                </div>
+              ) : guideServices.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-12 text-center">
+                  <p className="text-sm font-semibold text-gray-700">No approved active services for this guide</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {guideServices.map((service) => (
+                    <div key={service.service_id} className="rounded-2xl border border-gray-200 bg-white px-4 py-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h4 className="text-base font-bold text-charcoal">{service.title}</h4>
+                          <p className="text-xs text-gray-500 mt-1 inline-flex items-center gap-1.5">
+                            <MapPin className="h-3.5 w-3.5" /> {service.trail_name} • {service.region}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-emerald-700 inline-flex items-center gap-1">
+                            <DollarSign className="h-4 w-4" /> NPR {Number(service.price_per_day || 0).toLocaleString()}/day
+                          </p>
+                        </div>
+                      </div>
+
+                      <p className="text-sm text-gray-600 mt-2">{service.description || "No description provided."}</p>
+
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-3">
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-blue-700 font-semibold">
+                            <Users className="h-3 w-3" /> Up to {Number(service.max_group_size || 1)}
+                          </span>
+                          <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-700 font-semibold">
+                            <Clock className="h-3 w-3" /> Min {Number(service.min_booking_days || 1)} day{Number(service.min_booking_days || 1) === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                        <Link
+                          to={`/trails/${service.trail_id}`}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-gold hover:text-gold-dark"
+                        >
+                          Open trail booking
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <Footer />
 

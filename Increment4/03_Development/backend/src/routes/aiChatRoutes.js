@@ -4,6 +4,7 @@ import {
   getMyConversations,
   getMyConversationMessages,
   sendChatMessage,
+  deleteConversation,
 } from "../controllers/aiChatController.js";
 
 const router = express.Router();
@@ -19,5 +20,6 @@ router.get("/conversations", verifyToken, requireTourist, getMyConversations);
 router.get("/conversations/:conversationId/messages", verifyToken, requireTourist, getMyConversationMessages);
 router.post("/message", verifyToken, requireTourist, sendChatMessage);
 router.post("/conversations/:conversationId/message", verifyToken, requireTourist, sendChatMessage);
+router.delete("/conversations/:conversationId", verifyToken, requireTourist, deleteConversation);
 
 export default router;
