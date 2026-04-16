@@ -31,6 +31,7 @@ import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentFailed from "./pages/PaymentFailed";
 import InvoicePage from "./pages/InvoicePage";
 import Chats from "./pages/Chats";
+import NotFound from "./pages/NotFound";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -201,8 +202,8 @@ function App() {
             }
           />
 
-          {/* Catch all - redirect to home */}
-          <Route path="*" element={<Navigate to="/" replace />} />
+          {/* Catch all - show 404 page */}
+          <Route path="*" element={<NotFound />} />
 
         </Routes>
       </BrowserRouter>

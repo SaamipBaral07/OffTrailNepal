@@ -204,7 +204,7 @@ const InvoicePage = () => {
                         <p className="text-slate-700">
                           {invoice.booking_type === "guide_package"
                             ? `${invoice.snapshot?.listing_name || "Guide package"} (${invoice.snapshot?.participants_count || 0} participants)`
-                            : `${invoice.snapshot?.listing_name || "Homestay stay"} (${invoice.snapshot?.rooms_booked || 0} rooms)`}
+                            : `${invoice.snapshot?.listing_name || "Homestay stay"} (${invoice.snapshot?.guests_count ?? invoice.snapshot?.rooms_booked ?? 0} guests, per person/night)`}
                         </p>
                         <p className="text-right font-semibold text-slate-800">{formatMoney(invoice.subtotal_amount, invoice.currency || "NPR")}</p>
                       </div>

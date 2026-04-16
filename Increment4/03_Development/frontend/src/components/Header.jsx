@@ -413,7 +413,7 @@ export const Header = ({ user, onLogoutClick }) => {
                               Chats
                             </Link>
                           )}
-                          {user.user_type === "tourist" ? (
+                          {user.user_type === "tourist" && (
                             <Link
                               to="/my-settings"
                               onClick={() => setDropdownOpen(false)}
@@ -422,11 +422,6 @@ export const Header = ({ user, onLogoutClick }) => {
                               <Settings className="h-4 w-4 text-gray-400" />
                               Settings
                             </Link>
-                          ) : (
-                            <button className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors">
-                              <Settings className="h-4 w-4 text-gray-400" />
-                              Settings
-                            </button>
                           )}
                         </div>
                         <div className="border-t border-gray-100 pt-1">

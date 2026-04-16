@@ -886,7 +886,7 @@ const LandingPage = () => {
             <SectionHeader
               badge="Testimonials"
               badgeColor="gold"
-              title="What Trekkers Say"
+              title="What Trekkers,Hosts and Guides Say"
               subtitle="Real stories from real adventurers who explored Nepal with us."
             />
           </motion.div>

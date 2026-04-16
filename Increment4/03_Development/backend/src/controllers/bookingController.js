@@ -101,6 +101,9 @@ const REFUND_FULL_HOURS = Number(process.env.REFUND_FULL_HOURS || 72);
 const REFUND_PARTIAL_HOURS = Number(process.env.REFUND_PARTIAL_HOURS || 24);
 const REFUND_PARTIAL_RATE = Number(process.env.REFUND_PARTIAL_RATE || 0.5);
 const HOMESTAY_MAX_GUESTS_PER_ROOM = Number(process.env.HOMESTAY_MAX_GUESTS_PER_ROOM || 2);
+const PRICING_MODEL_PER_PERSON = "per_person_per_night";
+const PRICING_MODEL_PER_ROOM = "per_room_per_night";
+const DEFAULT_HOMESTAY_PRICING_MODEL = PRICING_MODEL_PER_PERSON;
 const stripeClient = STRIPE_SECRET_KEY ? new Stripe(STRIPE_SECRET_KEY) : null;
 let stripeFxCache = {
   usdToNprRate: null,
@@ -108,6 +111,25 @@ let stripeFxCache = {
 };
 
 const toMoney = (value) => Number.parseFloat(Number(value).toFixed(2));
+
+const normalizeHomestayPricingModel = (value, fallback = DEFAULT_HOMESTAY_PRICING_MODEL) => {
+  const model = String(value || "").trim().toLowerCase();
+  if (model === PRICING_MODEL_PER_PERSON) return PRICING_MODEL_PER_PERSON;
+  if (model === PRICING_MODEL_PER_ROOM) return PRICING_MODEL_PER_ROOM;
+  return fallback;
+};
+
+const resolveSessionPricingModel = (session) => {
+  const pricingFromResponse =
+    session?.payment_response &&
+    typeof session.payment_response === "object" &&
+    !Array.isArray(session.payment_response)
+      ? session.payment_response.pricing_model
+      : null;
+
+  // Keep old in-flight sessions valid after rollout.
+  return normalizeHomestayPricingModel(pricingFromResponse, PRICING_MODEL_PER_ROOM);
+};
 
 const convertNprToMinorUnits = (nprAmount) => {
   return Math.max(1, Math.round(Number(nprAmount) * 100));
@@ -406,6 +428,7 @@ const getValidatedBookingDraft = async ({
   checkOutDate,
   roomsBooked,
   guestsCount,
+  pricingModel = DEFAULT_HOMESTAY_PRICING_MODEL,
   lockHomestay,
 }) => {
   await reconcileHomestayAvailability({ db: client, homestayId });
@@ -453,13 +476,18 @@ const getValidatedBookingDraft = async ({
   }
 
   const nights = Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (24 * 60 * 60 * 1000));
-  const totalPrice = toMoney(Number(homestay.price_per_night) * roomsBooked * nights);
+  const normalizedPricingModel = normalizeHomestayPricingModel(pricingModel, DEFAULT_HOMESTAY_PRICING_MODEL);
+  const totalPrice =
+    normalizedPricingModel === PRICING_MODEL_PER_PERSON
+      ? toMoney(Number(homestay.price_per_night) * guestsCount * nights)
+      : toMoney(Number(homestay.price_per_night) * roomsBooked * nights);
 
   return {
     error: null,
     status: 200,
     homestay,
     nights,
+    pricingModel: normalizedPricingModel,
     totalPrice,
   };
 };
@@ -479,6 +507,7 @@ const createBookingFromPaymentSession = async ({ client, session, touristId }) =
     checkOutDate: checkOutDate.value,
     roomsBooked: session.rooms_booked,
     guestsCount: session.guests_count,
+    pricingModel: resolveSessionPricingModel(session),
     lockHomestay: true,
   });
 
@@ -664,6 +693,7 @@ export const initiateEsewaPaymentForBooking = async (req, res) => {
       checkOutDate,
       roomsBooked,
       guestsCount,
+      pricingModel: DEFAULT_HOMESTAY_PRICING_MODEL,
       lockHomestay: false,
     });
 
@@ -725,7 +755,10 @@ export const initiateEsewaPaymentForBooking = async (req, res) => {
         deliveryCharge,
         totalAmount,
         transactionUuid,
-        JSON.stringify({ provider: "esewa" }),
+        JSON.stringify({
+          provider: "esewa",
+          pricing_model: DEFAULT_HOMESTAY_PRICING_MODEL,
+        }),
       ]
     );
 
@@ -753,6 +786,8 @@ export const initiateEsewaPaymentForBooking = async (req, res) => {
         homestay_id: homestayId,
         homestay_name: draft.homestay.name,
         homestay_location: draft.homestay.location,
+        pricing_model: draft.pricingModel,
+        rate_per_person_per_night: toMoney(draft.homestay.price_per_night),
         nights: draft.nights,
         rooms_booked: roomsBooked,
         guests_count: guestsCount,
@@ -830,6 +865,7 @@ export const initiateStripePaymentForBooking = async (req, res) => {
       checkOutDate,
       roomsBooked,
       guestsCount,
+      pricingModel: DEFAULT_HOMESTAY_PRICING_MODEL,
       lockHomestay: false,
     });
 
@@ -878,6 +914,7 @@ export const initiateStripePaymentForBooking = async (req, res) => {
         transactionUuid,
         JSON.stringify({
           provider: "stripe",
+          pricing_model: DEFAULT_HOMESTAY_PRICING_MODEL,
           npr_amount: totalAmountNpr,
           stripe_currency: stripeCurrency,
           stripe_amount_minor: stripeAmountMinor,
@@ -896,7 +933,7 @@ export const initiateStripePaymentForBooking = async (req, res) => {
             unit_amount: stripeAmountMinor,
             product_data: {
               name: `Homestay Booking - ${draft.homestay.name}`,
-              description: `${draft.nights} night(s), ${roomsBooked} room(s), ${guestsCount} guest(s)`,
+              description: `${draft.nights} night(s), ${guestsCount} guest(s), ${roomsBooked} room(s) allocated`,
             },
           },
         },
@@ -941,6 +978,8 @@ export const initiateStripePaymentForBooking = async (req, res) => {
         homestay_id: homestayId,
         homestay_name: draft.homestay.name,
         homestay_location: draft.homestay.location,
+        pricing_model: draft.pricingModel,
+        rate_per_person_per_night: toMoney(draft.homestay.price_per_night),
         nights: draft.nights,
         rooms_booked: roomsBooked,
         guests_count: guestsCount,

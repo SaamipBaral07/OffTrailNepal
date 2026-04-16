@@ -513,12 +513,13 @@ const MyBookings = () => {
                   <div className="space-y-2.5 text-sm text-gray-600">
                     <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-gold" /> {booking.homestay_location}</p>
                     <p className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-navy" /> {formatDate(booking.check_in_date)} to {formatDate(booking.check_out_date)}</p>
-                    <p className="flex items-center gap-2"><BedDouble className="h-4 w-4 text-navy" /> {booking.rooms_booked} room{booking.rooms_booked > 1 ? "s" : ""} booked</p>
+                    <p className="flex items-center gap-2"><BedDouble className="h-4 w-4 text-navy" /> Room allocation: {booking.rooms_booked} room{booking.rooms_booked > 1 ? "s" : ""}</p>
                     <p className="flex items-center gap-2"><Users className="h-4 w-4 text-navy" /> {booking.guests_count} guest{booking.guests_count > 1 ? "s" : ""}</p>
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-gold/20 bg-gold-pale/40 p-3 text-sm text-gray-700">
                     <p className="font-semibold text-navy">Booking Code: {booking.booking_code}</p>
+                    <p className="mt-1">Billing Model: Per person / night</p>
                     <p className="mt-1">Total Price: NPR {Number(booking.total_price || 0).toLocaleString()}</p>
                     <p className="mt-1 capitalize">Payment Status: {paymentStatus || "not_paid"}</p>
                     {booking.refund_requested_amount && (
@@ -665,12 +666,13 @@ const MyBookings = () => {
                           <div className="space-y-2.5 text-sm text-gray-600">
                             <p className="flex items-center gap-2"><MapPin className="h-4 w-4 text-gold" /> {booking.homestay_location}</p>
                             <p className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-navy" /> {formatDate(booking.check_in_date)} to {formatDate(booking.check_out_date)}</p>
-                            <p className="flex items-center gap-2"><BedDouble className="h-4 w-4 text-navy" /> {booking.rooms_booked} room{booking.rooms_booked > 1 ? "s" : ""} booked</p>
+                            <p className="flex items-center gap-2"><BedDouble className="h-4 w-4 text-navy" /> Room allocation: {booking.rooms_booked} room{booking.rooms_booked > 1 ? "s" : ""}</p>
                             <p className="flex items-center gap-2"><Users className="h-4 w-4 text-navy" /> {booking.guests_count} guest{booking.guests_count > 1 ? "s" : ""}</p>
                           </div>
 
                           <div className="mt-4 rounded-2xl border border-gold/20 bg-gold-pale/40 p-3 text-sm text-gray-700">
                             <p className="font-semibold text-navy">Booking Code: {booking.booking_code}</p>
+                            <p className="mt-1">Billing Model: Per person / night</p>
                             <p className="mt-1">Total Price: NPR {Number(booking.total_price || 0).toLocaleString()}</p>
                             <p className="mt-1 capitalize">Payment Status: {paymentStatus || "not_paid"}</p>
                             {booking.refund_requested_amount && (
@@ -1209,7 +1211,7 @@ const MyBookings = () => {
                     <p className="text-slate-700">
                       {invoiceData.booking_type === "guide_package"
                         ? `${invoiceData.snapshot?.listing_name || "Guide package"} (${invoiceData.snapshot?.participants_count || 0} participants)`
-                        : `${invoiceData.snapshot?.listing_name || "Homestay stay"} (${invoiceData.snapshot?.rooms_booked || 0} rooms)`}
+                        : `${invoiceData.snapshot?.listing_name || "Homestay stay"} (${invoiceData.snapshot?.guests_count ?? invoiceData.snapshot?.rooms_booked ?? 0} guests, per person/night)`}
                     </p>
                     <p className="text-right font-semibold text-slate-800">{formatMoney(invoiceData.subtotal_amount)}</p>
                   </div>

@@ -342,7 +342,7 @@ const TrailMap = ({
                     <p className="font-semibold text-sm text-gray-900">{stay.name}</p>
                     <p className="text-xs text-gray-500">{stay.location}</p>
                     <p className="text-xs font-medium text-emerald-700">
-                      NPR {Number(stay.price_per_night || 0).toLocaleString()} / night
+                      NPR {Number(stay.price_per_night || 0).toLocaleString()} / person / night
                     </p>
                     {stay.distanceKm !== null && (
                       <p className="text-xs text-gray-500">

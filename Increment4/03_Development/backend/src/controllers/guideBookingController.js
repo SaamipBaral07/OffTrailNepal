@@ -1988,6 +1988,14 @@ export const updateGuideBookingStatus = async (req, res) => {
       return res.status(409).json({ message: "Only pending bookings can be rejected" });
     }
 
+    // Once a guide has confirmed a booking, provider-side cancellation is not allowed.
+    if (nextStatus === "cancelled" && currentStatus === "confirmed") {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        message: "Confirmed guide bookings cannot be cancelled by the guide. Tourist refund workflow should be used if needed.",
+      });
+    }
+
     if (currentStatus === "refund_requested") {
       await client.query("ROLLBACK");
       return res.status(409).json({ message: "Refund review is already pending for this booking" });

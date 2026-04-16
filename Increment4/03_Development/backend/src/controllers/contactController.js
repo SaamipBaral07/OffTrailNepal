@@ -9,8 +9,27 @@ const ALLOWED_CATEGORIES = new Set([
 ]);
 
 const ALLOWED_USER_TYPES = new Set(["tourist", "host", "guide", "admin"]);
+const ALLOWED_TESTIMONIAL_USER_TYPES = new Set(["tourist", "host", "guide"]);
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const REVIEW_MIN_LENGTH = 20;
+
+const TESTIMONIAL_REVIEWER_SELECT = `
+  COALESCE(t.full_name, h.full_name, g.full_name, 'Unknown User') AS submitter_name,
+  COALESCE(t.email, h.email, g.email, '') AS submitter_email,
+  COALESCE(t.profile_image_path, h.profile_image_path, g.profile_image_path) AS submitter_profile_image_path
+`;
+
+const TESTIMONIAL_REVIEWER_JOINS = `
+  LEFT JOIN tourists t
+    ON r.submitter_user_type = 'tourist'
+   AND t.tourist_id = r.submitter_user_id
+  LEFT JOIN hosts h
+    ON r.submitter_user_type = 'host'
+   AND h.host_id = r.submitter_user_id
+  LEFT JOIN guides g
+    ON r.submitter_user_type = 'guide'
+   AND g.guide_id = r.submitter_user_id
+`;
 
 const getClientIp = (req) => {
   const forwardedFor = req.headers["x-forwarded-for"];
@@ -22,14 +41,16 @@ const getClientIp = (req) => {
 
 export const submitTouristPlatformReview = async (req, res) => {
   try {
-    const touristId = Number(req.user?.user_id);
+    const submitterUserId = Number(req.user?.user_id);
     const userType = String(req.user?.user_type || "").trim().toLowerCase();
     const rating = Number.parseInt(String(req.body?.rating || ""), 10);
     const reviewText = String(req.body?.reviewText || "").trim();
     const reviewerLocation = String(req.body?.reviewerLocation || "").trim();
 
-    if (userType !== "tourist" || !Number.isInteger(touristId) || touristId <= 0) {
-      return res.status(403).json({ message: "Only tourists can submit platform reviews" });
+    if (!ALLOWED_TESTIMONIAL_USER_TYPES.has(userType) || !Number.isInteger(submitterUserId) || submitterUserId <= 0) {
+      return res.status(403).json({
+        message: "Only tourist, host, and guide accounts can submit platform reviews",
+      });
     }
 
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
@@ -46,12 +67,16 @@ export const submitTouristPlatformReview = async (req, res) => {
       return res.status(400).json({ message: "Location cannot exceed 120 characters" });
     }
 
+    const touristId = userType === "tourist" ? submitterUserId : null;
+
     const result = await pool.query(
       `INSERT INTO tourist_platform_reviews
-        (tourist_id, rating, review_text, reviewer_location, is_featured, featured_by_admin_id, featured_at)
-       VALUES ($1, $2, $3, $4, FALSE, NULL, NULL)
+        (submitter_user_type, submitter_user_id, tourist_id, rating, review_text, reviewer_location, is_featured, featured_by_admin_id, featured_at)
+       VALUES ($1, $2, $3, $4, $5, $6, FALSE, NULL, NULL)
        RETURNING
          review_id,
+         submitter_user_type,
+         submitter_user_id,
          tourist_id,
          rating,
          review_text,
@@ -60,7 +85,7 @@ export const submitTouristPlatformReview = async (req, res) => {
          featured_at,
          created_at,
          updated_at`,
-      [touristId, rating, reviewText, reviewerLocation || null]
+      [userType, submitterUserId, touristId, rating, reviewText, reviewerLocation || null]
     );
 
     return res.status(200).json({
@@ -75,16 +100,20 @@ export const submitTouristPlatformReview = async (req, res) => {
 
 export const getMyTouristPlatformReview = async (req, res) => {
   try {
-    const touristId = Number(req.user?.user_id);
+    const submitterUserId = Number(req.user?.user_id);
     const userType = String(req.user?.user_type || "").trim().toLowerCase();
 
-    if (userType !== "tourist" || !Number.isInteger(touristId) || touristId <= 0) {
-      return res.status(403).json({ message: "Only tourists can access their review" });
+    if (!ALLOWED_TESTIMONIAL_USER_TYPES.has(userType) || !Number.isInteger(submitterUserId) || submitterUserId <= 0) {
+      return res.status(403).json({
+        message: "Only tourist, host, and guide accounts can access testimonial history",
+      });
     }
 
     const result = await pool.query(
       `SELECT
          review_id,
+         submitter_user_type,
+         submitter_user_id,
          tourist_id,
          rating,
          review_text,
@@ -94,10 +123,11 @@ export const getMyTouristPlatformReview = async (req, res) => {
          created_at,
          updated_at
        FROM tourist_platform_reviews
-       WHERE tourist_id = $1
+       WHERE submitter_user_type = $1
+         AND submitter_user_id = $2
        ORDER BY created_at DESC, review_id DESC
        LIMIT 1`,
-      [touristId]
+      [userType, submitterUserId]
     );
 
     return res.status(200).json({ review: result.rows[0] || null });
@@ -122,6 +152,8 @@ export const getAdminTouristPlatformReviews = async (_req, res) => {
       pool.query(
         `SELECT
            r.review_id,
+           r.submitter_user_type,
+           r.submitter_user_id,
            r.tourist_id,
            r.rating,
            r.review_text,
@@ -130,11 +162,9 @@ export const getAdminTouristPlatformReviews = async (_req, res) => {
            r.featured_at,
            r.created_at,
            r.updated_at,
-           t.full_name AS tourist_name,
-           t.email AS tourist_email,
-           t.profile_image_path
+           ${TESTIMONIAL_REVIEWER_SELECT}
          FROM tourist_platform_reviews r
-         JOIN tourists t ON t.tourist_id = r.tourist_id
+         ${TESTIMONIAL_REVIEWER_JOINS}
          ORDER BY
            r.is_featured DESC,
            COALESCE(r.featured_at, r.updated_at, r.created_at) DESC
@@ -243,6 +273,8 @@ export const toggleFeaturedTouristPlatformReview = async (req, res) => {
     const updatedReviewResult = await client.query(
       `SELECT
          r.review_id,
+         r.submitter_user_type,
+         r.submitter_user_id,
          r.tourist_id,
          r.rating,
          r.review_text,
@@ -251,11 +283,9 @@ export const toggleFeaturedTouristPlatformReview = async (req, res) => {
          r.featured_at,
          r.created_at,
          r.updated_at,
-         t.full_name AS tourist_name,
-         t.email AS tourist_email,
-         t.profile_image_path
+         ${TESTIMONIAL_REVIEWER_SELECT}
        FROM tourist_platform_reviews r
-       JOIN tourists t ON t.tourist_id = r.tourist_id
+       ${TESTIMONIAL_REVIEWER_JOINS}
        WHERE r.review_id = $1
        LIMIT 1`,
       [reviewId]
@@ -290,14 +320,14 @@ export const getFeaturedTouristPlatformReviews = async (_req, res) => {
     const result = await pool.query(
       `SELECT
          r.review_id AS testimonial_id,
+         r.submitter_user_type,
          r.rating,
          r.review_text,
          r.reviewer_location,
          r.featured_at,
-         t.full_name AS reviewer_name,
-         t.profile_image_path
+         ${TESTIMONIAL_REVIEWER_SELECT}
        FROM tourist_platform_reviews r
-       JOIN tourists t ON t.tourist_id = r.tourist_id
+       ${TESTIMONIAL_REVIEWER_JOINS}
        WHERE r.is_featured = TRUE
        ORDER BY COALESCE(r.featured_at, r.updated_at, r.created_at) DESC
        LIMIT 3`
@@ -305,7 +335,9 @@ export const getFeaturedTouristPlatformReviews = async (_req, res) => {
 
     const testimonials = result.rows.map((row) => ({
       ...row,
-      reviewer_location: String(row.reviewer_location || "").trim() || "Verified Trekker",
+      reviewer_name: String(row.submitter_name || "Verified Community Member").trim() || "Verified Community Member",
+      reviewer_location: String(row.reviewer_location || "").trim() || "Verified Community Member",
+      profile_image_path: row.submitter_profile_image_path || null,
     }));
 
     return res.status(200).json({ testimonials });

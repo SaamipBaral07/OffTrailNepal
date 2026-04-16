@@ -25,6 +25,7 @@ const OFFICE_MAP_EMBED_URL =
   "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d439.47247245717966!2d83.95775757798809!3d28.2140026156145!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3995951b4c297003%3A0x154f5b2110323833!2sLakeside%20Rd%2C%20Pokhara%2033700!5e0!3m2!1sen!2snp!4v1775540699240!5m2!1sen!2snp";
 const OFFICE_MAP_DIRECTIONS_URL =
   "https://www.google.com/maps/place/Lakeside+Rd,+Pokhara+33700/";
+const TESTIMONIAL_ELIGIBLE_USER_TYPES = new Set(["tourist", "host", "guide"]);
 
 const ContactUs = () => {
   const navigate = useNavigate();
@@ -77,8 +78,12 @@ const ContactUs = () => {
     }
   }, [authUser]);
 
+  const canUseSupportPortal = useMemo(() => {
+    return TESTIMONIAL_ELIGIBLE_USER_TYPES.has(String(user?.user_type || ""));
+  }, [user?.user_type]);
+
   const fetchMyEnquiryReplies = async () => {
-    if (!user || user.user_type !== "tourist") {
+    if (!canUseSupportPortal) {
       setMyEnquiryReplies([]);
       setMyRepliesSummary({ total_replies: 0, unread_replies: 0 });
       return;
@@ -109,7 +114,7 @@ const ContactUs = () => {
   useEffect(() => {
     fetchMyEnquiryReplies();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.user_id, user?.user_type]);
+  }, [user?.user_id, user?.user_type, canUseSupportPortal]);
 
   const handleLogout = () => {
     originalHandleLogout();
@@ -143,7 +148,7 @@ const ContactUs = () => {
   };
 
   const markRepliesAsRead = async () => {
-    if (!user || user.user_type !== "tourist") return;
+    if (!canUseSupportPortal) return;
 
     setMarkingRepliesRead(true);
     try {
@@ -157,7 +162,7 @@ const ContactUs = () => {
   };
 
   const fetchMyPlatformReview = async () => {
-    if (!user || user.user_type !== "tourist") {
+    if (!canUseSupportPortal) {
       setMyPlatformReview(null);
       return;
     }
@@ -180,7 +185,7 @@ const ContactUs = () => {
   useEffect(() => {
     fetchMyPlatformReview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.user_id, user?.user_type]);
+  }, [user?.user_id, user?.user_type, canUseSupportPortal]);
 
   const formatDateTime = (value) => {
     if (!value) return "-";
@@ -225,9 +230,9 @@ const ContactUs = () => {
   const handleReviewSubmit = async (event) => {
     event.preventDefault();
 
-    if (!user || user.user_type !== "tourist") {
+    if (!canUseSupportPortal) {
       setReviewSubmitType("error");
-      setReviewSubmitMessage("Only logged-in tourists can submit platform testimonials.");
+      setReviewSubmitMessage("Only logged-in tourist, host, or guide accounts can submit platform testimonials.");
       return;
     }
 
@@ -291,7 +296,7 @@ const ContactUs = () => {
                 Mon-Sat, 9AM-6PM
               </span>
               <span className="inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white">
-                Tourist notifications enabled
+                Account notifications enabled
               </span>
             </div>
           </div>
@@ -454,19 +459,19 @@ const ContactUs = () => {
 
               <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-sm text-emerald-800 flex items-start gap-2">
                 <BadgeCheck className="h-4 w-4 mt-0.5 text-emerald-600" />
-                Verified tourists can see admin responses directly in this page.
+                Signed-in tourist, host, and guide users can see admin responses directly in this page.
               </div>
             </div>
 
             <div className="rounded-2xl border border-[#d9d3c4] bg-[#fffefd] p-5 shadow-sm">
               <div className="flex items-center gap-2 mb-4 text-navy">
                 <Star className="h-4 w-4 text-gold" />
-                <h3 className="text-sm font-bold uppercase tracking-wide">Tourist Updates</h3>
+                <h3 className="text-sm font-bold uppercase tracking-wide">Account Updates</h3>
               </div>
 
-              {user?.user_type !== "tourist" ? (
+              {!canUseSupportPortal ? (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                  Tourist accounts can access reply notifications and submit testimonials.
+                  Please log in as a tourist, host, or guide account to access reply notifications and submit testimonials.
                 </div>
               ) : (
                 <>
@@ -651,7 +656,7 @@ const ContactUs = () => {
                           className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-navy bg-gradient-to-r from-gold to-[#D4A43A] shadow-sm hover:shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           {isSubmittingReview ? <Loader2 className="h-4 w-4 animate-spin" /> : <Star className="h-4 w-4" />}
-                          {isSubmittingReview ? "Saving..." : "Submit New Review"}
+                          {isSubmittingReview ? "Saving..." : "Submit Testimonial"}
                         </button>
                       </div>
 

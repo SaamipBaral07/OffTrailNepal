@@ -515,7 +515,7 @@ const HomestayForm = ({ trails, amenityCatalog, amenityCatalogLoading, amenityCa
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1.5">
-                Price / Night (NPR) <span className="text-red-500">*</span>
+                Price / Person / Night (NPR) <span className="text-red-500">*</span>
               </label>
               <input
                 type="number"
@@ -1124,7 +1124,7 @@ const HomestayCard = ({ homestay, onEdit, onDelete, onToggleActive, onUpdateRoom
         <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-50 bg-gray-50/30">
           <div className="px-3 py-4 text-center">
             <p className="text-[9px] uppercase font-bold text-gray-400 tracking-widest mb-1.5 flex items-center justify-center gap-1">
-              <DollarSign className="w-3 h-3" /> Per Night
+              <DollarSign className="w-3 h-3" /> Per Person/Night
             </p>
             <p className="font-bold text-gray-900 text-sm">NPR {Number(homestay.price_per_night).toLocaleString()}</p>
           </div>
@@ -1364,6 +1364,7 @@ const HostDashboard = () => {
   const [hostVerificationSubmitting, setHostVerificationSubmitting] = useState(false);
   const [hostCitizenshipFile, setHostCitizenshipFile] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showHostApprovalNotice, setShowHostApprovalNotice] = useState(false);
 
   const hostVerificationStatus = hostVerification?.verification_status || "not_submitted";
   const isHostVerified = hostVerificationStatus === "approved";
@@ -1539,6 +1540,66 @@ const HostDashboard = () => {
     };
   }, [mobileMenuOpen]);
 
+  useEffect(() => {
+    if (!hostVerification || hostVerification.verification_status !== "approved" || !user?.user_id) {
+      setShowHostApprovalNotice(false);
+      return;
+    }
+
+    // Check 24-hour window: approval timestamp should be within last 24 hours
+    const approvalTimestamp = hostVerification.reviewed_at || hostVerification.updated_at;
+    if (!approvalTimestamp) {
+      console.log("⚠️ Host: No approval timestamp found");
+      setShowHostApprovalNotice(false);
+      return;
+    }
+
+    const approvalTime = new Date(approvalTimestamp).getTime();
+    const currentTime = new Date().getTime();
+    const timeDifferenceMs = currentTime - approvalTime;
+    const timeDifferenceHours = timeDifferenceMs / (1000 * 60 * 60);
+
+    console.log("Host ⏱️ Time check:", {
+      approvalTimestamp,
+      timeDifferenceHours: Math.round(timeDifferenceHours * 100) / 100,
+      withinWindow: timeDifferenceHours <= 24,
+    });
+
+    // Only show message if within 24-hour window
+    if (timeDifferenceHours > 24) {
+      console.log(`❌ Host: Approval was ${Math.round(timeDifferenceHours)} hours ago (outside 24-hour window)`);
+      setShowHostApprovalNotice(false);
+      return;
+    }
+
+    // Clear old timestamp keys that might interfere
+    try {
+      const keys = Object.keys(window.localStorage);
+      keys.forEach(key => {
+        if (key.includes('hostApprovalTimestamp')) {
+          window.localStorage.removeItem(key);
+        }
+      });
+    } catch (e) {
+      console.error("Error clearing old keys:", e);
+    }
+
+    // Simple approach: show approval message if approved status, within 24 hours, and not previously dismissed
+    const dismissKey = `hostApprovalDismissed:${user.user_id}`;
+    const isDismissed = window.localStorage.getItem(dismissKey) === "true";
+    
+    console.log("Host Approval Check:", {
+      verification_status: hostVerification.verification_status,
+      isDismissed,
+      user_id: user?.user_id,
+      withinWindow: timeDifferenceHours <= 24,
+    });
+    
+    if (!isDismissed) {
+      setShowHostApprovalNotice(true);
+    }
+  }, [hostVerification, user?.user_id]);
+
   // Create homestay
   const handleCreate = async (formData) => {
     if (!isHostVerified) {
@@ -1649,6 +1710,21 @@ const HostDashboard = () => {
   const hostAverageRating = hostReviews.length
     ? (hostReviews.reduce((sum, item) => sum + Number(item.review_rating || 0), 0) / hostReviews.length)
     : 0;
+
+  const getHostApprovalTimeFormatted = () => {
+    if (!hostVerification?.reviewed_at && !hostVerification?.updated_at) return null;
+    const dateStr = hostVerification.reviewed_at || hostVerification.updated_at;
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleString("en-US", { 
+      month: "short", 
+      day: "numeric", 
+      year: "numeric", 
+      hour: "2-digit", 
+      minute: "2-digit",
+      hour12: true
+    });
+  };
 
   const mobileMenuItems = [
     { id: "overview", icon: Home, label: "Overview" },
@@ -2029,6 +2105,39 @@ const HostDashboard = () => {
             Add New Homestay
           </button>
         </div>
+
+        {showHostApprovalNotice && (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <CheckCircle className="h-5 w-5 text-emerald-600 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-emerald-800">
+                  Your citizenship verification is approved!
+                </p>
+                <p className="text-xs text-emerald-700 mt-0.5">
+                  You can now create and manage homestay listings (Message expires in 24 hours)
+                </p>
+                {getHostApprovalTimeFormatted() && (
+                  <p className="text-xs text-emerald-600 mt-1">
+                    Approved on: {getHostApprovalTimeFormatted()}
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setShowHostApprovalNotice(false);
+                if (user?.user_id) {
+                  window.localStorage.setItem(`hostApprovalDismissed:${user.user_id}`, "true");
+                }
+              }}
+              className="flex-shrink-0 text-emerald-600 hover:text-emerald-800 transition-colors"
+              aria-label="Close approval notice"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        )}
 
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 sm:p-6">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">

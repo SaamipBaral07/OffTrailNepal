@@ -300,6 +300,21 @@ const GuideDashboard = () => {
     { id: "reviews", label: "Reviews", icon: Star, count: reviews.length || null },
   ];
 
+  const getApprovalTimeFormatted = () => {
+    if (!verification?.reviewed_at && !verification?.updated_at) return null;
+    const dateStr = verification.reviewed_at || verification.updated_at;
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleString("en-US", { 
+      month: "short", 
+      day: "numeric", 
+      year: "numeric", 
+      hour: "2-digit", 
+      minute: "2-digit",
+      hour12: true
+    });
+  };
+
   useEffect(() => {
     if (!availabilityNotice) return;
     const timer = window.setTimeout(() => setAvailabilityNotice(null), 3500);
@@ -335,27 +350,106 @@ const GuideDashboard = () => {
   }, [mobileMenuOpen]);
 
   useEffect(() => {
-    if (!isVerificationResolved || !verification || verification.verification_status !== "approved" || !authUser?.user_id) {
+    const checks = {
+      isVerificationResolved,
+      verification_exists: !!verification,
+      verification_status: verification?.verification_status,
+      authUser_exists: !!authUser,
+      authUser_full: authUser,
+      authUser_keys: authUser ? Object.keys(authUser) : "null",
+      authUser_id_property: authUser?.user_id,
+      authUser_id_alt1: authUser?.id,
+      authUser_id_alt2: authUser?.userId,
+    };
+
+    console.log("🔍 Full Approval Check (with user props):", checks);
+
+    // More detailed early return logging
+    if (!isVerificationResolved) {
+      console.log("❌ Early Return: isVerificationResolved is FALSE");
+      setShowGuideApprovalNotice(false);
+      return;
+    }
+    
+    if (!verification) {
+      console.log("❌ Early Return: verification is NULL/UNDEFINED");
+      setShowGuideApprovalNotice(false);
+      return;
+    }
+    
+    if (verification.verification_status !== "approved") {
+      console.log(`❌ Early Return: verification_status is "${verification.verification_status}" (NOT "approved")`);
+      setShowGuideApprovalNotice(false);
+      return;
+    }
+    
+    if (!authUser) {
+      console.log("❌ Early Return: authUser is NULL/UNDEFINED");
       setShowGuideApprovalNotice(false);
       return;
     }
 
-    const approvalMarker = String(verification.reviewed_at || verification.updated_at || "approved");
-    const noticeKey = `guideApprovalNoticeSeen:${authUser.user_id}:${approvalMarker}`;
-
-    try {
-      const alreadySeen = window.localStorage.getItem(noticeKey) === "1";
-      if (alreadySeen) {
-        setShowGuideApprovalNotice(false);
-        return;
-      }
-
-      setShowGuideApprovalNotice(true);
-      window.localStorage.setItem(noticeKey, "1");
-    } catch {
-      setShowGuideApprovalNotice(true);
+    // Try to find the actual user ID property
+    const userId = authUser?.user_id || authUser?.id || authUser?.userId;
+    if (!userId) {
+      console.log("❌ Early Return: No user_id found in authUser. Properties:", Object.keys(authUser));
+      setShowGuideApprovalNotice(false);
+      return;
     }
-  }, [isVerificationResolved, verification, authUser?.user_id]);
+
+    // Check 24-hour window: approval timestamp should be within last 24 hours
+    const approvalTimestamp = verification.reviewed_at || verification.updated_at;
+    if (!approvalTimestamp) {
+      console.log("⚠️ No approval timestamp found, cannot verify 24-hour window");
+      setShowGuideApprovalNotice(false);
+      return;
+    }
+
+    const approvalTime = new Date(approvalTimestamp).getTime();
+    const currentTime = new Date().getTime();
+    const timeDifferenceMs = currentTime - approvalTime;
+    const timeDifferenceHours = timeDifferenceMs / (1000 * 60 * 60);
+
+    console.log("⏱️ Time check:", {
+      approvalTimestamp,
+      timeDifferenceHours: Math.round(timeDifferenceHours * 100) / 100,
+      withinWindow: timeDifferenceHours <= 24,
+    });
+
+    // Only show message if within 24-hour window
+    if (timeDifferenceHours > 24) {
+      console.log(`❌ Early Return: Approval was ${Math.round(timeDifferenceHours)} hours ago (outside 24-hour window)`);
+      setShowGuideApprovalNotice(false);
+      return;
+    }
+
+    console.log("✅ All checks passed! Checking dismiss status with userId:", userId);
+
+    // Clear old timestamp keys that might interfere
+    try {
+      const keys = Object.keys(window.localStorage);
+      keys.forEach(key => {
+        if (key.includes('guideApprovalTimestamp')) {
+          window.localStorage.removeItem(key);
+        }
+      });
+    } catch (e) {
+      console.error("Error clearing old keys:", e);
+    }
+
+    // Simple approach: show approval message if approved status and not previously dismissed
+    const dismissKey = `guideApprovalDismissed:${userId}`;
+    const isDismissed = window.localStorage.getItem(dismissKey) === "true";
+    
+    console.log("Dismiss status:", { dismissKey, isDismissed });
+    
+    if (!isDismissed) {
+      console.log("✅✅✅ SHOWING APPROVAL MESSAGE");
+      setShowGuideApprovalNotice(true);
+    } else {
+      console.log("Message already dismissed by user");
+    }
+  }, [isVerificationResolved, verification, authUser]);
 
   const fetchDashboardData = useCallback(async () => {
     setFetchingData(true);
@@ -374,7 +468,18 @@ const GuideDashboard = () => {
       setServices(myServicesRes.data.services || []);
       setAvailability(myAvailRes.data.availability || []);
       setReviews(myReviewsRes.data.reviews || []);
-      setVerification(verificationRes.data.verification || null);
+      
+      const verificationData = verificationRes.data.verification || null;
+      console.log("📥 VERIFICATION API RESPONSE:", {
+        endpoint: `${API}/guides/verification-status`,
+        response_status: verificationRes.status,
+        full_response: verificationRes.data,
+        verification_extracted: verificationData,
+        verification_status_value: verificationData?.verification_status,
+        all_verification_keys: verificationData ? Object.keys(verificationData) : "null/undefined",
+      });
+      
+      setVerification(verificationData);
       const nextGuideBookings = bookingsRes.data.bookings || [];
       setGuideBookings(nextGuideBookings);
 
@@ -960,11 +1065,35 @@ const GuideDashboard = () => {
           )}
 
           {showGuideApprovalNotice && (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex items-center gap-3">
-              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-              <p className="text-sm font-semibold text-emerald-800">
-                Your guide verification is approved. You can create and manage listings.
-              </p>
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-emerald-800">
+                    Your guide verification is approved!
+                  </p>
+                  <p className="text-xs text-emerald-700 mt-0.5">
+                    You can now create and manage listings (Message expires in 24 hours)
+                  </p>
+                  {getApprovalTimeFormatted() && (
+                    <p className="text-xs text-emerald-600 mt-1">
+                      Approved on: {getApprovalTimeFormatted()}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowGuideApprovalNotice(false);
+                  if (authUser?.user_id) {
+                    window.localStorage.setItem(`guideApprovalDismissed:${authUser.user_id}`, "true");
+                  }
+                }}
+                className="flex-shrink-0 text-emerald-600 hover:text-emerald-800 transition-colors"
+                aria-label="Close approval notice"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
           )}
 
@@ -1507,20 +1636,9 @@ const GuideDashboard = () => {
                               )}
 
                               {isConfirmed && (
-                                bookingStarted ? (
-                                  <p className="inline-flex items-center rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">
-                                    Booking started: cancellation unavailable
-                                  </p>
-                                ) : (
-                                  <button
-                                    onClick={() => handleGuideBookingStatus(booking.booking_id, "cancelled")}
-                                    disabled={updatingBookingId === booking.booking_id}
-                                    className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 active:scale-[0.98] disabled:opacity-60"
-                                  >
-                                    {updatingBookingId === booking.booking_id && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                                    Cancel
-                                  </button>
-                                )
+                                <p className="inline-flex items-center rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">
+                                  Confirmed booking: cancellation unavailable for guide
+                                </p>
                               )}
                             </div>
                           )}

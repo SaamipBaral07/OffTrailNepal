@@ -13,7 +13,8 @@ export const getMyAvailability = async (req, res) => {
     const guideId = req.user.user_id;
     // Get dates from today onwards
     const result = await pool.query(
-      `SELECT available_date, is_available 
+      `SELECT to_char(available_date::date, 'YYYY-MM-DD') AS available_date,
+              is_available 
        FROM guide_availability 
        WHERE guide_id = $1 AND available_date >= CURRENT_DATE 
        ORDER BY available_date ASC`,
@@ -21,7 +22,7 @@ export const getMyAvailability = async (req, res) => {
     );
 
     const bookedResult = await pool.query(
-      `SELECT DISTINCT gs::date AS booked_date
+      `SELECT DISTINCT to_char(gs::date, 'YYYY-MM-DD') AS booked_date
        FROM guide_package_bookings b
        JOIN LATERAL generate_series(
          b.start_date::date,
@@ -91,9 +92,17 @@ export const toggleAvailability = async (req, res) => {
       [guideId, normalizedDate, Boolean(is_available)]
     );
 
+    const updated = result.rows[0] || null;
+
     res.status(200).json({ 
       message: "Availability updated", 
-      availability: result.rows[0] 
+      availability: updated
+        ? {
+            ...updated,
+            // Return the same stable date key format the client uses.
+            available_date: normalizedDate,
+          }
+        : null,
     });
   } catch (err) {
     console.error("Error updating availability:", err);

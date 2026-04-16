@@ -226,14 +226,14 @@ const HomestayBookingModal = ({
   const maxSelectableRooms = Math.max(1, Math.min(roomLimitByAvailability, normalizedGuests));
   const perRoomGuestCapacity = Math.max(1, Number.parseInt(String(maxGuestsPerRoom || 0), 10) || 1);
   const maxSelectableGuests = Math.max(1, normalizedRooms * perRoomGuestCapacity);
-  const roomNightRate = Number.parseFloat(String(pricePerNight || 0)) || 0;
+  const personNightRate = Number.parseFloat(String(pricePerNight || 0)) || 0;
   const checkInDate = dateKeyToLocalDate(bookingForm.check_in_date);
   const checkOutDate = dateKeyToLocalDate(bookingForm.check_out_date);
   const stayNights =
     checkInDate && checkOutDate
       ? Math.max(0, Math.ceil((checkOutDate.getTime() - checkInDate.getTime()) / (24 * 60 * 60 * 1000)))
       : 0;
-  const roomChargePreview = roomNightRate * normalizedRooms * stayNights;
+  const personChargePreview = personNightRate * normalizedGuests * stayNights;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -282,7 +282,7 @@ const HomestayBookingModal = ({
           <div>
             <h3 className="text-xl sm:text-2xl font-bold text-white">Book This Homestay</h3>
             <p className="text-xs sm:text-sm text-gold/90 mt-1">
-              Your room is confirmed only after successful payment.
+              Your stay is confirmed only after successful payment.
             </p>
           </div>
           <button
@@ -404,7 +404,7 @@ const HomestayBookingModal = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="text-xs font-semibold text-gray-600">
-                Rooms Needed
+                Rooms Needed (Allocation)
                 <input
                   type="number"
                   min="1"
@@ -424,7 +424,7 @@ const HomestayBookingModal = ({
               </label>
 
               <label className="text-xs font-semibold text-gray-600">
-                Number of Tourists
+                Number of Tourists (Billable)
                 <input
                   type="number"
                   min="1"
@@ -445,18 +445,18 @@ const HomestayBookingModal = ({
             </div>
 
             <p className="text-xs text-gray-500">
-              Keep at least 1 tourist per room. With {normalizedGuests} tourist{normalizedGuests > 1 ? "s" : ""}, you can book up to {maxSelectableRooms} room{maxSelectableRooms > 1 ? "s" : ""}. Each room supports up to {perRoomGuestCapacity} tourist{perRoomGuestCapacity > 1 ? "s" : ""}.
+              Billing is per person per night. Rooms are still used for allocation: keep at least 1 tourist per room. With {normalizedGuests} tourist{normalizedGuests > 1 ? "s" : ""}, you can book up to {maxSelectableRooms} room{maxSelectableRooms > 1 ? "s" : ""}. Each room supports up to {perRoomGuestCapacity} tourist{perRoomGuestCapacity > 1 ? "s" : ""}.
             </p>
 
             <div className="rounded-2xl border border-navy/10 bg-navy/5 p-3 text-sm text-gray-700">
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-navy/70">Live Payment Preview</p>
               {stayNights > 0 ? (
                 <>
-                  <p className="mt-2">{stayNights} night{stayNights > 1 ? "s" : ""} x {normalizedRooms} room{normalizedRooms > 1 ? "s" : ""} x NPR {roomNightRate.toLocaleString()}</p>
-                  <p className="mt-1 text-base font-bold text-charcoal">Payable now: NPR {Math.round(roomChargePreview).toLocaleString()}</p>
+                  <p className="mt-2">{stayNights} night{stayNights > 1 ? "s" : ""} x {normalizedGuests} tourist{normalizedGuests > 1 ? "s" : ""} x NPR {personNightRate.toLocaleString()}</p>
+                  <p className="mt-1 text-base font-bold text-charcoal">Payable now: NPR {Math.round(personChargePreview).toLocaleString()}</p>
                 </>
               ) : (
-                <p className="mt-2 text-xs text-gray-500">Select check-in and check-out dates to preview live room-based payment.</p>
+                <p className="mt-2 text-xs text-gray-500">Select check-in and check-out dates to preview live per-person payment.</p>
               )}
               <p className="mt-2 text-xs text-gray-500">Meals are charged per tourist by the host and are settled separately at the homestay.</p>
             </div>
@@ -500,7 +500,7 @@ const HomestayBookingModal = ({
 
             {nonTouristUser && (
               <p className="text-xs text-red-600">
-                Only tourist accounts can book homestay rooms.
+                Only tourist accounts can book homestays.
               </p>
             )}
           </div>
@@ -609,7 +609,7 @@ const HomestayDetail = () => {
     if (user.user_type !== "tourist") {
       setBookingFeedback({
         type: "error",
-        message: "Only tourist accounts can book homestay rooms.",
+        message: "Only tourist accounts can book homestays.",
       });
       return;
     }
@@ -624,7 +624,7 @@ const HomestayDetail = () => {
         : 2;
 
     if (!Number.isInteger(roomsBookedRequested) || roomsBookedRequested <= 0) {
-      setBookingFeedback({ type: "error", message: "Rooms needed must be at least 1." });
+      setBookingFeedback({ type: "error", message: "Rooms needed for allocation must be at least 1." });
       return;
     }
 
@@ -636,7 +636,7 @@ const HomestayDetail = () => {
     if (roomsBookedRequested > guestsCountRequested) {
       setBookingFeedback({
         type: "error",
-        message: "Rooms booked cannot exceed total tourists. At least one tourist is required per room.",
+        message: "Rooms selected cannot exceed total tourists. At least one tourist is required per room.",
       });
       return;
     }
@@ -928,7 +928,7 @@ const HomestayDetail = () => {
               )}
 
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gold/30 bg-gold-pale text-gold-dark text-xs font-bold shadow-sm">
-                NPR {Number(homestay.price_per_night).toLocaleString()} / night
+                NPR {Number(homestay.price_per_night).toLocaleString()} / person / night
               </span>
               <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold shadow-sm ${isSoldOut ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
                 {isSoldOut ? "All rooms booked" : `${availableRooms}/${totalRooms} rooms available`}
@@ -999,7 +999,7 @@ const HomestayDetail = () => {
 
               <div className="grid grid-cols-2 gap-3 mb-5">
                 <div className="rounded-2xl bg-gold-pale border border-gold/25 p-3">
-                  <p className="text-[11px] uppercase tracking-[0.12em] text-gold-dark font-semibold">Price / Night</p>
+                  <p className="text-[11px] uppercase tracking-[0.12em] text-gold-dark font-semibold">Price / Person / Night</p>
                   <p className="text-xl font-black text-charcoal mt-1">NPR {Number(homestay.price_per_night).toLocaleString()}</p>
                 </div>
                 <div className={`rounded-2xl border p-3 ${isSoldOut ? "bg-red-50 border-red-100" : "bg-emerald-50 border-emerald-100"}`}>
@@ -1079,7 +1079,7 @@ const HomestayDetail = () => {
 
               {isNonTouristUser && (
                 <p className="mt-2 text-xs text-red-600">
-                  Only tourist accounts can book homestay rooms.
+                  Only tourist accounts can book homestays.
                 </p>
               )}
 

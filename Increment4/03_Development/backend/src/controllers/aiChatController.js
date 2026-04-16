@@ -194,7 +194,7 @@ export const sendChatMessage = async (req, res) => {
        FROM ai_chat_messages
        WHERE conversation_id = $1
        ORDER BY created_at ASC, message_id ASC
-       LIMIT 40`,
+       LIMIT 24`,
       [conversationId]
     );
 

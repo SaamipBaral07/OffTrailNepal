@@ -164,7 +164,7 @@ const AIAssistant = () => {
         pushNotice(`AI fallback used: ${res.data.ai_error}`, "warning");
       }
 
-      await loadConversations({ selectFirst: false });
+      loadConversations({ selectFirst: false });
     } catch (error) {
       setMessages((prev) => prev.filter((msg) => msg.message_id !== optimisticUserMessage.message_id));
       pushNotice(error.response?.data?.message || "Failed to send message");

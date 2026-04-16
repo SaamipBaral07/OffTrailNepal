@@ -1,5 +1,5 @@
-const MAX_HISTORY_MESSAGES = 20;
-const DEFAULT_CHAT_TIMEOUT_MS = 120000;
+const MAX_HISTORY_MESSAGES = 12;
+const DEFAULT_CHAT_TIMEOUT_MS = 45000;
 
 const normalizeModelJsonText = (content) => {
   if (content === undefined || content === null) return "";
@@ -85,7 +85,7 @@ export const generateChatReply = async ({ message, historyMessages = [] }) => {
     model,
     temperature: isOllama ? 0.7 : 0.5,
     messages,
-    max_tokens: 450,
+    max_tokens: 260,
   };
 
   if (isOllama) {

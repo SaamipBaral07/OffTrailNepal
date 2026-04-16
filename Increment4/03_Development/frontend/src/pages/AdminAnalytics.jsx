@@ -16,6 +16,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import jsPDF from "jspdf";
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
 import { getToken } from "../tokenStore";
@@ -107,6 +108,7 @@ const AdminAnalytics = () => {
   const [dateTo, setDateTo] = useState("");
   const [providerFilter, setProviderFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [analytics, setAnalytics] = useState({
     trails: [],
     homestays: [],
@@ -460,6 +462,352 @@ const AdminAnalytics = () => {
     window.URL.revokeObjectURL(url);
   };
 
+  const handleExportPdf = () => {
+    setExportingPdf(true);
+
+    try {
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 8;
+      const contentWidth = pageWidth - margin * 2;
+      const sectionGap = 4;
+      const palette = {
+        navy: [12, 35, 64],
+        gray700: [55, 65, 81],
+        gray500: [107, 114, 128],
+        gray200: [229, 231, 235],
+        cardBg: [248, 250, 252],
+      };
+
+      const formatNpr = (value) => `NPR ${toNumber(value).toLocaleString("en-US")}`;
+      const providerLabel =
+        providerFilter === "all"
+          ? "All Providers"
+          : providerFilter === "esewa"
+          ? "eSewa"
+          : providerFilter === "stripe"
+          ? "Stripe"
+          : "Unknown";
+      const statusLabel =
+        statusFilter === "all"
+          ? "All States"
+          : statusFilter === "success"
+          ? "Successful"
+          : statusFilter === "pending"
+          ? "Pending"
+          : statusFilter === "refund"
+          ? "Refund"
+          : "Failed";
+
+      const drawCard = (x, y, w, h, title, value, subtitle, valueColor = palette.navy) => {
+        pdf.setFillColor(...palette.cardBg);
+        pdf.setDrawColor(...palette.gray200);
+        pdf.roundedRect(x, y, w, h, 2.5, 2.5, "FD");
+
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(8);
+        pdf.setTextColor(...palette.gray500);
+        pdf.text(String(title || "-"), x + 3, y + 4.8);
+
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(13);
+        pdf.setTextColor(...valueColor);
+        pdf.text(String(value || "-"), x + 3, y + 12.5);
+
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(7.2);
+        pdf.setTextColor(...palette.gray500);
+        pdf.text(String(subtitle || ""), x + 3, y + h - 3.2);
+      };
+
+      let y = margin;
+
+      // Header
+      pdf.setFillColor(...palette.navy);
+      pdf.roundedRect(margin, y, contentWidth, 24, 3, 3, "F");
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(15);
+      pdf.setTextColor(255, 255, 255);
+      pdf.text("OffTrail Admin Analytics Report", margin + 5, y + 8.5);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(8);
+      pdf.setTextColor(230, 236, 245);
+      pdf.text(
+        `Generated: ${new Date().toLocaleString("en-US")}  |  Last dashboard refresh: ${
+          lastUpdated ? lastUpdated.toLocaleString("en-US") : "-"
+        }`,
+        margin + 5,
+        y + 14.2
+      );
+      pdf.text("One-page executive snapshot of current filtered analytics", margin + 5, y + 19.2);
+
+      y += 24 + sectionGap;
+
+      // Filter summary strip
+      pdf.setFillColor(245, 247, 250);
+      pdf.setDrawColor(...palette.gray200);
+      pdf.roundedRect(margin, y, contentWidth, 11, 2, 2, "FD");
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(8);
+      pdf.setTextColor(...palette.gray700);
+      pdf.text("Active Filters", margin + 3, y + 4.6);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(...palette.gray500);
+      pdf.text(
+        `Date: ${dateFrom || "Start"} to ${dateTo || "Today"}    Provider: ${providerLabel}    Status: ${statusLabel}`,
+        margin + 3,
+        y + 8.5
+      );
+
+      y += 11 + sectionGap;
+
+      // KPI cards row
+      const kpiGap = 3;
+      const kpiWidth = (contentWidth - kpiGap * 3) / 4;
+      const kpiHeight = 24;
+      const kpis = [
+        {
+          title: "Filtered Revenue",
+          value: formatNpr(filteredRevenue),
+          subtitle: "From successful filtered sessions",
+          valueColor: [12, 35, 64],
+        },
+        {
+          title: "Payment Success",
+          value: `${paymentSuccessRate}%`,
+          subtitle: `${filteredSuccessfulPayments} of ${filteredPaymentSessions} sessions`,
+          valueColor: [6, 95, 70],
+        },
+        {
+          title: "Communication Queue",
+          value: `${toNumber(analytics.contact.summary.pending_reply_count)}`,
+          subtitle: "Pending enquiry replies",
+          valueColor: [55, 65, 81],
+        },
+        {
+          title: "Operational Alerts",
+          value: `${unresolvedOperationalAlerts}`,
+          subtitle: "Approvals, refunds, and replies",
+          valueColor: [185, 28, 28],
+        },
+      ];
+
+      kpis.forEach((item, index) => {
+        drawCard(
+          margin + (kpiWidth + kpiGap) * index,
+          y,
+          kpiWidth,
+          kpiHeight,
+          item.title,
+          item.value,
+          item.subtitle,
+          item.valueColor
+        );
+      });
+
+      y += kpiHeight + sectionGap;
+
+      // Middle row (verification + payment health)
+      const middleLeftWidth = 176;
+      const middleHeight = 53;
+      const middleRightX = margin + middleLeftWidth + sectionGap;
+      const middleRightWidth = contentWidth - middleLeftWidth - sectionGap;
+
+      pdf.setFillColor(255, 255, 255);
+      pdf.setDrawColor(...palette.gray200);
+      pdf.roundedRect(margin, y, middleLeftWidth, middleHeight, 2.5, 2.5, "FD");
+      pdf.roundedRect(middleRightX, y, middleRightWidth, middleHeight, 2.5, 2.5, "FD");
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(10.5);
+      pdf.setTextColor(...palette.navy);
+      pdf.text("Verification Pipeline", margin + 3, y + 6);
+      pdf.text("Payment Health", middleRightX + 3, y + 6);
+
+      const barColors = {
+        pending: [217, 119, 6],
+        approved: [5, 150, 105],
+        rejected: [220, 38, 38],
+      };
+
+      verificationRows.forEach((row, index) => {
+        const rowBaseY = y + 12 + index * 20;
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(8.5);
+        pdf.setTextColor(...palette.gray700);
+        pdf.text(row.label, margin + 3, rowBaseY);
+
+        const barBaseX = margin + 30;
+        const barTrackW = 105;
+        const metrics = [
+          { key: "pending", value: row.pending },
+          { key: "approved", value: row.approved },
+          { key: "rejected", value: row.rejected },
+        ];
+
+        metrics.forEach((metric, metricIndex) => {
+          const lineY = rowBaseY + 3.8 + metricIndex * 4.5;
+          const ratio = verificationPeak > 0 ? metric.value / verificationPeak : 0;
+          const barW = Math.max(barTrackW * ratio, metric.value > 0 ? 3 : 0);
+
+          pdf.setFillColor(243, 244, 246);
+          pdf.roundedRect(barBaseX, lineY - 1.4, barTrackW, 2.3, 1.1, 1.1, "F");
+          pdf.setFillColor(...barColors[metric.key]);
+          if (barW > 0) {
+            pdf.roundedRect(barBaseX, lineY - 1.4, barW, 2.3, 1.1, 1.1, "F");
+          }
+
+          pdf.setFont("helvetica", "normal");
+          pdf.setFontSize(7);
+          pdf.setTextColor(...palette.gray500);
+          pdf.text(`${metric.key[0].toUpperCase()}${metric.key.slice(1)} ${metric.value}`, barBaseX + barTrackW + 3, lineY);
+        });
+      });
+
+      const paymentTotal = Math.max(
+        paymentMix.reduce((sum, segment) => sum + toNumber(segment.value), 0),
+        1
+      );
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(18);
+      pdf.setTextColor(15, 118, 110);
+      pdf.text(`${paymentSuccessRate}%`, middleRightX + 4, y + 15);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(7.3);
+      pdf.setTextColor(...palette.gray500);
+      pdf.text("overall success rate", middleRightX + 24, y + 14.8);
+
+      paymentMix.forEach((segment, index) => {
+        const segY = y + 23 + index * 7;
+        const ratio = toNumber(segment.value) / paymentTotal;
+        const trackX = middleRightX + 34;
+        const trackW = middleRightWidth - 42;
+        const fillW = Math.max(trackW * ratio, segment.value > 0 ? 2 : 0);
+
+        const color = String(segment.color || "#475569").replace("#", "");
+        const rgb = [
+          Number.parseInt(color.slice(0, 2), 16),
+          Number.parseInt(color.slice(2, 4), 16),
+          Number.parseInt(color.slice(4, 6), 16),
+        ];
+
+        pdf.setFillColor(...rgb);
+        pdf.circle(middleRightX + 6.5, segY - 0.8, 1.1, "F");
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(7.2);
+        pdf.setTextColor(...palette.gray700);
+        pdf.text(segment.label, middleRightX + 9.5, segY);
+
+        pdf.setFillColor(243, 244, 246);
+        pdf.roundedRect(trackX, segY - 1.5, trackW, 2.4, 1, 1, "F");
+        if (fillW > 0) {
+          pdf.setFillColor(...rgb);
+          pdf.roundedRect(trackX, segY - 1.5, fillW, 2.4, 1, 1, "F");
+        }
+        pdf.setFontSize(7.1);
+        pdf.setTextColor(...palette.gray500);
+        pdf.text(`${toNumber(segment.value)}`, trackX + trackW + 1.8, segY);
+      });
+
+      y += middleHeight + sectionGap;
+
+      // Bottom row (revenue trend + contact)
+      const bottomHeight = 53;
+      const bottomLeftWidth = 176;
+      const bottomRightX = margin + bottomLeftWidth + sectionGap;
+      const bottomRightWidth = contentWidth - bottomLeftWidth - sectionGap;
+
+      pdf.setFillColor(255, 255, 255);
+      pdf.setDrawColor(...palette.gray200);
+      pdf.roundedRect(margin, y, bottomLeftWidth, bottomHeight, 2.5, 2.5, "FD");
+      pdf.roundedRect(bottomRightX, y, bottomRightWidth, bottomHeight, 2.5, 2.5, "FD");
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(10.5);
+      pdf.setTextColor(...palette.navy);
+      pdf.text("6-Month Revenue Trend", margin + 3, y + 6);
+      pdf.text("Contact & Inventory Snapshot", bottomRightX + 3, y + 6);
+
+      const chartX = margin + 8;
+      const chartY = y + 12;
+      const chartH = 30;
+      const chartW = bottomLeftWidth - 14;
+      const barGap = 5;
+      const monthCount = Math.max(revenueSeries.length, 1);
+      const barWidth = (chartW - barGap * (monthCount - 1)) / monthCount;
+
+      pdf.setDrawColor(226, 232, 240);
+      pdf.line(chartX, chartY + chartH, chartX + chartW, chartY + chartH);
+
+      revenueSeries.forEach((point, index) => {
+        const amount = toNumber(point.total);
+        const ratio = maxRevenuePoint > 0 ? amount / maxRevenuePoint : 0;
+        const barH = Math.max(chartH * ratio, amount > 0 ? 2 : 0);
+        const barX = chartX + index * (barWidth + barGap);
+        const barY = chartY + chartH - barH;
+
+        pdf.setFillColor(30, 76, 118);
+        pdf.roundedRect(barX, barY, barWidth, barH, 1, 1, "F");
+
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(7);
+        pdf.setTextColor(...palette.gray500);
+        pdf.text(point.label, barX + barWidth / 2, chartY + chartH + 4.6, { align: "center" });
+        pdf.text(`${Math.round(amount / 1000)}k`, barX + barWidth / 2, chartY + chartH + 8.3, { align: "center" });
+      });
+
+      const statRows = [
+        ["Total enquiries", `${toNumber(analytics.contact.summary.total_records)}`],
+        ["Reply rate", `${replyRate}%`],
+        ["Pending reply", `${toNumber(analytics.contact.summary.pending_reply_count)}`],
+        ["Booking-related enquiries", `${toNumber(analytics.contact.summary.booking_related)}`],
+        ["Total trails", `${analytics.trails.length}`],
+        ["Homestay / Guide sessions", `${toNumber(analytics.homestayPayments.summary.total_sessions)} / ${toNumber(analytics.guidePayments.summary.total_sessions)}`],
+      ];
+
+      statRows.forEach((row, index) => {
+        const rowY = y + 12 + index * 6.5;
+        pdf.setFont("helvetica", "normal");
+        pdf.setFontSize(7.8);
+        pdf.setTextColor(...palette.gray500);
+        pdf.text(row[0], bottomRightX + 3, rowY);
+
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(...palette.gray700);
+        pdf.text(row[1], bottomRightX + bottomRightWidth - 3, rowY, { align: "right" });
+      });
+
+      // Footer note
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(7);
+      pdf.setTextColor(...palette.gray500);
+      pdf.text(
+        "This one-page report is generated from currently applied filters and live dashboard data.",
+        margin,
+        pageHeight - 4
+      );
+
+      const fromPart = dateFrom || "start";
+      const toPart = dateTo || "today";
+      pdf.save(`admin-analytics-report-one-page-${fromPart}-to-${toPart}.pdf`);
+    } catch (pdfError) {
+      console.error("PDF export failed:", pdfError);
+      window.alert("Failed to export PDF report. Please try again.");
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   const paymentMix = useMemo(() => {
     const counts = {
       success: 0,
@@ -652,14 +1000,25 @@ const AdminAnalytics = () => {
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={handleExportCsv}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-navy/20 bg-navy text-white text-sm font-semibold hover:bg-navy-light transition-colors"
-            >
-              <Download className="h-4 w-4" />
-              Export CSV
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                disabled={exportingPdf}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-300/60 bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-70"
+              >
+                {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                {exportingPdf ? "Generating PDF..." : "Export PDF"}
+              </button>
+              <button
+                type="button"
+                onClick={handleExportCsv}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-navy/20 bg-navy text-white text-sm font-semibold hover:bg-navy-light transition-colors"
+              >
+                <Download className="h-4 w-4" />
+                Export CSV
+              </button>
+            </div>
           </div>
 
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -801,6 +1160,7 @@ const AdminAnalytics = () => {
 
             <div className="mt-6 flex justify-center">
               <div
+                data-pdf-safe-conic="1"
                 className="relative h-40 w-40 rounded-full"
                 style={{ backgroundImage: donutFillStyle }}
               >

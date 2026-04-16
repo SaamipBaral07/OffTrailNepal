@@ -15,6 +15,7 @@ import { useAuth } from "../context/AuthContext";
 import { getCsrfToken, getToken } from "../tokenStore";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
+import ChangePasswordCard from "../components/ChangePasswordCard";
 
 const AdminProfile = () => {
   const navigate = useNavigate();
@@ -264,6 +265,14 @@ const AdminProfile = () => {
             </section>
           </div>
         </section>
+
+        <div className="mt-6">
+          <ChangePasswordCard
+            onNotice={showNotice}
+            fallbackEndpoint="/api/auth/admin/password"
+            description="Keep your administrator account secure by updating your password regularly."
+          />
+        </div>
       </main>
 
       <LogoutModal

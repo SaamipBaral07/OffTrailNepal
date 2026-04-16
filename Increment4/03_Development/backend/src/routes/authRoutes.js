@@ -15,6 +15,10 @@ import {
   getTouristProfile,
   updateTouristProfile,
   updateTouristPassword,
+  updateHostPassword,
+  updateGuidePassword,
+  updateAdminPassword,
+  changePassword,
   getHostProfile,
   updateHostProfile,
   updateHostBankDetails,
@@ -84,17 +88,21 @@ router.post("/reset-password", resetPassword);
 router.post("/refresh-token", verifyRefreshToken, refreshTokenHandler);
 router.post("/logout", logout);
 router.get("/me", verifyToken, getMe);
+router.patch("/password", verifyToken, changePassword);
 router.get("/tourist/profile", verifyToken, getTouristProfile);
 router.patch("/tourist/profile", verifyToken, updateTouristProfile);
 router.patch("/tourist/password", verifyToken, updateTouristPassword);
 router.get("/host/profile", verifyToken, getHostProfile);
 router.patch("/host/profile", verifyToken, updateHostProfile);
+router.patch("/host/password", verifyToken, updateHostPassword);
 router.patch("/host/bank-details", verifyToken, updateHostBankDetails);
 router.get("/guide/profile", verifyToken, getGuideProfile);
-router.get("/admin/profile", verifyToken, getAdminProfile);
-router.get("/admin/activity-logs", verifyToken, requireAdmin, getAdminActivityLogs);
 router.patch("/guide/profile", verifyToken, updateGuideProfile);
+router.patch("/guide/password", verifyToken, updateGuidePassword);
 router.patch("/guide/bank-details", verifyToken, updateGuideBankDetails);
+router.get("/admin/profile", verifyToken, getAdminProfile);
+router.patch("/admin/password", verifyToken, updateAdminPassword);
+router.get("/admin/activity-logs", verifyToken, requireAdmin, getAdminActivityLogs);
 router.patch("/profile-photo", verifyToken, profileUpload.single("profile_photo"), updateProfilePhoto);
 
 export default router;

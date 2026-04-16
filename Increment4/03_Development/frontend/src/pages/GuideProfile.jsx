@@ -7,6 +7,7 @@ import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import { useAuth } from "../context/AuthContext";
 import { getToken, getCsrfToken } from "../tokenStore";
 import api from "../api";
+import ChangePasswordCard from "../components/ChangePasswordCard";
 import { Loader2, Save, UserRound, Mail, Phone, MapPin, CalendarDays, ArrowRight, Camera, BadgeCheck, Award, Building2, CreditCard, X } from "lucide-react";
 
 const GuideProfile = () => {
@@ -325,106 +326,114 @@ const GuideProfile = () => {
             </Link>
           </aside>
 
-          <section className="lg:col-span-8 rounded-3xl border border-navy/10 bg-white p-6 sm:p-8 shadow-[0_10px_24px_rgba(12,35,64,0.06)]">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <label className="block text-sm font-semibold text-gray-700">
-                Full Name
-                <div className="mt-1 relative">
-                  <UserRound className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
-                  <input
-                    type="text"
-                    value={form.full_name}
-                    onChange={(e) => onChange("full_name", e.target.value)}
-                    required
-                    className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
-                  />
+          <div className="lg:col-span-8 space-y-6">
+            <section className="rounded-3xl border border-navy/10 bg-white p-6 sm:p-8 shadow-[0_10px_24px_rgba(12,35,64,0.06)]">
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <label className="block text-sm font-semibold text-gray-700">
+                  Full Name
+                  <div className="mt-1 relative">
+                    <UserRound className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
+                    <input
+                      type="text"
+                      value={form.full_name}
+                      onChange={(e) => onChange("full_name", e.target.value)}
+                      required
+                      className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                    />
+                  </div>
+                </label>
+
+                <label className="block text-sm font-semibold text-gray-700">
+                  Email (Read-only)
+                  <div className="mt-1 relative">
+                    <Mail className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
+                    <input
+                      type="email"
+                      value={form.email}
+                      readOnly
+                      className="w-full rounded-xl border border-gray-200 bg-gray-100 pl-10 pr-3 py-2.5 text-sm text-gray-500"
+                    />
+                  </div>
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Phone Number
+                    <div className="mt-1 relative">
+                      <Phone className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
+                      <input
+                        type="text"
+                        value={form.phone}
+                        onChange={(e) => onChange("phone", e.target.value)}
+                        required
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                      />
+                    </div>
+                  </label>
+
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Citizenship Number
+                    <div className="mt-1 relative">
+                      <BadgeCheck className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
+                      <input
+                        type="text"
+                        value={form.license_no}
+                        onChange={(e) => onChange("license_no", e.target.value)}
+                        required
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                      />
+                    </div>
+                  </label>
                 </div>
-              </label>
 
-              <label className="block text-sm font-semibold text-gray-700">
-                Email (Read-only)
-                <div className="mt-1 relative">
-                  <Mail className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
-                  <input
-                    type="email"
-                    value={form.email}
-                    readOnly
-                    className="w-full rounded-xl border border-gray-200 bg-gray-100 pl-10 pr-3 py-2.5 text-sm text-gray-500"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Experience Years
+                    <div className="mt-1 relative">
+                      <Award className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
+                      <input
+                        type="number"
+                        min="0"
+                        value={form.experience_years}
+                        onChange={(e) => onChange("experience_years", e.target.value)}
+                        required
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                      />
+                    </div>
+                  </label>
+
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Address
+                    <div className="mt-1 relative">
+                      <MapPin className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
+                      <input
+                        type="text"
+                        value={form.address}
+                        onChange={(e) => onChange("address", e.target.value)}
+                        required
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                      />
+                    </div>
+                  </label>
                 </div>
-              </label>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <label className="block text-sm font-semibold text-gray-700">
-                  Phone Number
-                  <div className="mt-1 relative">
-                    <Phone className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
-                    <input
-                      type="text"
-                      value={form.phone}
-                      onChange={(e) => onChange("phone", e.target.value)}
-                      required
-                      className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
-                    />
-                  </div>
-                </label>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-gold to-[#D4A43A] px-5 py-2.5 text-sm font-bold text-navy shadow-md hover:shadow-lg disabled:opacity-70"
+                >
+                  {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                  <Save className="h-4 w-4" /> Save Changes
+                </button>
+              </form>
+            </section>
 
-                <label className="block text-sm font-semibold text-gray-700">
-                  Citizenship Number
-                  <div className="mt-1 relative">
-                    <BadgeCheck className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
-                    <input
-                      type="text"
-                      value={form.license_no}
-                      onChange={(e) => onChange("license_no", e.target.value)}
-                      required
-                      className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
-                    />
-                  </div>
-                </label>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <label className="block text-sm font-semibold text-gray-700">
-                  Experience Years
-                  <div className="mt-1 relative">
-                    <Award className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
-                    <input
-                      type="number"
-                      min="0"
-                      value={form.experience_years}
-                      onChange={(e) => onChange("experience_years", e.target.value)}
-                      required
-                      className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
-                    />
-                  </div>
-                </label>
-
-                <label className="block text-sm font-semibold text-gray-700">
-                  Address
-                  <div className="mt-1 relative">
-                    <MapPin className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
-                    <input
-                      type="text"
-                      value={form.address}
-                      onChange={(e) => onChange("address", e.target.value)}
-                      required
-                      className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
-                    />
-                  </div>
-                </label>
-              </div>
-
-              <button
-                type="submit"
-                disabled={saving}
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-gold to-[#D4A43A] px-5 py-2.5 text-sm font-bold text-navy shadow-md hover:shadow-lg disabled:opacity-70"
-              >
-                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-                <Save className="h-4 w-4" /> Save Changes
-              </button>
-            </form>
-          </section>
+            <ChangePasswordCard
+              onNotice={showNotice}
+              fallbackEndpoint="/api/auth/guide/password"
+              description="Change your guide account password using your current password for verification."
+            />
+          </div>
         </div>
       </main>
 

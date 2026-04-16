@@ -39,6 +39,62 @@ const getUserTableInfo = (userType) => {
   return map[userType] || null;
 };
 
+const updatePasswordForAuthenticatedUser = async (req, res, expectedUserType = null) => {
+  try {
+    if (!req.user?.user_type || !req.user?.user_id) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (expectedUserType && req.user.user_type !== expectedUserType) {
+      return res.status(403).json({ message: `${expectedUserType.charAt(0).toUpperCase()}${expectedUserType.slice(1)} access only` });
+    }
+
+    const tableInfo = getUserTableInfo(req.user.user_type);
+    if (!tableInfo) {
+      return res.status(400).json({ message: "Invalid user type" });
+    }
+
+    const { current_password, new_password } = req.body || {};
+
+    if (!current_password || !new_password) {
+      return res.status(400).json({ message: "current_password and new_password are required" });
+    }
+
+    if (String(new_password).length < 8) {
+      return res.status(400).json({ message: "New password must be at least 8 characters" });
+    }
+
+    if (String(current_password) === String(new_password)) {
+      return res.status(400).json({ message: "New password must be different from current password" });
+    }
+
+    const userResult = await pool.query(
+      `SELECT password FROM ${tableInfo.table} WHERE ${tableInfo.idColumn} = $1`,
+      [req.user.user_id]
+    );
+
+    if (!userResult.rows.length) {
+      return res.status(404).json({ message: "User account not found" });
+    }
+
+    const matches = await bcrypt.compare(current_password, userResult.rows[0].password);
+    if (!matches) {
+      return res.status(400).json({ message: "Current password is incorrect" });
+    }
+
+    const hashedPassword = await bcrypt.hash(new_password, 10);
+    await pool.query(
+      `UPDATE ${tableInfo.table} SET password = $1 WHERE ${tableInfo.idColumn} = $2`,
+      [hashedPassword, req.user.user_id]
+    );
+
+    return res.status(200).json({ message: "Password updated successfully" });
+  } catch (error) {
+    console.error("Update password error:", error);
+    return res.status(500).json({ message: "Server error updating password" });
+  }
+};
+
 const deleteLocalUploadIfExists = (imagePath) => {
   if (!imagePath) return;
   const absolutePath = path.join(srcDir, String(imagePath).replace(/^\/+/, ""));
@@ -677,46 +733,23 @@ export const updateTouristProfile = async (req, res) => {
    TOURIST PASSWORD (UPDATE)
 ========================= */
 export const updateTouristPassword = async (req, res) => {
-  try {
-    if (req.user.user_type !== "tourist") {
-      return res.status(403).json({ message: "Tourist access only" });
-    }
+  return updatePasswordForAuthenticatedUser(req, res, "tourist");
+};
 
-    const { current_password, new_password } = req.body;
+export const updateHostPassword = async (req, res) => {
+  return updatePasswordForAuthenticatedUser(req, res, "host");
+};
 
-    if (!current_password || !new_password) {
-      return res.status(400).json({ message: "current_password and new_password are required" });
-    }
+export const updateGuidePassword = async (req, res) => {
+  return updatePasswordForAuthenticatedUser(req, res, "guide");
+};
 
-    if (String(new_password).length < 8) {
-      return res.status(400).json({ message: "New password must be at least 8 characters" });
-    }
+export const updateAdminPassword = async (req, res) => {
+  return updatePasswordForAuthenticatedUser(req, res, "admin");
+};
 
-    const userResult = await pool.query(
-      `SELECT password FROM tourists WHERE tourist_id = $1`,
-      [req.user.user_id]
-    );
-
-    if (!userResult.rows.length) {
-      return res.status(404).json({ message: "Tourist account not found" });
-    }
-
-    const matches = await bcrypt.compare(current_password, userResult.rows[0].password);
-    if (!matches) {
-      return res.status(400).json({ message: "Current password is incorrect" });
-    }
-
-    const hashed = await bcrypt.hash(new_password, 10);
-    await pool.query(
-      `UPDATE tourists SET password = $1 WHERE tourist_id = $2`,
-      [hashed, req.user.user_id]
-    );
-
-    return res.status(200).json({ message: "Password updated successfully" });
-  } catch (error) {
-    console.error("Update tourist password error:", error);
-    return res.status(500).json({ message: "Server error updating password" });
-  }
+export const changePassword = async (req, res) => {
+  return updatePasswordForAuthenticatedUser(req, res);
 };
 
 /* =========================

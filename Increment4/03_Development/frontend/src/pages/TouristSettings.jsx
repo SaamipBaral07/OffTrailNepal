@@ -7,7 +7,7 @@ import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import { useAuth } from "../context/AuthContext";
 import { getToken } from "../tokenStore";
 import api from "../api";
-import { Bell, KeyRound, Loader2, Lock, Save, ShieldCheck, UserRound, Home } from "lucide-react";
+import { Bell, Eye, EyeOff, KeyRound, Loader2, Lock, Save, ShieldCheck, UserRound, Home } from "lucide-react";
 
 const SETTINGS_KEY = "offtrail-tourist-settings";
 
@@ -23,6 +23,9 @@ const TouristSettings = () => {
 
   const [savingPassword, setSavingPassword] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [security, setSecurity] = useState({
     current_password: "",
     new_password: "",
@@ -88,10 +91,20 @@ const TouristSettings = () => {
 
     setSavingPassword(true);
     try {
-      await api.patch("/api/auth/tourist/password", {
+      const payload = {
         current_password: security.current_password,
         new_password: security.new_password,
-      });
+      };
+
+      try {
+        await api.patch("/api/auth/password", payload);
+      } catch (error) {
+        if (error?.response?.status === 404) {
+          await api.patch("/api/auth/tourist/password", payload);
+        } else {
+          throw error;
+        }
+      }
 
       showNotice("Password updated successfully");
       setSecurity({ current_password: "", new_password: "", confirm_password: "" });
@@ -142,12 +155,20 @@ const TouristSettings = () => {
                 <div className="mt-1 relative">
                   <Lock className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
                   <input
-                    type="password"
+                    type={showCurrentPassword ? "text" : "password"}
                     value={security.current_password}
                     onChange={(e) => setSecurity((prev) => ({ ...prev, current_password: e.target.value }))}
                     required
-                    className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-10 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPassword((prev) => !prev)}
+                    className="absolute right-2 top-2.5 rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                    aria-label={showCurrentPassword ? "Hide current password" : "Show current password"}
+                  >
+                    {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </label>
 
@@ -156,13 +177,21 @@ const TouristSettings = () => {
                 <div className="mt-1 relative">
                   <ShieldCheck className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
                   <input
-                    type="password"
+                    type={showNewPassword ? "text" : "password"}
                     value={security.new_password}
                     onChange={(e) => setSecurity((prev) => ({ ...prev, new_password: e.target.value }))}
                     required
                     minLength={8}
-                    className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-10 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword((prev) => !prev)}
+                    className="absolute right-2 top-2.5 rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                    aria-label={showNewPassword ? "Hide new password" : "Show new password"}
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </label>
 
@@ -171,12 +200,20 @@ const TouristSettings = () => {
                 <div className="mt-1 relative">
                   <ShieldCheck className="absolute left-3 top-3.5 h-4 w-4 text-gray-300" />
                   <input
-                    type="password"
+                    type={showConfirmPassword ? "text" : "password"}
                     value={security.confirm_password}
                     onChange={(e) => setSecurity((prev) => ({ ...prev, confirm_password: e.target.value }))}
                     required
-                    className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 pl-10 pr-10 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-gold/40"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((prev) => !prev)}
+                    className="absolute right-2 top-2.5 rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                    aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </label>
 

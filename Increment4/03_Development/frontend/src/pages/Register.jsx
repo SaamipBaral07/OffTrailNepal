@@ -54,6 +54,7 @@ const Register = () => {
   const [passwordStrength, setPasswordStrength] = useState(0);
   const [profilePhotoFile, setProfilePhotoFile] = useState(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState("");
+  const [emailError, setEmailError] = useState("");
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -71,6 +72,12 @@ const Register = () => {
       ...prev,
       [name]: value
     }));
+
+    // Validate email in real-time
+    if (name === "email") {
+      const errorMsg = getEmailErrorMessage(value);
+      setEmailError(errorMsg);
+    }
 
     // Calculate password strength
     if (name === 'password') {
@@ -146,6 +153,53 @@ const Register = () => {
     return `${code}${local}`;
   };
 
+  // Email validation function with proper regex
+  const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  // Check for specific email format issues
+  const getEmailErrorMessage = (email) => {
+    if (!email) return "";
+    
+    if (email.includes("@@")) {
+      return "Email cannot contain double @ symbols";
+    }
+    
+    if (!email.includes("@")) {
+      return "Email must contain @ symbol";
+    }
+    
+    if (!email.includes(".")) {
+      return "Email must contain a domain (e.g., example.com)";
+    }
+    
+    const parts = email.split("@");
+    if (parts[0] === "") {
+      return "Email must have a username before @";
+    }
+    
+    if (parts[1] === "" || parts[1] === ".") {
+      return "Email must have a valid domain after @";
+    }
+    
+    if (!parts[1].includes(".")) {
+      return "Email domain must contain a dot (e.g., example.com)";
+    }
+    
+    const domainParts = parts[1].split(".");
+    if (domainParts[domainParts.length - 1].length < 2) {
+      return "Email domain extension must be at least 2 characters (e.g., .com, .co.uk)";
+    }
+    
+    if (!validateEmail(email)) {
+      return "Invalid email format";
+    }
+    
+    return "";
+  };
+
   const handleNationalityChange = (value) => {
     const selected = COUNTRY_PHONE_OPTIONS.find((item) => item.name === value);
 
@@ -160,6 +214,18 @@ const Register = () => {
     e.preventDefault();
     setError("");
     setSuccess("");
+
+    // Validate email format
+    const emailValidationError = getEmailErrorMessage(formData.email);
+    if (emailValidationError) {
+      setError(`Email validation failed: ${emailValidationError}`);
+      return;
+    }
+
+    if (!formData.email) {
+      setError("Email is required");
+      return;
+    }
 
     // Validation
     if (!formData.phone_country_code || !formData.phone || !validatePhoneLocalPart(formData.phone)) {
@@ -429,11 +495,23 @@ const Register = () => {
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
-                    className="w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold transition-all"
+                    className={`w-full pl-10 pr-3 py-3 border rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 transition-all ${
+                      emailError
+                        ? "border-red-400 focus:ring-red-300 focus:border-red-400"
+                        : "border-gray-200 focus:ring-gold/30 focus:border-gold"
+                    }`}
                     placeholder="your.email@example.com"
                     required
                   />
                 </div>
+                {emailError && (
+                  <p className="text-red-500 text-sm mt-2 flex items-center">
+                    <svg className="w-4 h-4 mr-1.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                    {emailError}
+                  </p>
+                )}
               </div>
 
               {/* Phone Number */}
@@ -442,7 +520,7 @@ const Register = () => {
                   Phone Number *
                 </label>
                 <div className="grid grid-cols-12 gap-2">
-                  <div className="col-span-5 sm:col-span-4 relative">
+                  <div className="col-span-4 sm:col-span-3 relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <Globe className="h-4 w-4 text-gray-400" />
                     </div>
@@ -450,7 +528,7 @@ const Register = () => {
                       name="phone_country_code"
                       value={formData.phone_country_code}
                       onChange={handleChange}
-                      className="w-full pl-9 pr-2 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold transition-all text-sm"
+                      className="w-full pl-9 pr-3 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-gold/30 focus:border-gold transition-all text-xs sm:text-sm"
                       required
                     >
                       {COUNTRY_PHONE_OPTIONS.map((item) => (
@@ -460,7 +538,7 @@ const Register = () => {
                       ))}
                     </select>
                   </div>
-                  <div className="col-span-7 sm:col-span-8 relative">
+                  <div className="col-span-8 sm:col-span-9 relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <Phone className="h-5 w-5 text-gray-400" />
                     </div>

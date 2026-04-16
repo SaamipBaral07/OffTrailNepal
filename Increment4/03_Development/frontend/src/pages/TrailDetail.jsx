@@ -465,7 +465,7 @@ const HomestayCard = ({
         <div className="absolute top-3 right-3 bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-sm border border-white/80">
           <span className="text-xs font-extrabold text-charcoal">
             NPR {Number(homestay.price_per_night).toLocaleString()}
-            <span className="font-normal text-gray-400">/night</span>
+            <span className="font-normal text-gray-400">/person/night</span>
           </span>
         </div>
 

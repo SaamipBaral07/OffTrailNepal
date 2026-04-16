@@ -49,7 +49,7 @@ const WishlistItemCard = ({ item, onRemove, removing }) => {
         {!item.removed && item.item_type === "homestay" && (
           <div className="mt-3 flex flex-wrap gap-2 text-xs">
             <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700 font-semibold">
-              NPR {Number(item.metadata?.price_per_night || 0).toLocaleString()} / night
+              NPR {Number(item.metadata?.price_per_night || 0).toLocaleString()} / person / night
             </span>
             <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700 font-semibold">
               <Star className="h-3 w-3 fill-current" /> {Number(item.metadata?.avg_rating || 0).toFixed(1)}

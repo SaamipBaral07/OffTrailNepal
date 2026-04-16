@@ -1885,7 +1885,7 @@ const AdminDashboard = () => {
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-xs font-bold uppercase tracking-wide text-gold-dark">Testimonials Selection</p>
-                      <p className="text-sm text-gray-700 mt-1">Select up to 3 tourist reviews for landing page testimonial cards.</p>
+                      <p className="text-sm text-gray-700 mt-1">Select up to 3 testimonials from tourists, hosts, and guides for landing page cards.</p>
                     </div>
                     <div className="flex items-center gap-2 text-xs">
                       <span className="inline-flex rounded-full border border-gold/40 bg-white px-2.5 py-1 font-bold text-gold-dark">
@@ -1915,7 +1915,7 @@ const AdminDashboard = () => {
                     </div>
                   ) : platformReviewsAdmin.length === 0 ? (
                     <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-white px-4 py-6 text-sm text-gray-500">
-                      No tourist platform reviews submitted yet.
+                      No platform testimonials have been submitted yet.
                     </div>
                   ) : (
                     <div className="mt-4 space-y-3">
@@ -1927,6 +1927,10 @@ const AdminDashboard = () => {
                           Number(platformReviewsAdminSummary.featured_count || 0) >= 3;
                         const reviewerLocation =
                           String(review.reviewer_location || "").trim() || "Verified Trekker";
+                        const reviewerName = String(review.submitter_name || review.tourist_name || "Community Member").trim();
+                        const reviewerEmail = String(review.submitter_email || review.tourist_email || "").trim();
+                        const reviewerRole = String(review.submitter_user_type || "traveler").trim();
+                        const reviewerProfileImagePath = review.submitter_profile_image_path || review.profile_image_path || null;
 
                         return (
                           <div
@@ -1937,19 +1941,20 @@ const AdminDashboard = () => {
                               <div className="min-w-0">
                                 <div className="flex items-center gap-3">
                                   <div className="h-11 w-11 rounded-full overflow-hidden bg-gradient-to-br from-navy to-navy-light text-white font-bold text-sm flex items-center justify-center">
-                                    {review.profile_image_path ? (
+                                    {reviewerProfileImagePath ? (
                                       <img
-                                        src={`http://localhost:5000${review.profile_image_path}`}
-                                        alt={review.tourist_name || "Trekker"}
+                                        src={`http://localhost:5000${reviewerProfileImagePath}`}
+                                        alt={reviewerName || "Trekker"}
                                         className="h-full w-full object-cover"
                                       />
                                     ) : (
-                                      String(review.tourist_name || "T").charAt(0).toUpperCase()
+                                      String(reviewerName || "T").charAt(0).toUpperCase()
                                     )}
                                   </div>
                                   <div className="min-w-0">
-                                    <p className="text-sm font-bold text-gray-900 truncate">{review.tourist_name}</p>
-                                    <p className="text-xs text-gray-500 truncate">{review.tourist_email}</p>
+                                    <p className="text-sm font-bold text-gray-900 truncate">{reviewerName}</p>
+                                    <p className="text-xs text-gray-500 truncate">{reviewerEmail}</p>
+                                    <p className="text-[11px] uppercase tracking-wide text-gray-400 mt-0.5">{reviewerRole}</p>
                                     <p className="text-xs text-gray-500 mt-0.5">{reviewerLocation}</p>
                                   </div>
                                 </div>
@@ -3118,7 +3123,7 @@ const HomestayCard = ({ homestay: h, isExpanded, onToggle, onApprove, onReject }
             </span>
             <span className="flex items-center gap-1">
               <DollarSign className="h-3.5 w-3.5" />
-              NPR {Number(h.price_per_night).toLocaleString()}/night
+              NPR {Number(h.price_per_night).toLocaleString()}/person/night
             </span>
           </div>
         </div>
@@ -3192,7 +3197,7 @@ const HomestayCard = ({ homestay: h, isExpanded, onToggle, onApprove, onReject }
           {/* Homestay details */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-              <p className="text-xs text-gray-400 mb-1">Price/Night</p>
+              <p className="text-xs text-gray-400 mb-1">Price/Person/Night</p>
               <p className="text-lg font-bold text-gray-900">NPR {Number(h.price_per_night).toLocaleString()}</p>
             </div>
             <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">

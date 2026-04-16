@@ -131,7 +131,7 @@ const HomestaysPage = () => {
           <p className="text-xs uppercase tracking-[0.2em] text-gold/90 font-semibold">Stay Explorer</p>
           <h1 className="mt-2 text-3xl sm:text-4xl font-heading font-extrabold text-white">Browse Trail Homestays</h1>
           <p className="mt-3 max-w-2xl text-sm sm:text-base text-white/70">
-            Discover approved local stays along trekking routes. Compare prices, room availability, ratings, and trail context in one place.
+            Discover approved local stays along trekking routes. Compare per-person nightly prices, room availability, ratings, and trail context in one place.
           </p>
         </section>
 
@@ -316,7 +316,7 @@ const HomestaysPage = () => {
 
                     <div className="grid grid-cols-2 gap-2 mb-4 text-xs">
                       <div className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2">
-                        <p className="text-gray-400">Price / Night</p>
+                        <p className="text-gray-400">Price / Person / Night</p>
                         <p className="font-bold text-gray-900 mt-0.5">NPR {Number(homestay.price_per_night || 0).toLocaleString()}</p>
                       </div>
                       <div className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2">
