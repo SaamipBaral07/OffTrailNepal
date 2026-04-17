@@ -262,6 +262,7 @@ export const getGuidesByTrail = async (req, res) => {
     const result = await pool.query(
       `SELECT gt.id, gt.experience_level,
               g.guide_id, g.full_name, g.experience_years, g.license_no,
+              gv.verification_status,
               COALESCE(gr.avg_rating, 0) AS avg_rating,
               COALESCE(gr.total_reviews, 0) AS total_reviews
        FROM guide_trails gt
@@ -303,6 +304,7 @@ export const getPublicGuides = async (req, res) => {
       `SELECT g.guide_id,
               g.full_name,
               g.experience_years,
+              gv.verification_status,
               COALESCE(ROUND(AVG(gr.rating)::numeric, 1), 0) AS avg_rating,
               COUNT(DISTINCT gr.review_id)::int AS total_reviews,
               COUNT(DISTINCT gt.id)::int AS total_trails,
@@ -328,7 +330,7 @@ export const getPublicGuides = async (req, res) => {
             AND gs.approval_status = 'approved'
        LEFT JOIN guide_reviews gr ON gr.guide_id = g.guide_id
        WHERE gv.verification_status = 'approved'
-       GROUP BY g.guide_id
+       GROUP BY g.guide_id, gv.verification_status
        ORDER BY g.created_at DESC`
     );
 
@@ -346,6 +348,7 @@ export const getPublicGuides = async (req, res) => {
         guide_id: Number(row.guide_id),
         full_name: row.full_name,
         experience_years: Number(row.experience_years || 0),
+        verification_status: String(row.verification_status || "").trim().toLowerCase(),
         avg_rating: Number(row.avg_rating || 0),
         total_reviews: Number(row.total_reviews || 0),
         total_trails: Number(row.total_trails || 0),

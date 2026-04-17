@@ -1,6 +1,7 @@
 import pool from "../config/db.js";
 
 const ACTIVE_GUIDE_BOOKING_STATUSES = ["pending", "confirmed"];
+const BLOCKING_GUIDE_SERVICE_DELETION_BOOKING_STATUSES = ["confirmed"];
 const APPROVAL_STATUSES = new Set(["pending", "approved", "rejected"]);
 
 const normalizeApprovalStatus = (value) => String(value || "").trim().toLowerCase();
@@ -219,6 +220,22 @@ export const deleteService = async (req, res) => {
       return res.status(404).json({ message: "Service not found or not owned by you" });
     }
 
+    const activeBookingCheck = await pool.query(
+      `SELECT booking_id
+       FROM guide_package_bookings
+       WHERE service_id = $1
+         AND guide_id = $2
+         AND status = ANY($3::text[])
+       LIMIT 1`,
+      [id, guideId, BLOCKING_GUIDE_SERVICE_DELETION_BOOKING_STATUSES]
+    );
+
+    if (activeBookingCheck.rows.length > 0) {
+      return res.status(409).json({
+        message: "Cannot delete service while confirmed package bookings exist. Please cancel all confirmed bookings first.",
+      });
+    }
+
     await pool.query(
       `DELETE FROM guide_services WHERE service_id = $1 AND guide_id = $2`,
       [id, guideId]
@@ -284,6 +301,7 @@ export const getPublicServicesByTrail = async (req, res) => {
          g.experience_years,
          g.license_no,
          gt.experience_level,
+         gv.verification_status,
          COALESCE(gr.avg_rating, 0) AS avg_rating,
          COALESCE(gr.total_reviews, 0) AS total_reviews,
          COALESCE(ga.manual_unavailable_dates, ARRAY[]::text[]) AS manual_unavailable_dates,
@@ -366,6 +384,7 @@ export const getPublicServicesByGuide = async (req, res) => {
          g.guide_id,
          g.full_name AS guide_name,
          g.experience_years,
+         gv.verification_status,
          COALESCE(gr.avg_rating, 0) AS avg_rating,
          COALESCE(gr.total_reviews, 0) AS total_reviews
        FROM guide_services gs

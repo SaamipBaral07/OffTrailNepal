@@ -23,6 +23,8 @@ const HOMESTAY_AMENITY_CATALOG = [
   { key: "tv", label: "TV", icon_key: "tv" },
 ];
 
+const BLOCKING_HOMESTAY_DELETION_BOOKING_STATUSES = ["confirmed"];
+
 const parseCoordinate = (rawValue, fieldName, min, max) => {
   if (rawValue === undefined || rawValue === null || rawValue === "") {
     return { value: null, error: null };
@@ -719,6 +721,22 @@ export const deleteHomestay = async (req, res) => {
 
     if (ownership.rows.length === 0) {
       return res.status(404).json({ message: "Homestay not found or not owned by you" });
+    }
+
+    const activeBookingCheck = await pool.query(
+      `SELECT booking_id
+       FROM homestay_bookings
+       WHERE homestay_id = $1
+         AND host_id = $2
+         AND status = ANY($3::text[])
+       LIMIT 1`,
+      [id, hostId, BLOCKING_HOMESTAY_DELETION_BOOKING_STATUSES]
+    );
+
+    if (activeBookingCheck.rows.length > 0) {
+      return res.status(409).json({
+        message: "Cannot delete homestay while confirmed bookings exist. Please cancel all confirmed bookings first.",
+      });
     }
 
     // Get images to delete from filesystem

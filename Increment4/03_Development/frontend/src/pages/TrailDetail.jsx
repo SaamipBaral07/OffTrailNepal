@@ -32,6 +32,7 @@ import {
   Tv,
   Snowflake,
   Star,
+  BadgeCheck,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DayPicker } from "react-day-picker";
@@ -658,7 +659,12 @@ const GuideServiceCard = ({
         <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gold to-amber-500 flex items-center justify-center text-white text-xl font-bold shadow-md mb-3">
           {service.guide_name.charAt(0)}
         </div>
-        <h4 className="font-bold text-charcoal text-center mb-1">{service.guide_name}</h4>
+        <div className="flex items-center justify-center gap-2 mb-1">
+          <h4 className="font-bold text-charcoal text-center">{service.guide_name}</h4>
+          {service.verification_status === 'approved' && (
+            <BadgeCheck className="h-4 w-4 text-emerald-600 flex-shrink-0" title="Verified guide" />
+          )}
+        </div>
         <div className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 mb-3">
           <Star className={`h-3 w-3 ${totalReviews > 0 ? "fill-amber-500 text-amber-500" : "text-amber-300"}`} />
           {totalReviews > 0 ? `${avgRating.toFixed(1)} / 5 (${totalReviews})` : "No reviews yet"}
@@ -782,7 +788,12 @@ const BaseGuideCard = ({
               {guide.full_name.charAt(0)}
             </div>
             <div className="min-w-0">
-              <h4 className="font-bold text-charcoal truncate">{guide.full_name}</h4>
+              <div className="flex items-center gap-1">
+                <h4 className="font-bold text-charcoal truncate">{guide.full_name}</h4>
+                {guide.verification_status === 'approved' && (
+                  <BadgeCheck className="h-4 w-4 text-emerald-600 flex-shrink-0" title="Verified guide" />
+                )}
+              </div>
               <p className="text-xs text-gray-500 mt-1">Independent base guide</p>
             </div>
           </div>
@@ -839,6 +850,7 @@ const GuidePackageBookingModal = ({
     special_requests: "",
   });
   const [hoveredDate, setHoveredDate] = useState(null);
+  const [blockedRangeSelectionMessage, setBlockedRangeSelectionMessage] = useState("");
 
   useEffect(() => {
     if (!isOpen) {
@@ -850,6 +862,7 @@ const GuidePackageBookingModal = ({
         special_requests: "",
       });
       setHoveredDate(null);
+      setBlockedRangeSelectionMessage("");
     }
   }, [isOpen, service?.service_id]);
 
@@ -892,6 +905,11 @@ const GuidePackageBookingModal = ({
     () => getBookingTotalDays(form.start_date, form.end_date),
     [form.start_date, form.end_date]
   );
+
+  const minimumSelectableEndDateKey = useMemo(() => {
+    if (!form.start_date) return "";
+    return addDaysToDateKey(form.start_date, serviceMinBookingDays) || "";
+  }, [form.start_date, serviceMinBookingDays]);
 
   const normalizedParticipantsCount = Math.max(
     1,
@@ -947,17 +965,75 @@ const GuidePackageBookingModal = ({
 
   const startDateTooSoon = Boolean(form.start_date) && form.start_date < minimumStartDateKey;
   const endDateInvalid = Boolean(form.start_date && form.end_date) && form.end_date <= form.start_date;
+  const blockedDateConflictMessage = blockedDatesInSelection.length > 0
+    ? `Guide is unavailable on ${blockedDatesInSelection[0]}. Please choose a different date range.`
+    : "";
   const minimumDurationNotMet =
     Boolean(form.start_date && form.end_date) && bookingTotalDays < serviceMinBookingDays;
+  const minimumDurationDeficit = minimumDurationNotMet
+    ? Math.max(0, serviceMinBookingDays - bookingTotalDays)
+    : 0;
+
+  const minimumDurationHelper = useMemo(() => {
+    if (!form.start_date) {
+      return {
+        containerClassName: "border-amber-200 bg-amber-50 text-amber-900",
+        iconClassName: "text-amber-700",
+        message: `Minimum booking is ${serviceMinBookingDays} day${serviceMinBookingDays === 1 ? "" : "s"}. Pick a start date to continue.`,
+      };
+    }
+
+    if (!form.end_date) {
+      return {
+        containerClassName: "border-navy/20 bg-navy/5 text-navy",
+        iconClassName: "text-navy",
+        message: `Choose an end date on or after ${minimumSelectableEndDateKey} to meet the ${serviceMinBookingDays}-day minimum.`,
+      };
+    }
+
+    if (blockedRangeSelectionMessage || blockedDateConflictMessage) {
+      return {
+        containerClassName: "border-red-200 bg-red-50 text-red-700",
+        iconClassName: "text-red-600",
+        message: blockedRangeSelectionMessage || blockedDateConflictMessage,
+      };
+    }
+
+    if (minimumDurationNotMet) {
+      return {
+        containerClassName: "border-red-200 bg-red-50 text-red-700",
+        iconClassName: "text-red-600",
+        message: `You selected ${bookingTotalDays} day${bookingTotalDays === 1 ? "" : "s"}. Select at least ${minimumDurationDeficit} more day${minimumDurationDeficit === 1 ? "" : "s"}.`,
+      };
+    }
+
+    return {
+      containerClassName: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      iconClassName: "text-emerald-600",
+      message: `Selected duration is ${bookingTotalDays} day${bookingTotalDays === 1 ? "" : "s"}. Minimum duration requirement is met.`,
+    };
+  }, [
+    form.start_date,
+    form.end_date,
+    bookingTotalDays,
+    serviceMinBookingDays,
+    minimumSelectableEndDateKey,
+    blockedRangeSelectionMessage,
+    blockedDateConflictMessage,
+    minimumDurationNotMet,
+    minimumDurationDeficit,
+  ]);
 
   const availabilityValidationMessage = startDateTooSoon
     ? `Please choose a start date on or after ${minimumStartDateKey}.`
     : endDateInvalid
       ? "End date must be after start date."
+      : blockedRangeSelectionMessage
+        ? blockedRangeSelectionMessage
+      : blockedDateConflictMessage
+        ? blockedDateConflictMessage
       : minimumDurationNotMet
-        ? `This package requires at least ${serviceMinBookingDays} booking day(s).`
-      : blockedDatesInSelection.length > 0
-        ? `Guide is unavailable on ${blockedDatesInSelection[0]}. Please choose a different date range.`
+        ? `You selected ${bookingTotalDays} day${bookingTotalDays === 1 ? "" : "s"}. This package requires at least ${serviceMinBookingDays} day${serviceMinBookingDays === 1 ? "" : "s"}.`
         : "";
 
   if (!isOpen || !service) return null;
@@ -1023,14 +1099,26 @@ const GuidePackageBookingModal = ({
                 <p className="text-sm font-semibold text-gray-700">Package Date Range</p>
                 <p className="text-xs text-gray-500">
                   {form.start_date && form.end_date
-                    ? `${form.start_date} to ${form.end_date}`
+                    ? `${form.start_date} to ${form.end_date} (${bookingTotalDays} day${bookingTotalDays === 1 ? "" : "s"})`
                     : "Select trek start and end dates"}
                 </p>
+              </div>
+
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full border border-gold/35 bg-gold-pale px-2.5 py-1 text-[11px] font-semibold text-gold-dark">
+                  Minimum booking: {serviceMinBookingDays} day{serviceMinBookingDays === 1 ? "" : "s"}
+                </span>
+                {form.start_date && !form.end_date && minimumSelectableEndDateKey && (
+                  <span className="inline-flex items-center rounded-full border border-navy/20 bg-navy/5 px-2.5 py-1 text-[11px] font-semibold text-navy">
+                    Earliest valid end date: {minimumSelectableEndDateKey}
+                  </span>
+                )}
               </div>
 
               <DayPicker
                 mode="range"
                 min={serviceMinBookingDays}
+                excludeDisabled
                 showOutsideDays
                 fixedWeeks
                 selected={selectedDateRange}
@@ -1038,12 +1126,42 @@ const GuidePackageBookingModal = ({
                 onDayMouseLeave={() => setHoveredDate(null)}
                 onSelect={(range) => {
                   if (!range?.from) {
+                    setBlockedRangeSelectionMessage("");
                     setForm((prev) => ({ ...prev, start_date: "", end_date: "" }));
                     return;
                   }
 
                   const startDateKey = localDateToDateKey(range.from);
-                  const endDateKey = range.to ? localDateToDateKey(range.to) : "";
+
+                  if (!range.to) {
+                    setBlockedRangeSelectionMessage("");
+                    setForm((prev) => ({
+                      ...prev,
+                      start_date: startDateKey,
+                      end_date: "",
+                    }));
+                    return;
+                  }
+
+                  const endDateKey = localDateToDateKey(range.to);
+                  const proposedRangeKeys = buildDateRangeKeys(startDateKey, endDateKey);
+                  const conflictingDateKey = proposedRangeKeys.find((dateKey) =>
+                    blockedDateSet.has(dateKey)
+                  );
+
+                  if (conflictingDateKey) {
+                    setBlockedRangeSelectionMessage(
+                      `Cannot include unavailable date ${conflictingDateKey}. End your booking before this date or start after it.`
+                    );
+                    setForm((prev) => ({
+                      ...prev,
+                      start_date: startDateKey,
+                      end_date: "",
+                    }));
+                    return;
+                  }
+
+                  setBlockedRangeSelectionMessage("");
                   setForm((prev) => ({
                     ...prev,
                     start_date: startDateKey,
@@ -1096,6 +1214,11 @@ const GuidePackageBookingModal = ({
                   day_range_end: "bg-amber-300 text-amber-950 rounded-r-xl rounded-l-none",
                 }}
               />
+
+              <div className={`mt-3 flex items-start gap-2 rounded-xl border px-3 py-2.5 ${minimumDurationHelper.containerClassName}`}>
+                <Timer className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${minimumDurationHelper.iconClassName}`} />
+                <p className="text-xs font-semibold leading-relaxed">{minimumDurationHelper.message}</p>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2124,13 +2247,14 @@ const TrailDetail = () => {
                           <a
                             href={`${API}${trail.gpx_file_path}`}
                             download
+                            title="Download trail route for offline navigation in Maps.me, OsmAnd, Gaia GPS, or Garmin devices"
                             className="w-full flex items-center justify-center gap-2 py-3.5 text-sm font-bold rounded-xl bg-gradient-to-br from-gold to-amber-500 text-white hover:from-gold/90 hover:to-amber-500/90 transition-all shadow-[0_4px_14px_rgba(224,176,74,0.3)] hover:shadow-[0_6px_20px_rgba(224,176,74,0.4)] group"
                           >
                             <Download className="h-4 w-4 group-hover:-translate-y-0.5 transition-transform" />
                             Download GPX File
                           </a>
                           <p className="text-[10px] text-center text-gray-400 mt-3 font-semibold uppercase tracking-wider">
-                            Compatible with Garmin, Caltopo & AllTrails
+                            For offline navigation – import into your GPS app
                           </p>
                         </div>
                       )}

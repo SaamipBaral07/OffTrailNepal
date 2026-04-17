@@ -12,6 +12,7 @@ import {
   CalendarCheck,
   MessageCircle,
   Heart,
+  LayoutDashboard,
 } from "lucide-react";
 
 const primaryLinks = [
@@ -34,6 +35,19 @@ export const Header = ({ user, onLogoutClick }) => {
   const isHomestaysRoute = location.pathname.startsWith("/homestays");
   const isGuidesRoute = location.pathname.startsWith("/guides");
   const isContactRoute = location.pathname.startsWith("/contact");
+  const normalizedUserType = String(user?.user_type || "").toLowerCase();
+  const dashboardRouteByRole = {
+    guide: "/guide-dashboard",
+    host: "/host-dashboard",
+    admin: "/admin-dashboard",
+  };
+  const dashboardLabelByRole = {
+    guide: "Guide Dashboard",
+    host: "Host Dashboard",
+    admin: "Admin Dashboard",
+  };
+  const dashboardRoute = dashboardRouteByRole[normalizedUserType] || "";
+  const dashboardLabel = dashboardLabelByRole[normalizedUserType] || "Dashboard";
   const profileImageUrl = user?.profile_image_path
     ? (String(user.profile_image_path).startsWith("http")
       ? user.profile_image_path
@@ -363,6 +377,16 @@ export const Header = ({ user, onLogoutClick }) => {
                               My Profile
                             </button>
                           )}
+                          {dashboardRoute && (
+                            <Link
+                              to={dashboardRoute}
+                              onClick={() => setDropdownOpen(false)}
+                              className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors"
+                            >
+                              <LayoutDashboard className="h-4 w-4 text-gray-400" />
+                              {dashboardLabel}
+                            </Link>
+                          )}
                           {user.user_type === "tourist" && (
                             <Link
                               to="/my-bookings"
@@ -531,13 +555,23 @@ export const Header = ({ user, onLogoutClick }) => {
                   );
                 })}
 
-                {user && (user.user_type === "tourist" || user.user_type === "guide") && (
+                {user && (
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.2 }}
                     className="pt-3 mt-2 border-t border-white/10"
                   >
+                    {dashboardRoute && (
+                      <Link
+                        to={dashboardRoute}
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="w-full mb-2 flex items-center gap-2 px-4 py-3 rounded-xl bg-gold/15 text-gold font-semibold hover:bg-gold/20 transition-all"
+                      >
+                        <LayoutDashboard className="h-4 w-4" />
+                        {dashboardLabel}
+                      </Link>
+                    )}
                     {user.user_type === "tourist" && (
                       <Link
                         to="/trip-planner"
@@ -568,14 +602,16 @@ export const Header = ({ user, onLogoutClick }) => {
                         Wishlist
                       </Link>
                     )}
-                    <Link
-                      to="/chats"
-                      onClick={() => setMobileMenuOpen(false)}
-                      className="w-full flex items-center gap-2 px-4 py-3 rounded-xl bg-gold/15 text-gold font-semibold hover:bg-gold/20 transition-all"
-                    >
-                      <MessageCircle className="h-4 w-4" />
-                      Chats
-                    </Link>
+                    {(user.user_type === "tourist" || user.user_type === "guide") && (
+                      <Link
+                        to="/chats"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="w-full flex items-center gap-2 px-4 py-3 rounded-xl bg-gold/15 text-gold font-semibold hover:bg-gold/20 transition-all"
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                        Chats
+                      </Link>
+                    )}
                   </motion.div>
                 )}
                 {!user && (

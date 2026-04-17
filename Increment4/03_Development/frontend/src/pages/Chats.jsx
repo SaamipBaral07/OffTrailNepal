@@ -6,6 +6,7 @@ import {
   CalendarDays,
   MapPin,
   User,
+  ArrowLeft,
 } from "lucide-react";
 import { io } from "socket.io-client";
 import { Header } from "../components/Header";
@@ -247,6 +248,15 @@ const Chats = () => {
               <p className="text-gray-500 mt-2">Talk directly with your booked guide or tourist for trek coordination.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              {currentRole === "guide" && (
+                <Link
+                  to="/guide-dashboard"
+                  className="inline-flex items-center gap-2 rounded-full border border-navy/20 bg-white px-4 py-2 text-navy text-sm font-semibold hover:border-navy/35 hover:bg-navy/5 transition-colors"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to Guide Dashboard
+                </Link>
+              )}
               <span className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-blue-700 text-sm font-semibold">
                 <MessageCircle className="h-4 w-4" />
                 {totalUnread} unread

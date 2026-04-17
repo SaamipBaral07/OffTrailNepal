@@ -26,6 +26,7 @@ const GuideProfile = () => {
   const [bankModalOpen, setBankModalOpen] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [verificationStatus, setVerificationStatus] = useState(null);
   const [bankForm, setBankForm] = useState({
     bank_name: "",
     bank_account_name: "",
@@ -72,6 +73,14 @@ const GuideProfile = () => {
         bank_account_name: res.data.profile.bank_account_name || "",
         bank_account_number: res.data.profile.bank_account_number || "",
       });
+
+      // Fetch verification status
+      try {
+        const verRes = await api.get("/api/guides/verification-status");
+        setVerificationStatus(verRes.data.verification?.verification_status || null);
+      } catch (err) {
+        console.error("Could not fetch verification status:", err);
+      }
     } catch (err) {
       showNotice(err.response?.data?.message || "Could not load guide profile", "error");
     } finally {
@@ -277,8 +286,19 @@ const GuideProfile = () => {
             </div>
             
             <div className="mt-5">
-              <h2 className="text-2xl font-heading text-charcoal leading-tight">{form.full_name || "Guide"}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-heading text-charcoal leading-tight">{form.full_name || "Guide"}</h2>
+                {verificationStatus === "approved" && (
+                  <BadgeCheck className="h-6 w-6 text-emerald-600" title="Guide verified by admin" />
+                )}
+              </div>
               <p className="text-sm text-gray-500 mt-1">{form.email}</p>
+              {verificationStatus === "approved" && (
+                <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                  <BadgeCheck className="h-3.5 w-3.5" />
+                  Verified guide
+                </div>
+              )}
               <p className="text-xs text-gray-400 mt-2">{photoUploading ? "Uploading photo..." : "Tap camera icon to update photo"}</p>
             </div>
 

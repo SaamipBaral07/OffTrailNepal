@@ -16,6 +16,7 @@ import {
   Loader2,
   ChevronRight,
   X,
+  BadgeCheck,
 } from "lucide-react";
 import { Header } from "../components/Header";
 import { Footer } from "../components/Footer";
@@ -240,7 +241,15 @@ const GuidesPage = () => {
                         {String(guide.full_name || "G").charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <h3 className="text-lg font-bold text-charcoal truncate">{guide.full_name}</h3>
+                        <div className="flex items-center gap-1.5">
+                          <h3 className="text-lg font-bold text-charcoal truncate">{guide.full_name}</h3>
+                          {(guide.verification_status || "approved") === "approved" && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                              <BadgeCheck className="h-3.5 w-3.5 text-emerald-600" />
+                              Verified
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-gray-500 mt-0.5 inline-flex items-center gap-1.5">
                           <Briefcase className="h-3.5 w-3.5 text-gold" />
                           {guide.experience_years} years experience
