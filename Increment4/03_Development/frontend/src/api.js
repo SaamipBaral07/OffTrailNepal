@@ -2,6 +2,7 @@ import axios from "axios";
 import { getToken, setToken, getCsrfToken, setCsrfToken } from "./tokenStore";
 
 const API_BASE = "http://localhost:5000";
+const ACCOUNT_BLOCK_HINT_KEY = "offtrail_account_block_hint";
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -100,6 +101,25 @@ api.interceptors.response.use(
           refreshError.response?.data?.code === "TOKEN_REUSE_DETECTED"
         ) {
           console.error("Token replay detected! All sessions revoked. Redirecting to login.");
+          setToken(null);
+          setCsrfToken(null);
+          window.location.href = "/login";
+        }
+
+        if (
+          refreshError.response?.status === 403 &&
+          ["ACCOUNT_SUSPENDED"].includes(
+            String(refreshError.response?.data?.code || "").trim().toUpperCase()
+          )
+        ) {
+          window.sessionStorage.setItem(
+            ACCOUNT_BLOCK_HINT_KEY,
+            JSON.stringify({
+              code: String(refreshError.response?.data?.code || "").trim().toUpperCase(),
+              message: String(refreshError.response?.data?.message || "").trim(),
+              reason: String(refreshError.response?.data?.reason || "").trim(),
+            })
+          );
           setToken(null);
           setCsrfToken(null);
           window.location.href = "/login";

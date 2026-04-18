@@ -4,6 +4,7 @@ import { setToken, setCsrfToken } from "../tokenStore";
 
 const AuthContext = createContext(null);
 const SESSION_HINT_KEY = "offtrail_has_session";
+const ACCOUNT_BLOCK_HINT_KEY = "offtrail_account_block_hint";
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -50,6 +51,18 @@ export const AuthProvider = ({ children }) => {
         window.localStorage.setItem(SESSION_HINT_KEY, "1");
       } catch (error) {
         // Silent refresh failed - user likely not logged in
+        const blockCode = String(error?.response?.data?.code || "").trim().toUpperCase();
+        if (["ACCOUNT_SUSPENDED"].includes(blockCode)) {
+          window.sessionStorage.setItem(
+            ACCOUNT_BLOCK_HINT_KEY,
+            JSON.stringify({
+              code: blockCode,
+              message: String(error?.response?.data?.message || "").trim(),
+              reason: String(error?.response?.data?.reason || "").trim(),
+            })
+          );
+        }
+
         setToken(null);
         setCsrfToken(null);
         setUser(null);

@@ -36,6 +36,8 @@ import {
   MessageSquare,
   Send,
   BarChart3,
+  UserX,
+  UserCheck,
 } from "lucide-react";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
@@ -248,6 +250,33 @@ const AdminDashboard = () => {
   const [hostVerificationQueueModalOpen, setHostVerificationQueueModalOpen] = useState(false);
   const [bankDetailsModalOpen, setBankDetailsModalOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [usersDirectory, setUsersDirectory] = useState([]);
+  const [usersDirectoryLoading, setUsersDirectoryLoading] = useState(false);
+  const [usersDirectorySummary, setUsersDirectorySummary] = useState({
+    total_records: 0,
+    tourist_count: 0,
+    host_count: 0,
+    guide_count: 0,
+    pending_verifications: 0,
+    approved_verifications: 0,
+    rejected_verifications: 0,
+    not_submitted_verifications: 0,
+  });
+  const [usersDirectoryPagination, setUsersDirectoryPagination] = useState({
+    page: 1,
+    limit: 20,
+    total_records: 0,
+    total_pages: 1,
+    has_prev: false,
+    has_next: false,
+  });
+  const [usersRoleFilter, setUsersRoleFilter] = useState("all");
+  const [usersVerificationFilter, setUsersVerificationFilter] = useState("all");
+  const [usersSort, setUsersSort] = useState("newest");
+  const [usersSearchInput, setUsersSearchInput] = useState("");
+  const [usersSearchQuery, setUsersSearchQuery] = useState("");
+  const [updatingUserLifecycleKey, setUpdatingUserLifecycleKey] = useState("");
+  const [userLifecycleNotice, setUserLifecycleNotice] = useState(null);
 
   const derivePaymentSummaryFromRecords = useCallback((records) => {
     const safeRecords = Array.isArray(records) ? records : [];
@@ -617,6 +646,65 @@ const AdminDashboard = () => {
     }
   }, []);
 
+  const fetchAdminUsersDirectory = useCallback(async (requestedPage = 1) => {
+    setUsersDirectoryLoading(true);
+    try {
+      const res = await api.get(`${API}/users/admin/directory`, {
+        params: {
+          page: requestedPage,
+          limit: usersDirectoryPagination.limit,
+          role: usersRoleFilter,
+          verification_status: usersVerificationFilter,
+          sort: usersSort,
+          q: usersSearchQuery,
+        },
+      });
+
+      setUsersDirectory(Array.isArray(res.data?.users) ? res.data.users : []);
+      setUsersDirectorySummary({
+        total_records: Number(res.data?.summary?.total_records || 0),
+        tourist_count: Number(res.data?.summary?.tourist_count || 0),
+        host_count: Number(res.data?.summary?.host_count || 0),
+        guide_count: Number(res.data?.summary?.guide_count || 0),
+        pending_verifications: Number(res.data?.summary?.pending_verifications || 0),
+        approved_verifications: Number(res.data?.summary?.approved_verifications || 0),
+        rejected_verifications: Number(res.data?.summary?.rejected_verifications || 0),
+        not_submitted_verifications: Number(res.data?.summary?.not_submitted_verifications || 0),
+      });
+      setUsersDirectoryPagination({
+        page: Number(res.data?.pagination?.page || requestedPage || 1),
+        limit: Number(res.data?.pagination?.limit || usersDirectoryPagination.limit),
+        total_records: Number(res.data?.pagination?.total_records || 0),
+        total_pages: Number(res.data?.pagination?.total_pages || 1),
+        has_prev: Boolean(res.data?.pagination?.has_prev),
+        has_next: Boolean(res.data?.pagination?.has_next),
+      });
+    } catch (err) {
+      console.error("Error fetching users directory for admin:", err);
+      setUsersDirectory([]);
+      setUsersDirectorySummary({
+        total_records: 0,
+        tourist_count: 0,
+        host_count: 0,
+        guide_count: 0,
+        pending_verifications: 0,
+        approved_verifications: 0,
+        rejected_verifications: 0,
+        not_submitted_verifications: 0,
+      });
+      setUsersDirectoryPagination((prev) => ({
+        ...prev,
+        page: 1,
+        total_records: 0,
+        total_pages: 1,
+        has_prev: false,
+        has_next: false,
+      }));
+    } finally {
+      setUsersDirectoryLoading(false);
+    }
+  }, [usersDirectoryPagination.limit, usersRoleFilter, usersVerificationFilter, usersSort, usersSearchQuery]);
+
   const goToHomestayPaymentsPage = (nextPage) => {
     if (paymentsLoading) return;
     if (nextPage < 1 || nextPage > Number(homestayPaymentsPagination.total_pages || 1)) return;
@@ -633,6 +721,75 @@ const AdminDashboard = () => {
     if (contactEnquiriesLoading) return;
     if (nextPage < 1 || nextPage > Number(contactEnquiriesPagination.total_pages || 1)) return;
     fetchAdminContactEnquiries(nextPage);
+  };
+
+  const goToUsersDirectoryPage = (nextPage) => {
+    if (usersDirectoryLoading) return;
+    if (nextPage < 1 || nextPage > Number(usersDirectoryPagination.total_pages || 1)) return;
+    setUsersDirectoryPagination((prev) => ({ ...prev, page: nextPage }));
+  };
+
+  const pushUserLifecycleNotice = useCallback((type, message) => {
+    const noticeId = Date.now();
+    setUserLifecycleNotice({ id: noticeId, type, message });
+
+    window.setTimeout(() => {
+      setUserLifecycleNotice((prev) => (prev?.id === noticeId ? null : prev));
+    }, 7000);
+  }, []);
+
+  const handleUserLifecycleAction = async (entry, action) => {
+    const role = String(entry?.user_type || "").trim().toLowerCase();
+    const userId = Number(entry?.user_id);
+    const displayName = String(entry?.full_name || "this user").trim() || "this user";
+
+    if (!role || !Number.isInteger(userId) || userId <= 0) {
+      pushUserLifecycleNotice("error", "User identity is invalid for this action.");
+      return;
+    }
+
+    let reason = "";
+
+    if (action === "suspend") {
+      reason = window.prompt(`Provide suspension reason for ${displayName}:`) || "";
+      if (!reason.trim() || reason.trim().length < 5) {
+        pushUserLifecycleNotice("error", "Suspension reason (min 5 chars) is required.");
+        return;
+      }
+    }
+
+    if (action === "reactivate") {
+      const confirmReactivate = window.confirm(`Reactivate ${displayName}?`);
+      if (!confirmReactivate) return;
+    }
+
+    const actionKey = `${role}-${userId}-${action}`;
+    setUpdatingUserLifecycleKey(actionKey);
+
+    try {
+      const res = await api.patch(`${API}/users/admin/${role}/${userId}/lifecycle`, {
+        action,
+        reason: reason.trim() || null,
+      });
+
+      pushUserLifecycleNotice("success", res.data?.message || "Account lifecycle updated.");
+      await fetchAdminUsersDirectory(usersDirectoryPagination.page || 1);
+    } catch (err) {
+      console.error("Error updating user lifecycle action:", err);
+      const statusCode = Number(err?.response?.status || 0);
+      const serverMessage = String(err?.response?.data?.message || "").trim();
+
+      if (statusCode === 404 && !serverMessage) {
+        pushUserLifecycleNotice(
+          "error",
+          "Lifecycle endpoint not found on backend. Restart the server and try again."
+        );
+      } else {
+        pushUserLifecycleNotice("error", serverMessage || "Failed to update account lifecycle.");
+      }
+    } finally {
+      setUpdatingUserLifecycleKey("");
+    }
   };
 
   const pushContactReplyNotice = useCallback((type, message) => {
@@ -825,6 +982,18 @@ const AdminDashboard = () => {
       fetchAdminTrailPhotoSubmissions("all");
     }
   }, [isLoading, user, fetchTrails, fetchAdminHomestays, fetchAdminHostVerifications, fetchAdminGuides, fetchAdminGuideServices, fetchAdminPayments, fetchAdminGuidePayments, fetchAdminContactEnquiries, fetchAdminPlatformReviews, fetchAdminTrailPhotoSubmissions]);
+
+  useEffect(() => {
+    if (isLoading || !user) return;
+    if (activeTab !== "users") return;
+    fetchAdminUsersDirectory(usersDirectoryPagination.page || 1);
+  }, [
+    isLoading,
+    user,
+    activeTab,
+    usersDirectoryPagination.page,
+    fetchAdminUsersDirectory,
+  ]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return undefined;
@@ -1047,6 +1216,27 @@ const AdminDashboard = () => {
   const pendingTrailPhotoSubmissions = Number(trailPhotoSubmissionSummary.pending || 0);
   const approvedTrailPhotoSubmissions = Number(trailPhotoSubmissionSummary.approved || 0);
   const rejectedTrailPhotoSubmissions = Number(trailPhotoSubmissionSummary.rejected || 0);
+  const totalUsersInDirectory = Number(usersDirectorySummary.total_records || 0);
+  const touristUsersCount = Number(usersDirectorySummary.tourist_count || 0);
+  const hostUsersCount = Number(usersDirectorySummary.host_count || 0);
+  const guideUsersCount = Number(usersDirectorySummary.guide_count || 0);
+  const pendingVerificationUsersCount = Number(usersDirectorySummary.pending_verifications || 0);
+
+  const formatRoleLabel = (value) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "host") return "Host";
+    if (normalized === "guide") return "Guide";
+    if (normalized === "tourist") return "Tourist";
+    return "Unknown";
+  };
+
+  const roleBadgeClasses = (value) => {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "host") return "bg-purple-50 border-purple-200 text-purple-700";
+    if (normalized === "guide") return "bg-emerald-50 border-emerald-200 text-emerald-700";
+    if (normalized === "tourist") return "bg-sky-50 border-sky-200 text-sky-700";
+    return "bg-gray-50 border-gray-200 text-gray-700";
+  };
 
   const adminNavItems = [
     { id: "trails", icon: Mountain, label: "Trekking Trails", title: "Trail Management", count: trails.length },
@@ -1090,6 +1280,13 @@ const AdminDashboard = () => {
       title: "Guide Booking Payments",
       count: guidePendingRefunds > 0 ? guidePendingRefunds : null,
       countType: "alert",
+    },
+    {
+      id: "users",
+      icon: Users,
+      label: "User Directory",
+      title: "User Management",
+      count: totalUsersInDirectory,
     },
   ];
 
@@ -1456,6 +1653,15 @@ const AdminDashboard = () => {
                 <StatCard icon={CheckCircle} label="Successful" value={guideSuccessfulPayments} accent="alpine" delay={0.2} />
                 <StatCard icon={TrendingUp} label="Refund Queue" value={guidePendingRefunds} accent="charcoal" delay={0.3} />
                 <StatCard icon={DollarSign} label="Settled Volume" value={`NPR ${guideRevenue.toLocaleString()}`} accent="gold" delay={0.4} />
+              </>
+            )}
+
+            {activeTab === "users" && (
+              <>
+                <StatCard icon={Users} label="Total Users" value={totalUsersInDirectory} accent="navy" delay={0.1} />
+                <StatCard icon={MapPin} label="Tourists" value={touristUsersCount} accent="alpine" delay={0.2} />
+                <StatCard icon={Home} label="Hosts" value={hostUsersCount} accent="charcoal" delay={0.3} />
+                <StatCard icon={Compass} label="Guides" value={guideUsersCount} accent="gold" delay={0.4} />
               </>
             )}
           </div>
@@ -1838,6 +2044,310 @@ const AdminDashboard = () => {
                       </div>
                     ))}
                   </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "users" && (
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-gray-100">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-indigo-50 border border-indigo-100">
+                    <Users className="h-4 w-4 text-indigo-500" />
+                  </div>
+                  <div>
+                    <h2 className="text-gray-900 font-semibold text-base">Registered User Directory</h2>
+                    <p className="text-gray-400 text-xs">View tourists, hosts, and guides with role-specific details.</p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => fetchAdminUsersDirectory(usersDirectoryPagination.page || 1)}
+                  disabled={usersDirectoryLoading}
+                  className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  {usersDirectoryLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+                  Refresh
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-wide font-semibold text-amber-700">Pending Verification</p>
+                    <p className="text-lg font-bold text-amber-700">{pendingVerificationUsersCount}</p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-wide font-semibold text-emerald-700">Approved Verification</p>
+                    <p className="text-lg font-bold text-emerald-700">{Number(usersDirectorySummary.approved_verifications || 0)}</p>
+                  </div>
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-wide font-semibold text-red-700">Rejected Verification</p>
+                    <p className="text-lg font-bold text-red-700">{Number(usersDirectorySummary.rejected_verifications || 0)}</p>
+                  </div>
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-wide font-semibold text-gray-600">Not Submitted</p>
+                    <p className="text-lg font-bold text-gray-700">{Number(usersDirectorySummary.not_submitted_verifications || 0)}</p>
+                  </div>
+                </div>
+
+                {userLifecycleNotice && (
+                  <div
+                    className={`rounded-xl border px-4 py-3 text-sm font-medium ${
+                      userLifecycleNotice.type === "success"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-red-200 bg-red-50 text-red-700"
+                    }`}
+                  >
+                    {userLifecycleNotice.message}
+                  </div>
+                )}
+
+                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+                  <label className="text-xs font-semibold text-gray-600 space-y-1">
+                    <span>Role</span>
+                    <select
+                      value={usersRoleFilter}
+                      onChange={(e) => {
+                        setUsersRoleFilter(e.target.value);
+                        setUsersDirectoryPagination((prev) => ({ ...prev, page: 1 }));
+                      }}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm text-gray-700"
+                    >
+                      <option value="all">All Roles</option>
+                      <option value="tourist">Tourists</option>
+                      <option value="host">Hosts</option>
+                      <option value="guide">Guides</option>
+                    </select>
+                  </label>
+
+                  <label className="text-xs font-semibold text-gray-600 space-y-1">
+                    <span>Verification</span>
+                    <select
+                      value={usersVerificationFilter}
+                      onChange={(e) => {
+                        setUsersVerificationFilter(e.target.value);
+                        setUsersDirectoryPagination((prev) => ({ ...prev, page: 1 }));
+                      }}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm text-gray-700"
+                    >
+                      <option value="all">All Statuses</option>
+                      <option value="not_submitted">Not Submitted</option>
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </label>
+
+                  <label className="text-xs font-semibold text-gray-600 space-y-1">
+                    <span>Sort</span>
+                    <select
+                      value={usersSort}
+                      onChange={(e) => {
+                        setUsersSort(e.target.value);
+                        setUsersDirectoryPagination((prev) => ({ ...prev, page: 1 }));
+                      }}
+                      className="w-full rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-sm text-gray-700"
+                    >
+                      <option value="newest">Newest First</option>
+                      <option value="oldest">Oldest First</option>
+                      <option value="name_asc">Name A-Z</option>
+                      <option value="name_desc">Name Z-A</option>
+                    </select>
+                  </label>
+
+                  <label className="text-xs font-semibold text-gray-600 space-y-1 xl:col-span-2">
+                    <span>Search (name, email, phone)</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={usersSearchInput}
+                        onChange={(e) => setUsersSearchInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            setUsersSearchQuery(usersSearchInput.trim());
+                            setUsersDirectoryPagination((prev) => ({ ...prev, page: 1 }));
+                          }
+                        }}
+                        placeholder="Search users"
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUsersSearchQuery(usersSearchInput.trim());
+                          setUsersDirectoryPagination((prev) => ({ ...prev, page: 1 }));
+                        }}
+                        className="rounded-lg bg-navy px-3 py-2 text-xs font-semibold text-white hover:bg-navy-light"
+                      >
+                        Search
+                      </button>
+                    </div>
+                  </label>
+                </div>
+
+                {usersDirectoryLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                  </div>
+                ) : usersDirectory.length === 0 ? (
+                  <div className="flex flex-col items-center py-16 gap-3">
+                    <div className="w-16 h-16 rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-center">
+                      <Users className="h-8 w-8 text-gray-300" />
+                    </div>
+                    <p className="text-gray-700 font-semibold">No users found for these filters</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">User</th>
+                            <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">Role</th>
+                            <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">Contact</th>
+                            <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">Details</th>
+                            <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">Verification</th>
+                            <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">Joined</th>
+                            <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">Account</th>
+                            <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wide text-gray-500">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 bg-white">
+                          {usersDirectory.map((entry) => {
+                            const roleValue = String(entry.user_type || "").toLowerCase();
+                            const verificationValue = roleValue === "tourist" ? "not_submitted" : entry.verification_status;
+                            const hasIdentityDocDetails = roleValue === "guide" || roleValue === "host";
+                            const accountStatus = String(entry.account_status || "active").trim().toLowerCase();
+                            const lifecycleKeyPrefix = `${roleValue}-${entry.user_id}`;
+                            const accountStatusClasses =
+                              accountStatus === "suspended"
+                                  ? "border-orange-200 bg-orange-50 text-orange-700"
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700";
+
+                            return (
+                              <tr key={`${roleValue}-${entry.user_id}`} className="hover:bg-gray-50/70">
+                                <td className="px-4 py-3 align-top">
+                                  <div className="flex items-start gap-3">
+                                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-navy to-navy-light text-white font-bold text-sm flex items-center justify-center shrink-0">
+                                      {String(entry.full_name || "U").trim().charAt(0).toUpperCase()}
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-semibold text-gray-900">{entry.full_name || "Unknown User"}</p>
+                                      <p className="text-xs text-gray-500">ID #{entry.user_id}</p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 align-top">
+                                  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${roleBadgeClasses(roleValue)}`}>
+                                    {formatRoleLabel(roleValue)}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 align-top text-sm text-gray-700">
+                                  <p className="font-medium">{entry.email || "-"}</p>
+                                  <p className="text-xs text-gray-500 mt-0.5">{entry.phone || "No phone"}</p>
+                                </td>
+                                <td className="px-4 py-3 align-top text-xs text-gray-600 space-y-1">
+                                  {entry.nationality ? <p>Nationality: <span className="font-semibold text-gray-700">{entry.nationality}</span></p> : null}
+                                  {entry.experience_years !== null && entry.experience_years !== undefined ? (
+                                    <p>Experience: <span className="font-semibold text-gray-700">{entry.experience_years} yrs</span></p>
+                                  ) : null}
+                                  {entry.license_no ? <p>License: <span className="font-semibold text-gray-700">{entry.license_no}</span></p> : null}
+                                  {entry.address ? <p className="max-w-xs truncate" title={entry.address}>Address: <span className="font-semibold text-gray-700">{entry.address}</span></p> : null}
+                                  {hasIdentityDocDetails && (
+                                    <p>Bank Profile: <span className={`font-semibold ${entry.has_bank_profile ? "text-emerald-700" : "text-gray-500"}`}>{entry.has_bank_profile ? "Added" : "Not Added"}</span></p>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 align-top">
+                                  {roleValue === "tourist" ? (
+                                    <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                                      Not Applicable
+                                    </span>
+                                  ) : (
+                                    <StatusBadge status={verificationValue} />
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 align-top text-xs text-gray-600">
+                                  {formatDateTime(entry.created_at)}
+                                </td>
+                                <td className="px-4 py-3 align-top">
+                                  <div className="space-y-1.5">
+                                    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${accountStatusClasses}`}>
+                                      {accountStatus}
+                                    </span>
+                                    {entry.suspended_reason ? (
+                                      <p className="max-w-[220px] text-[11px] text-orange-700" title={entry.suspended_reason}>
+                                        Suspension: {entry.suspended_reason}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 align-top">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    {accountStatus === "suspended" ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUserLifecycleAction(entry, "reactivate")}
+                                        disabled={updatingUserLifecycleKey.startsWith(lifecycleKeyPrefix)}
+                                        className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-gradient-to-r from-emerald-50 to-green-50 px-3 py-1.5 text-[11px] font-bold text-emerald-800 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow disabled:opacity-50 disabled:transform-none"
+                                      >
+                                        {updatingUserLifecycleKey === `${lifecycleKeyPrefix}-reactivate` ? (
+                                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                          <UserCheck className="h-3.5 w-3.5" />
+                                        )}
+                                        Reactivate
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUserLifecycleAction(entry, "suspend")}
+                                        disabled={updatingUserLifecycleKey.startsWith(lifecycleKeyPrefix)}
+                                        className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-gradient-to-r from-amber-50 to-orange-50 px-3 py-1.5 text-[11px] font-bold text-amber-800 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow disabled:opacity-50 disabled:transform-none"
+                                      >
+                                        {updatingUserLifecycleKey === `${lifecycleKeyPrefix}-suspend` ? (
+                                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                          <UserX className="h-3.5 w-3.5" />
+                                        )}
+                                        Suspend
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <p className="text-xs text-gray-500">
+                        Showing page {usersDirectoryPagination.page} of {usersDirectoryPagination.total_pages} · Total users: {usersDirectoryPagination.total_records}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => goToUsersDirectoryPage(usersDirectoryPagination.page - 1)}
+                          disabled={!usersDirectoryPagination.has_prev || usersDirectoryLoading}
+                          className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => goToUsersDirectoryPage(usersDirectoryPagination.page + 1)}
+                          disabled={!usersDirectoryPagination.has_next || usersDirectoryLoading}
+                          className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             </div>

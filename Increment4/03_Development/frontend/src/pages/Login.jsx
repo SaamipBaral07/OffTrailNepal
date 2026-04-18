@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import axios from "axios";
 import { useNavigate, Link } from "react-router-dom";
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+
+const ACCOUNT_BLOCK_HINT_KEY = "offtrail_account_block_hint";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -10,12 +12,38 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [accountBlock, setAccountBlock] = useState(null);
   const navigate = useNavigate();
   const { setAuth } = useAuth();
+
+  useEffect(() => {
+    const raw = window.sessionStorage.getItem(ACCOUNT_BLOCK_HINT_KEY);
+    if (!raw) return;
+
+    try {
+      const parsed = JSON.parse(raw);
+      const code = String(parsed?.code || "").trim().toUpperCase();
+      const message = String(parsed?.message || "").trim();
+      const reason = String(parsed?.reason || "").trim();
+
+      if (code === "ACCOUNT_SUSPENDED") {
+        setAccountBlock({
+          type: "suspended",
+          message: message || "Your account is currently unavailable.",
+          reason,
+        });
+      }
+    } catch {
+      // Ignore malformed session hint.
+    } finally {
+      window.sessionStorage.removeItem(ACCOUNT_BLOCK_HINT_KEY);
+    }
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
+    setAccountBlock(null);
     setIsLoading(true);
 
     try {
@@ -39,7 +67,20 @@ const Login = () => {
 
 
     } catch (err) {
-      setError(err.response?.data?.message || "Invalid credentials. Please try again.");
+      const code = String(err.response?.data?.code || "").trim().toUpperCase();
+      const message = err.response?.data?.message || "Invalid credentials. Please try again.";
+      const reason = String(err.response?.data?.reason || "").trim();
+
+      if (code === "ACCOUNT_SUSPENDED") {
+        setAccountBlock({
+          type: "suspended",
+          message,
+          reason,
+        });
+        setError("");
+      } else {
+        setError(message);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -145,6 +186,25 @@ const Login = () => {
                 />
               </svg>
               <p className="text-red-600 text-sm">{error}</p>
+            </div>
+          )}
+
+          {accountBlock && (
+            <div
+              className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3.5"
+            >
+              <p className="text-sm font-bold text-amber-800">Account Suspended</p>
+              <p className="mt-1 text-sm text-amber-700">
+                {accountBlock.message}
+              </p>
+              {accountBlock.reason && (
+                <p className="mt-2 text-xs text-gray-700">
+                  Admin note: {accountBlock.reason}
+                </p>
+              )}
+              <p className="mt-2 text-xs text-gray-600">
+                If this seems incorrect, please contact support or use the Contact page.
+              </p>
             </div>
           )}
 

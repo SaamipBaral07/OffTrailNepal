@@ -14,6 +14,7 @@ import {
   selectActiveRefreshTokens,
   tokenRecordMatches
 } from "../utils/refreshTokenStore.js";
+import { getUserAccountState } from "../utils/accountLifecycle.js";
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || (JWT_SECRET ? JWT_SECRET + "_refresh" : null);
@@ -37,6 +38,10 @@ const getUserTableInfo = (userType) => {
     admin: { table: "admins", idColumn: "admin_id" },
   };
   return map[userType] || null;
+};
+
+const isLifecycleManagedUserType = (userType) => {
+  return ["tourist", "host", "guide"].includes(String(userType || "").trim().toLowerCase());
 };
 
 const updatePasswordForAuthenticatedUser = async (req, res, expectedUserType = null) => {
@@ -515,6 +520,16 @@ export const login = async (req, res) => {
           return res.status(401).json({ message: "Invalid credentials" });
         }
 
+        if (isLifecycleManagedUserType(table.type)) {
+          if (user.is_suspended) {
+            return res.status(403).json({
+              message: "Your account is suspended. Contact support.",
+              code: "ACCOUNT_SUSPENDED",
+              reason: String(user.suspended_reason || "").trim() || null,
+            });
+          }
+        }
+
         const { accessToken, csrfToken } = await issueSessionTokens(
           res,
           req,
@@ -533,7 +548,8 @@ export const login = async (req, res) => {
             email: user.email,
             user_type: table.type,
             profile_image_path: user.profile_image_path || null,
-            created_at: user.created_at
+            created_at: user.created_at,
+            is_suspended: Boolean(user.is_suspended),
           }
         });
       }
@@ -1079,6 +1095,21 @@ export const refreshTokenHandler = async (req, res) => {
   try {
     const { decoded, dbRecord } = req.refreshToken;
 
+    const accountState = await getUserAccountState(pool, decoded.user_type, decoded.user_id);
+    if (!accountState.exists) {
+      await revokeRefreshTokenById(pool, dbRecord.id);
+      return res.status(401).json({ message: "User account not found" });
+    }
+
+    if (accountState.is_suspended) {
+      await revokeAllUserRefreshTokens(pool, decoded.user_id, decoded.user_type);
+      return res.status(403).json({
+        message: "Your account is suspended. Contact support.",
+        code: "ACCOUNT_SUSPENDED",
+        reason: String(accountState.suspended_reason || "").trim() || null,
+      });
+    }
+
     // Rotate by revoking the current token row before issuing new credentials.
     await revokeRefreshTokenById(pool, dbRecord.id);
 
@@ -1094,8 +1125,12 @@ export const refreshTokenHandler = async (req, res) => {
     const tableInfo = getUserTableInfo(decoded.user_type);
     let userProfile = { id: decoded.user_id, user_type: decoded.user_type };
     if (tableInfo) {
+      const profileSelect = isLifecycleManagedUserType(decoded.user_type)
+        ? `SELECT ${tableInfo.idColumn} AS id, full_name, email, profile_image_path, created_at, COALESCE(is_suspended, false) AS is_suspended FROM ${tableInfo.table} WHERE ${tableInfo.idColumn} = $1`
+        : `SELECT ${tableInfo.idColumn} AS id, full_name, email, profile_image_path, created_at, false AS is_suspended FROM ${tableInfo.table} WHERE ${tableInfo.idColumn} = $1`;
+
       const profileResult = await pool.query(
-        `SELECT ${tableInfo.idColumn} AS id, full_name, email, profile_image_path, created_at FROM ${tableInfo.table} WHERE ${tableInfo.idColumn} = $1`,
+        profileSelect,
         [decoded.user_id]
       );
       if (profileResult.rows.length > 0) {
