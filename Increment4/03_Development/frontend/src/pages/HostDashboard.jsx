@@ -1132,7 +1132,7 @@ const HomestayCard = ({ homestay, onEdit, onDelete, onToggleActive, onUpdateRoom
             <p className="text-[9px] uppercase font-bold text-gray-400 tracking-widest mb-1.5 flex items-center justify-center gap-1">
               <Users className="w-3 h-3" /> Capacity
             </p>
-            <p className="font-bold text-gray-900 text-sm">{homestay.capacity} Pax</p>
+            <p className="font-bold text-gray-900 text-sm">{homestay.capacity} Guest{homestay.capacity > 1 ? "s" : ""}</p>
           </div>
           <div className="px-3 py-4 text-center">
             <p className="text-[9px] uppercase font-bold text-gray-400 tracking-widest mb-1.5 flex items-center justify-center gap-1">
@@ -1776,9 +1776,9 @@ const HostDashboard = () => {
           <div className="hidden lg:block">
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Scale</p>
             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-navy/5 border border-navy/10 text-xs font-bold text-navy">
-              <span>{booking.rooms_booked} Unit{booking.rooms_booked > 1 ? "s" : ""}</span>
+              <span>{booking.rooms_booked} Room{booking.rooms_booked > 1 ? "s" : ""}</span>
               <span className="h-3 w-[1px] bg-navy/20" />
-              <span>{booking.guests_count} Pax</span>
+              <span>{booking.guests_count} Guest{booking.guests_count > 1 ? "s" : ""}</span>
             </div>
           </div>
         </div>

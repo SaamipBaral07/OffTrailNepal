@@ -54,9 +54,17 @@ const PaymentSuccess = () => {
   const isFailedByQuery = paymentQueryStatus === "failed";
   const isFailedBySession = ["failed", "expired", "cancelled"].includes(resolvedPaymentStatus);
   const isSuccessBySession = resolvedPaymentStatus === "success";
+  const sessionVerificationComplete = Boolean(sessionRecord || sessionError);
   const isConfirmedSuccess =
     paymentQueryStatus === "success" && (isSuccessBySession || (!sessionToken && !isFailedByQuery));
-  const showFailedState = isFailedByQuery || isFailedBySession || (paymentQueryStatus === "success" && sessionToken && !sessionLoading && !isSuccessBySession);
+  const showFailedState =
+    isFailedByQuery ||
+    isFailedBySession ||
+    (paymentQueryStatus === "success" &&
+      sessionToken &&
+      sessionVerificationComplete &&
+      !sessionLoading &&
+      !isSuccessBySession);
   const invoiceBookingType = bookingType === "guide_package" ? "guide_package" : "homestay";
 
   useEffect(() => {
