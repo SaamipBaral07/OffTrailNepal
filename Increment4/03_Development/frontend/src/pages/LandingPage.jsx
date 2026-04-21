@@ -14,7 +14,6 @@ import {
   Footprints,
   Quote,
   CheckCircle2,
-  Sparkles,
   Loader2,
   Search,
   SlidersHorizontal,
@@ -181,21 +180,8 @@ const AnimatedCounter = ({ target, inView }) => {
    HELPER: Section Header
    ═══════════════════════════════════════════════ */
 
-const SectionHeader = ({ badge, badgeColor = "gold", title, subtitle }) => (
+const SectionHeader = ({ title, subtitle }) => (
   <div className="text-center mb-14">
-    <motion.span
-      variants={fadeUpItem}
-      className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest mb-4 ${
-        badgeColor === "gold"
-          ? "bg-gold/10 text-gold"
-          : badgeColor === "navy"
-          ? "bg-navy/10 text-navy"
-          : "bg-alpine/10 text-alpine"
-      }`}
-    >
-      <Sparkles className="h-3 w-3" />
-      {badge}
-    </motion.span>
     <motion.h2
       variants={fadeUpItem}
       className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-charcoal mb-4 font-heading"
@@ -413,17 +399,6 @@ const LandingPage = () => {
           className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 text-center pt-24 pb-32"
           style={{ y: heroContentY, opacity: heroOpacity }}
         >
-          {/* Badge */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.6 }}
-            className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-white/10 backdrop-blur-md border border-gold/20 text-gold-light text-sm font-medium mb-8"
-          >
-            <Compass className="h-4 w-4" />
-            Nepal's Premier Off-Trail Adventure Platform
-          </motion.div>
-
           {/* Headline */}
           <motion.h1
             initial={{ opacity: 0, y: 30 }}
@@ -558,8 +533,6 @@ const LandingPage = () => {
             viewport={{ once: true, margin: "-80px" }}
           >
             <SectionHeader
-              badge="Offbeat Destinations"
-              badgeColor="gold"
               title="Hidden Trails Across Nepal"
               subtitle="Hand-picked remote routes, lesser-known valleys, and culturally rich paths far from the crowded mainstream circuits."
             />
@@ -767,8 +740,6 @@ const LandingPage = () => {
             viewport={{ once: true, margin: "-80px" }}
           >
             <SectionHeader
-              badge="Why Choose Us"
-              badgeColor="navy"
               title="Why OffTrail Nepal?"
               subtitle="We're not just another travel platform — we're your gateway to Nepal's most authentic off-trail experiences."
             />
@@ -784,10 +755,8 @@ const LandingPage = () => {
             {features.map((feat) => {
               const colors = accentMap[feat.accent];
               return (
-                <motion.div
+                <div
                   key={feat.title}
-                  variants={fadeUpItem}
-                  whileHover={{ y: -6, transition: { duration: 0.25 } }}
                   className={`group relative bg-cream rounded-2xl p-7 border border-gray-100 hover:border-transparent hover:shadow-xl hover:shadow-navy/5 transition-all duration-500 ${colors.border}`}
                 >
                   <div
@@ -801,7 +770,7 @@ const LandingPage = () => {
                   <p className="text-sm text-gray-500 leading-relaxed">
                     {feat.description}
                   </p>
-                </motion.div>
+                </div>
               );
             })}
           </motion.div>
@@ -820,8 +789,6 @@ const LandingPage = () => {
             viewport={{ once: true, margin: "-80px" }}
           >
             <SectionHeader
-              badge="Simple Process"
-              badgeColor="gold"
               title="How It Works"
               subtitle="Find the right trail, book verified guides and stays, then manage your full trek journey in one place."
             />
@@ -884,8 +851,6 @@ const LandingPage = () => {
             viewport={{ once: true, margin: "-80px" }}
           >
             <SectionHeader
-              badge="Testimonials"
-              badgeColor="gold"
               title="What Trekkers,Hosts and Guides Say"
               subtitle="Real stories from real adventurers who explored Nepal with us."
             />
@@ -919,10 +884,8 @@ const LandingPage = () => {
                 const avatarLetter = reviewerName.charAt(0).toUpperCase() || "T";
 
                 return (
-                  <motion.div
+                  <div
                     key={t.testimonial_id}
-                    variants={fadeUpItem}
-                    whileHover={{ y: -6, transition: { duration: 0.25 } }}
                     className="relative bg-cream rounded-2xl p-8 border border-gray-100 hover:shadow-xl hover:shadow-navy/5 hover:border-gold/20 transition-all duration-500"
                   >
                     {/* Quote Icon */}
@@ -964,7 +927,7 @@ const LandingPage = () => {
                         </p>
                       </div>
                     </div>
-                  </motion.div>
+                  </div>
                 );
               })
             )}
