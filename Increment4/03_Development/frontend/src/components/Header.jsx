@@ -399,16 +399,6 @@ export const Header = ({ user, onLogoutClick }) => {
                           )}
                           {user.user_type === "tourist" && (
                             <Link
-                              to="/trip-planner"
-                              onClick={() => setDropdownOpen(false)}
-                              className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors"
-                            >
-                              <Compass className="h-4 w-4 text-gray-400" />
-                              AI Trip Planner
-                            </Link>
-                          )}
-                          {user.user_type === "tourist" && (
-                            <Link
                               to="/ai-assistant"
                               onClick={() => setDropdownOpen(false)}
                               className="w-full text-left px-4 py-2.5 text-sm text-gray-600 hover:bg-navy-50 hover:text-navy flex items-center gap-3 transition-colors"
@@ -570,16 +560,6 @@ export const Header = ({ user, onLogoutClick }) => {
                       >
                         <LayoutDashboard className="h-4 w-4" />
                         {dashboardLabel}
-                      </Link>
-                    )}
-                    {user.user_type === "tourist" && (
-                      <Link
-                        to="/trip-planner"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="w-full mb-2 flex items-center gap-2 px-4 py-3 rounded-xl bg-white/5 text-white/80 font-semibold hover:bg-white/10 transition-all"
-                      >
-                        <Compass className="h-4 w-4" />
-                        AI Trip Planner
                       </Link>
                     )}
                     {user.user_type === "tourist" && (

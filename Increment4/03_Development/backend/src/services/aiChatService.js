@@ -55,7 +55,7 @@ const buildSystemPrompt = () => {
 };
 
 export const generateChatReply = async ({ message, historyMessages = [] }) => {
-  const model = process.env.AI_CHAT_MODEL || process.env.AI_TRIP_PLANNER_MODEL || "qwen2.5:3b-instruct";
+  const model = process.env.AI_CHAT_MODEL || "qwen2.5:3b-instruct";
   const apiUrl = process.env.AI_LLM_API_URL || "https://api.openai.com/v1/chat/completions";
   const provider = detectLLMProvider(apiUrl);
   const apiKey = process.env.OPENAI_API_KEY || process.env.AI_API_KEY;

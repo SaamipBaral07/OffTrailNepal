@@ -35,7 +35,6 @@
     "migrate:platform-reviews-user-types": "node scripts/run_alter_tourist_platform_reviews_add_submitter_user_context_migration.mjs",
     "migrate:admin-activity-log": "node scripts/run_create_admin_activity_log_migration.mjs",
     "migrate:account-lifecycle": "node scripts/run_add_account_lifecycle_fields_to_users_migration.mjs",
-    "migrate:ai-trip-planner": "node scripts/run_create_ai_trip_planner_tables_migration.mjs",
     "migrate:ai-chat": "node scripts/run_create_ai_chat_tables_migration.mjs",
     "admin:create": "node scripts/create_admin_user.mjs",
     "verify:guide-reviews": "node scripts/verify_guide_review_flow.mjs"

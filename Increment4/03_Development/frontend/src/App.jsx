@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 
 import LandingPage from "./pages/LandingPage";
@@ -16,7 +16,6 @@ import HomestayDetail from "./pages/HomestayDetail";
 import MyBookings from "./pages/MyBookings";
 import TouristProfile from "./pages/TouristProfile";
 import TouristSettings from "./pages/TouristSettings";
-import TripPlanner from "./pages/TripPlanner";
 import AIAssistant from "./pages/AIAssistant";
 import WishlistPage from "./pages/WishlistPage";
 import HostProfile from "./pages/HostProfile";
@@ -124,15 +123,6 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={["tourist"]}>
                 <WishlistPage />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/trip-planner"
-            element={
-              <ProtectedRoute allowedRoles={["tourist"]}>
-                <TripPlanner />
               </ProtectedRoute>
             }
           />
