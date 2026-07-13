@@ -44,7 +44,6 @@ import {
   Award,
   MapPin,
   Clock,
-  TrendingUp,
   Activity,
   Calendar,
   Star,
@@ -1550,7 +1549,7 @@ const GuideDashboard = () => {
                       const paymentStatus = String(booking.payment_status || "").toLowerCase();
                       const refundStatus = String(booking.refund_status || "").toLowerCase();
                       const isExpanded = Boolean(expandedBookingDetails[booking.booking_id]);
-                      const bookingStarted = hasBookingStarted(booking);
+                      void hasBookingStarted(booking); // reserved for future use
                       const isPending = bookingStatus === "pending";
                       const isConfirmed = bookingStatus === "confirmed";
                       const isLocked = ["refund_requested", "refunded", "rejected", "expired"].includes(bookingStatus) || ["processing", "refunded"].includes(refundStatus);

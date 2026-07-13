@@ -1,4 +1,4 @@
-import { LogOut, AlertCircle, X } from "lucide-react";
+import { LogOut, X } from "lucide-react";
 
 const LogoutModal = ({ isOpen, onConfirm, onCancel }) => {
   if (!isOpen) return null;
