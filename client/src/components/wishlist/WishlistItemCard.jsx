@@ -13,7 +13,7 @@ const WishlistItemCard = ({ item, onRemove, removing }) => {
           ? "Guide Service"
           : "Item";
   const imageSrc = item.image_path
-    ? (String(item.image_path).startsWith("http") ? item.image_path : `http://localhost:5000${item.image_path}`)
+    ? (String(item.image_path).startsWith("http") ? item.image_path : `${process.env.REACT_APP_API_URL || "http://localhost:5000"}${item.image_path}`)
     : FALLBACK_IMAGE;
 
   return (

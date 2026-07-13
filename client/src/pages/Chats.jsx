@@ -26,7 +26,7 @@ import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import { getToken } from "../tokenStore";
 import api from "../api";
 
-const SOCKET_BASE_URL = process.env.REACT_APP_SOCKET_URL || process.env.REACT_APP_API_URL || "http://localhost:5000";
+const SOCKET_BASE_URL = process.env.REACT_APP_SOCKET_URL || process.env.REACT_APP_API_URL || (process.env.REACT_APP_API_URL || (process.env.REACT_APP_API_URL || "http://localhost:5000") + "");
 const CHAT_LIST_POLL_INTERVAL_MS = 15000;
 
 const formatDate = (value) => {

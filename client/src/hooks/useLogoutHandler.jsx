@@ -31,7 +31,7 @@ export const useLogoutHandler = () => {
     if (csrfToken) {
       config.headers = { "X-CSRF-Token": csrfToken };
     }
-    const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:5000";
+    const API_BASE = process.env.REACT_APP_API_URL || (process.env.REACT_APP_API_URL || (process.env.REACT_APP_API_URL || "http://localhost:5000") + "");
     axios.post(`${API_BASE}/api/auth/logout`, {}, config).catch(() => {});
     clearAuth();
   };

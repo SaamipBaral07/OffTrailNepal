@@ -76,7 +76,7 @@ const ResetPassword = () => {
       }
 
       await axios.post(
-        "http://localhost:5000/api/auth/reset-password",
+        (process.env.REACT_APP_API_URL || "http://localhost:5000") + "/api/auth/reset-password",
         {
           token,
           newPassword: password

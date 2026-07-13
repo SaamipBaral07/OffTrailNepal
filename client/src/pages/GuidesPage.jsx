@@ -33,7 +33,7 @@ import { useAuth } from "../context/AuthContext";
 import { useLogoutHandler } from "../hooks/useLogoutHandler";
 import LogoutModal from "../components/LogoutModal";
 
-const API = "http://localhost:5000";
+const API = (process.env.REACT_APP_API_URL || (process.env.REACT_APP_API_URL || "http://localhost:5000") + "");
 
 const GuidesPage = () => {
   const navigate = useNavigate();

@@ -66,7 +66,7 @@ import LogoutModal from "../components/LogoutModal";
 import { useAuth } from "../context/AuthContext";
 import { getToken } from "../tokenStore";
 
-const API = "http://localhost:5000/api";
+const API = (process.env.REACT_APP_API_URL || "http://localhost:5000") + "/api";
 const PLATFORM_COMMISSION_RATE = 0.1;
 const HOST_PAYOUT_RATE = 1 - PLATFORM_COMMISSION_RATE;
 
@@ -627,7 +627,7 @@ const HomestayForm = ({ trails, amenityCatalog, amenityCatalogLoading, amenityCa
               />
               {initialData?.homestay_registration_certificate_doc_path && (
                 <a
-                  href={`http://localhost:5000${initialData.homestay_registration_certificate_doc_path}`}
+                  href={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${initialData.homestay_registration_certificate_doc_path}`}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex mt-2 text-xs text-blue-700 hover:underline"
@@ -651,7 +651,7 @@ const HomestayForm = ({ trails, amenityCatalog, amenityCatalogLoading, amenityCa
               />
               {initialData?.property_ownership_doc_path && (
                 <a
-                  href={`http://localhost:5000${initialData.property_ownership_doc_path}`}
+                  href={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${initialData.property_ownership_doc_path}`}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex mt-2 text-xs text-blue-700 hover:underline"
@@ -955,7 +955,7 @@ const HomestayForm = ({ trails, amenityCatalog, amenityCatalogLoading, amenityCa
                 {existingImages.map((img) => (
                   <div key={img.image_id} className="relative space-y-1">
                     <img
-                      src={`http://localhost:5000${img.image_path}`}
+                      src={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${img.image_path}`}
                       alt="Homestay"
                       className="h-20 w-20 object-cover rounded-lg border"
                     />
@@ -1101,7 +1101,7 @@ const HomestayCard = ({ homestay, onEdit, onDelete, onToggleActive, onUpdateRoom
       <div className="relative h-[260px] w-full overflow-hidden bg-[#0A192F]">
         {hasImages ? (
           <img
-            src={`http://localhost:5000${primaryImage?.image_path || homestay.images[0].image_path}`}
+            src={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${primaryImage?.image_path || homestay.images[0].image_path}`}
             alt={homestay.name}
             className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110 opacity-90 group-hover:opacity-100"
           />
@@ -1300,7 +1300,7 @@ const HomestayCard = ({ homestay, onEdit, onDelete, onToggleActive, onUpdateRoom
                         {homestay.images.map((img) => (
                           <img
                             key={img.image_id}
-                            src={`http://localhost:5000${img.image_path}`}
+                            src={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${img.image_path}`}
                             alt="Gallery item"
                             className="h-20 w-32 object-cover rounded-xl shadow-sm border border-gray-200 shrink-0 snap-start"
                           />
@@ -1373,7 +1373,7 @@ const HostDashboard = () => {
   const profileImageUrl = user?.profile_image_path
     ? (String(user.profile_image_path).startsWith("http")
       ? user.profile_image_path
-      : `http://localhost:5000${user.profile_image_path}`)
+      : `${process.env.REACT_APP_API_URL || "http://localhost:5000"}${user.profile_image_path}`)
     : "";
   const [notification, setNotification] = useState(null);
   const [bookings, setBookings] = useState([]);
@@ -2189,7 +2189,7 @@ const HostDashboard = () => {
 
           {hostVerification?.citizenship_doc_path && (
             <a
-              href={`http://localhost:5000${hostVerification.citizenship_doc_path}`}
+              href={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${hostVerification.citizenship_doc_path}`}
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1.5 mt-3 text-sm text-blue-700 hover:underline"

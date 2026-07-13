@@ -31,7 +31,7 @@ const ForgotPassword = () => {
             }
 
       await axios.post(
-        "http://localhost:5000/api/auth/forgot-password",
+        (process.env.REACT_APP_API_URL || "http://localhost:5000") + "/api/auth/forgot-password",
         { email }
       );
       setMessage("✅ Check your email for password reset instructions!");

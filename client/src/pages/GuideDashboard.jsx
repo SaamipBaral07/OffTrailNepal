@@ -61,7 +61,7 @@ import GuideBookingChatModal from "../components/GuideBookingChatModal";
 import { useAuth } from "../context/AuthContext";
 import { getToken } from "../tokenStore";
 
-const API = "http://localhost:5000/api";
+const API = (process.env.REACT_APP_API_URL || "http://localhost:5000") + "/api";
 const PLATFORM_COMMISSION_RATE = 0.1;
 const GUIDE_PAYOUT_RATE = 1 - PLATFORM_COMMISSION_RATE;
 
@@ -238,7 +238,7 @@ const GuideDashboard = () => {
   const profileImageUrl = user?.profile_image_path
     ? (String(user.profile_image_path).startsWith("http")
       ? user.profile_image_path
-      : `http://localhost:5000${user.profile_image_path}`)
+      : `${process.env.REACT_APP_API_URL || "http://localhost:5000"}${user.profile_image_path}`)
     : "";
 
   // Forms State

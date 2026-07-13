@@ -100,7 +100,7 @@ const AdminProfile = () => {
     if (String(profile.profile_image_path).startsWith("http")) {
       return profile.profile_image_path;
     }
-    return `http://localhost:5000${profile.profile_image_path}`;
+    return `${process.env.REACT_APP_API_URL || "http://localhost:5000"}${profile.profile_image_path}`;
   }, [profile.profile_image_path]);
 
   const handleProfilePhotoUpload = async (event) => {

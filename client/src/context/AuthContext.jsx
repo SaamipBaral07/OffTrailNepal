@@ -21,7 +21,7 @@ export const AuthProvider = ({ children }) => {
     const initAuth = async () => {
       try {
         // Fetch CSRF token first
-        const csrfRes = await axios.get("http://localhost:5000/api/auth/csrf-token", {
+        const csrfRes = await axios.get((process.env.REACT_APP_API_URL || "http://localhost:5000") + "/api/auth/csrf-token", {
           withCredentials: true,
         });
         setCsrfToken(csrfRes.data.csrfToken);
@@ -35,7 +35,7 @@ export const AuthProvider = ({ children }) => {
 
         // Then attempt silent refresh
         const res = await axios.post(
-          "http://localhost:5000/api/auth/refresh-token",
+          (process.env.REACT_APP_API_URL || "http://localhost:5000") + "/api/auth/refresh-token",
           {},
           {
             withCredentials: true,

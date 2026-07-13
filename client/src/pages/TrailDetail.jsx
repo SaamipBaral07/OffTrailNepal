@@ -60,7 +60,7 @@ import { useWishlist } from "../hooks/useWishlist";
 import WishlistToggleButton from "../components/wishlist/WishlistToggleButton";
 import api from "../api";
 
-const API = "http://localhost:5000";
+const API = (process.env.REACT_APP_API_URL || (process.env.REACT_APP_API_URL || "http://localhost:5000") + "");
 const MOTION_CURVE = [0.22, 1, 0.36, 1];
 const MOTION_DURATION = 0.32;
 const MOTION_STAGGER = 0.07;

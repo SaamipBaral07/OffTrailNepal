@@ -34,7 +34,7 @@ import { Footer } from "../components/Footer";
 import axios from "axios";
 import { useAuth } from "../context/AuthContext";
 
-const API = "http://localhost:5000";
+const API = (process.env.REACT_APP_API_URL || (process.env.REACT_APP_API_URL || "http://localhost:5000") + "");
 
 /* ═══════════════════════════════════════════════
    STATIC DATA

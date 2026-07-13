@@ -51,7 +51,7 @@ export const Header = ({ user, onLogoutClick }) => {
   const profileImageUrl = user?.profile_image_path
     ? (String(user.profile_image_path).startsWith("http")
       ? user.profile_image_path
-      : `http://localhost:5000${user.profile_image_path}`)
+      : `${process.env.REACT_APP_API_URL || "http://localhost:5000"}${user.profile_image_path}`)
     : "";
 
   /* ── Scroll tracking ── */

@@ -30,7 +30,7 @@ import LogoutModal from "../components/LogoutModal";
 import { useWishlist } from "../hooks/useWishlist";
 import WishlistToggleButton from "../components/wishlist/WishlistToggleButton";
 
-const API = "http://localhost:5000";
+const API = (process.env.REACT_APP_API_URL || (process.env.REACT_APP_API_URL || "http://localhost:5000") + "");
 
 const difficultyTag = {
   Easy: {

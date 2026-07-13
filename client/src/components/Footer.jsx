@@ -20,7 +20,7 @@ import {
 
 /* ── Static Data ── */
 
-const API = "http://localhost:5000";
+const API = (process.env.REACT_APP_API_URL || (process.env.REACT_APP_API_URL || "http://localhost:5000") + "");
 
 const productLinks = [
   { name: "Home", href: "/" },

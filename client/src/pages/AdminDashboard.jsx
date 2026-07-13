@@ -72,7 +72,7 @@ import { useAuth } from "../context/AuthContext";
 import { getToken } from "../tokenStore";
 import { motion, AnimatePresence } from "framer-motion";
 
-const API = "http://localhost:5000/api";
+const API = (process.env.REACT_APP_API_URL || "http://localhost:5000") + "/api";
 const PAYMENTS_PAGE_SIZE = 8;
 
 /* ─────────────────────────────────────────
@@ -1975,7 +1975,7 @@ const AdminDashboard = () => {
                         {g.citizenship_doc_path && g.guide_license_doc_path && (
                           <div className="mb-4 pt-3 border-t border-gray-200 grid grid-cols-2 gap-2">
                             <a
-                              href={`http://localhost:5000${g.citizenship_doc_path}`}
+                              href={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${g.citizenship_doc_path}`}
                               target="_blank"
                               rel="noreferrer"
                               className="text-xs text-blue-600 hover:underline"
@@ -1983,7 +1983,7 @@ const AdminDashboard = () => {
                               View Citizenship
                             </a>
                             <a
-                              href={`http://localhost:5000${g.guide_license_doc_path}`}
+                              href={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${g.guide_license_doc_path}`}
                               target="_blank"
                               rel="noreferrer"
                               className="text-xs text-blue-600 hover:underline"
@@ -2480,7 +2480,7 @@ const AdminDashboard = () => {
                                   <div className="h-11 w-11 rounded-full overflow-hidden bg-gradient-to-br from-navy to-navy-light text-white font-bold text-sm flex items-center justify-center">
                                     {reviewerProfileImagePath ? (
                                       <img
-                                        src={`http://localhost:5000${reviewerProfileImagePath}`}
+                                        src={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${reviewerProfileImagePath}`}
                                         alt={reviewerName || "Trekker"}
                                         className="h-full w-full object-cover"
                                       />
@@ -2783,13 +2783,13 @@ const AdminDashboard = () => {
                                 {submission.images.map((img) => (
                                   <a
                                     key={img.image_id}
-                                    href={`http://localhost:5000${img.image_path}`}
+                                    href={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${img.image_path}`}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="block w-24 h-20 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0"
                                   >
                                     <img
-                                      src={`http://localhost:5000${img.image_path}`}
+                                      src={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${img.image_path}`}
                                       alt="Submitted trail"
                                       className="w-full h-full object-cover"
                                     />
@@ -3215,7 +3215,7 @@ const AdminDashboard = () => {
                         <p className="text-xs text-gray-600 mt-1">PAN: {hostItem.pan_number || "Not provided"}</p>
                         {hostItem.citizenship_doc_path && (
                           <a
-                            href={`http://localhost:5000${hostItem.citizenship_doc_path}`}
+                            href={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${hostItem.citizenship_doc_path}`}
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex items-center gap-1.5 mt-2 text-xs text-blue-700 hover:underline"
@@ -3635,7 +3635,7 @@ const HomestayCard = ({ homestay: h, isExpanded, onToggle, onApprove, onReject }
         {/* Thumbnail */}
         <div className="w-20 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100 border border-gray-200">
           {primaryImage ? (
-            <img src={`http://localhost:5000${primaryImage.image_path}`} alt={h.name} className="w-full h-full object-cover" />
+            <img src={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${primaryImage.image_path}`} alt={h.name} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               <Home className="h-6 w-6 text-gray-300" />
@@ -3720,7 +3720,7 @@ const HomestayCard = ({ homestay: h, isExpanded, onToggle, onApprove, onReject }
               <StatusBadge status={h.host_verification_status || "not_submitted"} />
               {h.host_citizenship_doc_path && (
                 <a
-                  href={`http://localhost:5000${h.host_citizenship_doc_path}`}
+                  href={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${h.host_citizenship_doc_path}`}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-xs text-blue-700 hover:underline"
@@ -3787,7 +3787,7 @@ const HomestayCard = ({ homestay: h, isExpanded, onToggle, onApprove, onReject }
                 <p className="text-xs text-gray-500">Homestay Registration Certificate</p>
                 {h.homestay_registration_certificate_doc_path ? (
                   <a
-                    href={`http://localhost:5000${h.homestay_registration_certificate_doc_path}`}
+                    href={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${h.homestay_registration_certificate_doc_path}`}
                     target="_blank"
                     rel="noreferrer"
                     className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:underline"
@@ -3805,7 +3805,7 @@ const HomestayCard = ({ homestay: h, isExpanded, onToggle, onApprove, onReject }
                 </p>
                 {h.property_ownership_doc_path ? (
                   <a
-                    href={`http://localhost:5000${h.property_ownership_doc_path}`}
+                    href={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${h.property_ownership_doc_path}`}
                     target="_blank"
                     rel="noreferrer"
                     className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 hover:underline"
@@ -3837,7 +3837,7 @@ const HomestayCard = ({ homestay: h, isExpanded, onToggle, onApprove, onReject }
                     }`}
                   >
                     <img
-                      src={`http://localhost:5000${img.image_path}`}
+                      src={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${img.image_path}`}
                       alt="Homestay"
                       className="w-full h-full object-cover"
                     />
@@ -3903,7 +3903,7 @@ const TrailCard = ({ trail, isExpanded, onToggle, onEdit, onDelete }) => {
         <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-gray-100 border border-gray-200">
           {primaryImage ? (
             <img
-              src={`http://localhost:5000${primaryImage.image_path}`}
+              src={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${primaryImage.image_path}`}
               alt={trail.trail_name}
               className="w-full h-full object-cover"
             />
@@ -3987,7 +3987,7 @@ const TrailCard = ({ trail, isExpanded, onToggle, onEdit, onDelete }) => {
                     }`}
                   >
                     <img
-                      src={`http://localhost:5000${img.image_path}`}
+                      src={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${img.image_path}`}
                       alt="Trail"
                       className="w-full h-full object-cover"
                     />
@@ -4030,7 +4030,7 @@ const TrailCard = ({ trail, isExpanded, onToggle, onEdit, onDelete }) => {
 
           {trail.gpx_file_path && (
             <a
-              href={`http://localhost:5000${trail.gpx_file_path}`}
+              href={`${process.env.REACT_APP_API_URL || "http://localhost:5000"}${trail.gpx_file_path}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 text-sm text-blue-500 hover:text-blue-600 transition"
@@ -4289,7 +4289,7 @@ const EditTrailForm = ({ trail, onSuccess, onCancel }) => {
               return (
                 <div key={img.image_id} className={`border rounded-xl p-2 transition-all ${markedForRemoval ? "border-red-300 bg-red-50 opacity-60" : "border-gray-200 bg-white"}`}>
                   <div className="relative w-full h-24 rounded-lg overflow-hidden mb-2 bg-gray-100">
-                    <img src={repPreview || `http://localhost:5000${img.image_path}`} alt="Trail" className="w-full h-full object-cover" />
+                    <img src={repPreview || `${process.env.REACT_APP_API_URL || "http://localhost:5000"}${img.image_path}`} alt="Trail" className="w-full h-full object-cover" />
                     {img.is_primary && !markedForRemoval && (
                       <span className="absolute top-1 right-1 bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full leading-none">PRIMARY</span>
                     )}

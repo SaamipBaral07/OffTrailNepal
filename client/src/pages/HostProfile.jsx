@@ -111,7 +111,7 @@ const HostProfile = () => {
   const profileImageUrl = useMemo(() => {
     if (!form.profile_image_path) return "";
     if (String(form.profile_image_path).startsWith("http")) return form.profile_image_path;
-    return `http://localhost:5000${form.profile_image_path}`;
+    return `${process.env.REACT_APP_API_URL || "http://localhost:5000"}${form.profile_image_path}`;
   }, [form.profile_image_path]);
 
   const onChange = (key, value) => {

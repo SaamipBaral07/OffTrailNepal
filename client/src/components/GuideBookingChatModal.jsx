@@ -5,7 +5,7 @@ import api from "../api";
 import { getToken } from "../tokenStore";
 import { useAuth } from "../context/AuthContext";
 
-const SOCKET_BASE_URL = process.env.REACT_APP_SOCKET_URL || process.env.REACT_APP_API_URL || "http://localhost:5000";
+const SOCKET_BASE_URL = process.env.REACT_APP_SOCKET_URL || process.env.REACT_APP_API_URL || (process.env.REACT_APP_API_URL || (process.env.REACT_APP_API_URL || "http://localhost:5000") + "");
 
 const formatMessageTime = (value) => {
   if (!value) return "";
