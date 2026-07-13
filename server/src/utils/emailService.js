@@ -3,7 +3,11 @@ import nodemailer from "nodemailer";
 let cachedTransporter = null;
 
 const hasSmtpConfig = () => {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_PORT && process.env.SMTP_USER && process.env.SMTP_PASS);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  const host = process.env.SMTP_HOST || (user && user.includes("@gmail.com") ? "smtp.gmail.com" : null);
+  const port = process.env.SMTP_PORT || (user && user.includes("@gmail.com") ? "465" : null);
+  return Boolean(host && port && user && pass);
 };
 
 const getTransporter = () => {
@@ -15,10 +19,14 @@ const getTransporter = () => {
     return null;
   }
 
+  const host = process.env.SMTP_HOST || "smtp.gmail.com";
+  const port = Number(process.env.SMTP_PORT || 465);
+  const secure = process.env.SMTP_SECURE !== undefined ? (process.env.SMTP_SECURE === "true") : (port === 465);
+
   cachedTransporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: process.env.SMTP_SECURE === "true",
+    host,
+    port,
+    secure,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS
