@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import https from "https";
 
 let cachedTransporter = null;
 
@@ -47,65 +48,99 @@ const getFrontendUrl = () => {
 const sendMailWrapper = async ({ to, subject, text, html }) => {
   // 1. Try Resend HTTP API if configured
   if (process.env.RESEND_API_KEY) {
-    try {
-      const response = await fetch("https://api.resend.com/emails", {
+    return new Promise((resolve, reject) => {
+      const data = JSON.stringify({
+        from: process.env.MAIL_FROM || "onboarding@resend.dev",
+        to,
+        subject,
+        text,
+        html
+      });
+
+      const options = {
+        hostname: "api.resend.com",
+        port: 443,
+        path: "/emails",
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.RESEND_API_KEY}`
-        },
-        body: JSON.stringify({
-          from: process.env.MAIL_FROM || "onboarding@resend.dev",
-          to,
-          subject,
-          text,
-          html
-        })
+          "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
+          "Content-Length": Buffer.byteLength(data)
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let body = "";
+        res.on("data", (chunk) => body += chunk);
+        res.on("end", () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve();
+          } else {
+            console.error("Resend API failed:", res.statusCode, body);
+            reject(new Error(`Resend API returned status ${res.statusCode}: ${body}`));
+          }
+        });
       });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Resend API returned status ${response.status}`);
-      }
-      return;
-    } catch (apiError) {
-      console.error("Failed sending email via Resend API:", apiError);
-      throw apiError;
-    }
+
+      req.on("error", (error) => {
+        console.error("Resend request error:", error);
+        reject(error);
+      });
+
+      req.write(data);
+      req.end();
+    });
   }
 
   // 2. Try Brevo HTTP API if configured
   if (process.env.BREVO_API_KEY) {
-    try {
+    return new Promise((resolve, reject) => {
       const fromEmail = process.env.MAIL_FROM || process.env.SMTP_USER || "no-reply@offtrailnepal.com";
       const senderName = fromEmail.includes("<") ? fromEmail.split("<")[0].trim() : "OffTrail Nepal";
       const senderEmail = fromEmail.includes("<") ? fromEmail.split("<")[1].replace(">", "").trim() : fromEmail;
 
-      const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      const data = JSON.stringify({
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email: to }],
+        subject,
+        textContent: text,
+        htmlContent: html
+      });
+
+      const options = {
+        hostname: "api.brevo.com",
+        port: 443,
+        path: "/v3/smtp/email",
         method: "POST",
         headers: {
           "accept": "application/json",
           "api-key": process.env.BREVO_API_KEY,
-          "content-type": "application/json"
-        },
-        body: JSON.stringify({
-          sender: { name: senderName, email: senderEmail },
-          to: [{ email: to }],
-          subject,
-          textContent: text,
-          htmlContent: html
-        })
+          "content-type": "application/json",
+          "Content-Length": Buffer.byteLength(data)
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let body = "";
+        res.on("data", (chunk) => body += chunk);
+        res.on("end", () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve();
+          } else {
+            console.error("Brevo API failed:", res.statusCode, body);
+            reject(new Error(`Brevo API returned status ${res.statusCode}: ${body}`));
+          }
+        });
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `Brevo API returned status ${response.status}`);
-      }
-      return;
-    } catch (apiError) {
-      console.error("Failed sending email via Brevo API:", apiError);
-      throw apiError;
-    }
+      req.on("error", (error) => {
+        console.error("Brevo request error:", error);
+        reject(error);
+      });
+
+      req.write(data);
+      req.end();
+    });
   }
 
   // 3. Fallback to standard SMTP
