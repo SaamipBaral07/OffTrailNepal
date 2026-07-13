@@ -1,0 +1,110 @@
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes marker-pulse {
+  0% {
+    stroke-opacity: 0.9;
+    fill-opacity: 0.28;
+    transform: scale(0.9);
+    transform-origin: center;
+  }
+  70% {
+    stroke-opacity: 0.35;
+    fill-opacity: 0.05;
+    transform: scale(1.25);
+    transform-origin: center;
+  }
+  100% {
+    stroke-opacity: 0.05;
+    fill-opacity: 0;
+    transform: scale(1.35);
+    transform-origin: center;
+  }
+}
+
+.selected-marker-pulse {
+  animation: marker-pulse 1.8s ease-out infinite;
+}
+
+.selected-marker-core {
+  filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.5));
+}
+
+.homestay-red-pin {
+  background: transparent;
+  border: none;
+}
+
+.homestay-red-pin__inner {
+  width: 44px;
+  height: 86px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.34));
+}
+
+.homestay-red-pin__head {
+  display: block;
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  border: 1px solid #a60d0d;
+  background: radial-gradient(circle at 35% 32%, #ffdcdc 0%, #ff3a3a 38%, #d60808 78%, #9b0404 100%);
+}
+
+.homestay-red-pin__stem {
+  display: block;
+  width: 7px;
+  height: 43px;
+  margin-top: 2px;
+  border-radius: 9999px;
+  border: 1px solid rgba(17, 17, 17, 0.2);
+  background: linear-gradient(90deg, #909090 0%, #f5f5f5 52%, #949494 100%);
+}
+
+.homestay-red-pin__base {
+  display: block;
+  width: 22px;
+  height: 8px;
+  margin-top: -1px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 50% 40%, #8f8f8f 0%, #454545 70%, #242424 100%);
+}
